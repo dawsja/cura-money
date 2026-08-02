@@ -11,6 +11,7 @@ import {
   Wallet,
   FolderTree,
   ScrollText,
+  RefreshCw,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -24,6 +25,7 @@ const primaryItems = [
   { to: '/paydown', label: 'Pay down', icon: TrendingDown },
   { to: '/saveup', label: 'Save up', icon: PiggyBank },
   { to: '/reports', label: 'Reports', icon: FileText },
+  { to: '/recurring', label: 'Recurring', icon: RefreshCw },
 ];
 
 // Bottom group: settings-shaped destinations. A horizontal divider

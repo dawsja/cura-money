@@ -36,6 +36,7 @@ import { goalRoutes } from '@/routes/goals';
 import { reportRoutes } from '@/routes/reports';
 import { ruleRoutes } from '@/routes/rules';
 import { reviewRoutes } from '@/routes/reviews';
+import { recurringRoutes } from '@/routes/recurring';
 
 export const app = new Hono();
 
@@ -130,6 +131,7 @@ app.route('/api/goals', goalRoutes);
 app.route('/api/rules', ruleRoutes);
 app.route('/api/reviews', reviewRoutes);
 app.route('/api/reports', reportRoutes);
+app.route('/api/recurring', recurringRoutes);
 
 // ---- Static SPA ------------------------------------------------------------
 // The Vite-built SPA is baked into ./public at image-build time. Serve the

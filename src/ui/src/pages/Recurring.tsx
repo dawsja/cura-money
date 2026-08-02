@@ -1,0 +1,163 @@
+/**
+ * Recurring — automatic detection of recurring charges.
+ *
+ * Scans past transactions for charges from the same merchant at the
+ * same amount repeated across multiple months. Surfaces subscriptions,
+ * memberships, and recurring bills to help users stay on top of
+ * recurring charges, catch fraud, or cancel unused services.
+ */
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../lib/api';
+import { formatMoney, formatDate } from '../lib/format';
+import { RefreshCw, AlertCircle, Calendar, CreditCard, Tag } from 'lucide-react';
+import clsx from 'clsx';
+
+interface RecurringCharge {
+  merchant: string;
+  amount: number;
+  frequency: 'monthly' | 'quarterly' | 'yearly';
+  occurrences: number;
+  lastDate: string;
+  category: string;
+  account: string;
+}
+
+const FREQUENCY_LABEL: Record<string, string> = {
+  monthly: 'Monthly',
+  quarterly: 'Quarterly',
+  yearly: 'Yearly',
+};
+
+const FREQUENCY_BADGE: Record<string, string> = {
+  monthly: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+  quarterly: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
+  yearly: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+};
+
+export function Recurring() {
+  const { data, isLoading, error } = useQuery<RecurringCharge[]>({
+    queryKey: ['recurring'],
+    queryFn: () => api.get('/api/recurring'),
+  });
+
+  const monthlyTotal = data
+    ?.filter((c) => c.frequency === 'monthly')
+    .reduce((sum, c) => sum + c.amount, 0) ?? 0;
+
+  const yearlyEstimate = data
+    ?.reduce((sum, c) => {
+      if (c.frequency === 'monthly') return sum + c.amount * 12;
+      if (c.frequency === 'quarterly') return sum + c.amount * 4;
+      return sum + c.amount;
+    }, 0) ?? 0;
+
+  if (isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center fg-muted">
+        <RefreshCw className="h-5 w-5 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-full items-center justify-center fg-muted gap-2">
+        <AlertCircle className="h-5 w-5 text-rose-500" />
+        <span>Failed to load recurring charges.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6 p-4 md:p-6 max-w-5xl mx-auto">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold fg-primary">Recurring</h1>
+        <p className="text-sm fg-secondary mt-1">
+          Automatically detected charges that repeat across months. Review these to catch unused subscriptions or unexpected charges.
+        </p>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="rounded-xl bg-surface border border-default p-4">
+          <p className="text-xs font-medium fg-tertiary uppercase tracking-wide">Monthly Total</p>
+          <p className="text-xl font-semibold fg-primary mt-1">{formatMoney(monthlyTotal)}</p>
+        </div>
+        <div className="rounded-xl bg-surface border border-default p-4">
+          <p className="text-xs font-medium fg-tertiary uppercase tracking-wide">Yearly Estimate</p>
+          <p className="text-xl font-semibold fg-primary mt-1">{formatMoney(yearlyEstimate)}</p>
+        </div>
+        <div className="rounded-xl bg-surface border border-default p-4">
+          <p className="text-xs font-medium fg-tertiary uppercase tracking-wide">Detected Charges</p>
+          <p className="text-xl font-semibold fg-primary mt-1">{data?.length ?? 0}</p>
+        </div>
+      </div>
+
+      {/* Recurring charges list */}
+      {data && data.length === 0 ? (
+        <div className="rounded-xl bg-surface border border-default p-8 text-center">
+          <RefreshCw className="h-10 w-10 fg-tertiary mx-auto mb-3" />
+          <p className="fg-secondary text-sm">No recurring charges detected yet.</p>
+          <p className="fg-tertiary text-xs mt-1">
+            As more transactions come in, recurring patterns will appear here automatically.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3">
+          {data?.map((charge) => (
+            <div
+              key={`${charge.merchant}-${charge.amount}`}
+              className="rounded-xl bg-surface border border-default p-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:border-amber-500/40 transition-colors"
+            >
+              {/* Left: merchant + meta */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold fg-primary truncate">{charge.merchant}</h3>
+                  <span
+                    className={clsx(
+                      'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+                      FREQUENCY_BADGE[charge.frequency],
+                    )}
+                  >
+                    {FREQUENCY_LABEL[charge.frequency]}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs fg-tertiary">
+                  <span className="inline-flex items-center gap-1">
+                    <Calendar className="h-3.5 w-3.5" />
+                    Last: {formatDate(charge.lastDate)}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <CreditCard className="h-3.5 w-3.5" />
+                    {charge.account}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Tag className="h-3.5 w-3.5" />
+                    {charge.category}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    {charge.occurrences} times
+                  </span>
+                </div>
+              </div>
+
+              {/* Right: amount */}
+              <div className="text-right shrink-0">
+                <p className="text-base font-semibold text-rose-600 dark:text-rose-400">
+                  {formatMoney(charge.amount)}
+                </p>
+                <p className="text-xs fg-tertiary">
+                  {charge.frequency === 'monthly' && `${formatMoney(charge.amount * 12)}/yr`}
+                  {charge.frequency === 'quarterly' && `${formatMoney(charge.amount * 4)}/yr`}
+                  {charge.frequency === 'yearly' && 'per year'}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
