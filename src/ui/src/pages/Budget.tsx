@@ -172,14 +172,30 @@ export function Budget() {
   const loading = cats.isLoading || budgets.isLoading || txns.isLoading || accounts.isLoading;
 
   return (
-    <div className="h-full flex flex-col gap-4">
+    <div className="space-y-4 lg:h-full lg:flex lg:flex-col">
       <div className="shrink-0 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold fg-primary">Budget</h1>
         <MonthPicker value={ym} onChange={setYm} />
       </div>
 
-      <div className="flex-1 min-h-0 flex flex-col-reverse lg:flex-row gap-4 lg:gap-6">
-        <div className="flex-1 min-w-0 overflow-y-auto space-y-6 pr-1">
+      {/* Mobile: single-column flow (summary then sections) inside the
+          main scroll. Desktop: two-column layout with the budget table
+          scrolling independently and the summary pinned on the right. */}
+      <div className="lg:flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-4 lg:gap-6">
+        {/* Summary box — appears first on mobile, right column on desktop */}
+        <div className="shrink-0 lg:order-2 lg:w-96">
+          <BudgetSummaryBox
+            plannedIncome={totals.plannedIncome}
+            earnedIncome={totals.earnedIncome}
+            plannedExpense={totals.plannedExpense}
+            spentExpense={totals.spentExpense}
+            plannedDebt={totals.plannedDebt}
+            loading={loading && (cats.data ?? []).length === 0}
+            onJumpToPaydown={jumpToPaydown}
+          />
+        </div>
+
+        <div className="flex-1 min-w-0 lg:overflow-y-auto space-y-6 lg:pr-1">
           {loading && (cats.data ?? []).length === 0 ? (
             <div className="card text-sm fg-muted text-center">Loading…</div>
           ) : (
@@ -233,18 +249,6 @@ export function Budget() {
             </>
           )}
         </div>
-
-        <div className="shrink-0 lg:w-96">
-          <BudgetSummaryBox
-            plannedIncome={totals.plannedIncome}
-            earnedIncome={totals.earnedIncome}
-            plannedExpense={totals.plannedExpense}
-            spentExpense={totals.spentExpense}
-            plannedDebt={totals.plannedDebt}
-            loading={loading && (cats.data ?? []).length === 0}
-            onJumpToPaydown={jumpToPaydown}
-          />
-        </div>
       </div>
     </div>
   );
@@ -297,7 +301,7 @@ function BudgetSection({
           {isCollapsed ? <ChevronRight className="h-4 w-4 fg-muted" /> : <ChevronDown className="h-4 w-4 fg-muted" />}
           {title}
         </h2>
-        <div className="flex items-baseline gap-6 text-sm tabular-nums">
+        <div className="flex items-baseline gap-3 sm:gap-6 text-sm tabular-nums">
           <div className="hidden sm:block">
             <span className="fg-muted text-xs uppercase tracking-wider mr-2">Planned</span>
             <span className="font-semibold fg-primary">{formatMoney(totalPlanned)}</span>
@@ -307,7 +311,7 @@ function BudgetSection({
             <span className="font-semibold fg-primary">{formatMoney(totalAmount)}</span>
           </div>
           <div>
-            <span className="fg-muted text-xs uppercase tracking-wider mr-2">Remaining</span>
+            <span className="fg-muted text-xs uppercase tracking-wider mr-1 sm:mr-2">Left</span>
             <span className={clsx(
               'font-semibold',
               totalRemaining < 0
@@ -321,8 +325,81 @@ function BudgetSection({
       </button>
 
       {!isCollapsed && (
-        <div className="px-4 pb-3 pt-1">
-          <table className="w-full text-sm table-fixed">
+        <div className="px-2 sm:px-4 pb-3 pt-1">
+          {/* Mobile: card-list layout. Desktop: full table. */}
+          <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-700">
+            {allSubs.map((sub) => {
+              const planned = plannedMap.get(sub.id) ?? sub.planned;
+              const amount = amountMap.get(sub.name) ?? 0;
+              const remaining = planned - amount;
+              const showProgress = planned > 0;
+              const progressPct = showProgress ? Math.min(100, (amount / planned) * 100) : 0;
+              const progressTone: 'emerald' | 'amber' | 'rose' =
+                amount > planned
+                  ? 'rose'
+                  : amount >= planned * 0.7
+                    ? 'amber'
+                    : 'emerald';
+              return (
+                <div key={sub.id} className="py-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm fg-primary font-medium truncate">{sub.name}</span>
+                    <span className={clsx(
+                      'text-sm font-semibold tabular-nums shrink-0',
+                      remaining < 0
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-emerald-600 dark:text-emerald-400',
+                    )}>
+                      {formatMoney(remaining)}
+                    </span>
+                  </div>
+                  {showProgress && (
+                    <Progress
+                      value={progressPct}
+                      tone={isIncome ? 'emerald' : progressTone}
+                      className="w-full"
+                    />
+                  )}
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-1">
+                      <span className="fg-muted">Planned</span>
+                      <input
+                        type="number"
+                        value={planned}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          if (Number.isFinite(v)) onLiveChange(sub.id, v);
+                        }}
+                        onBlur={() => onLiveCommit(sub.id)}
+                        className="w-20 text-right tabular-nums rounded border border-default bg-surface fg-primary px-1.5 py-1 text-xs focus:border-amber-500 focus:outline-none"
+                      />
+                    </div>
+                    <span className="fg-secondary tabular-nums">
+                      {formatMoney(amount)} {amountType}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+            {/* Mobile totals row */}
+            <div className="py-2.5 flex items-center justify-between gap-2">
+              <span className="text-sm font-semibold fg-primary">Total</span>
+              <div className="flex items-center gap-3 text-xs tabular-nums">
+                <span className="fg-secondary">{formatMoney(totalPlanned)} planned</span>
+                <span className={clsx(
+                  'text-sm font-semibold',
+                  totalRemaining < 0
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : 'text-emerald-600 dark:text-emerald-400',
+                )}>
+                  {formatMoney(totalRemaining)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop table — unchanged */}
+          <table className="hidden sm:table w-full text-sm table-fixed">
             <colgroup>
               <col />
               <col className="w-40" />
