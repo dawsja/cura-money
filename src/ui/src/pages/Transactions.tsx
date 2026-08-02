@@ -3,7 +3,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Command } from 'cmdk';
 import { api } from '../lib/api';
 import { formatMoney, formatDate } from '../lib/format';
-import { Trash2, Search, Receipt, ArrowLeftRight, Filter, X, Check, ArrowUpRight, BellRing, Plus, TrendingUp, TrendingDown } from 'lucide-react';
+import { Trash2, Search, Receipt, ArrowLeftRight, Filter, X, Check, ArrowUpRight, BellRing, Plus, TrendingUp, TrendingDown, MoreVertical } from 'lucide-react';
 import { Combobox, ComboboxContent, ComboboxInput, ComboboxItem, ComboboxList } from '../components/ui/combobox';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '../components/ui/input-group';
 import {
@@ -388,6 +388,26 @@ export function Transactions() {
   // read-only detail sheet showing all fields.
   const [detailTx, setDetailTx] = useState<Transaction | null>(null);
 
+  // Action modal — opened by the triple-dot button on each row.
+  // Allows editing posting date and marking as recurring.
+  const [actionTx, setActionTx] = useState<Transaction | null>(null);
+
+  const updateTxDate = useMutation({
+    mutationFn: (input: { id: string; date: string }) =>
+      api.patch<{ ok: true; ruleCreated: boolean }>(`/api/transactions/${input.id}`, { date: input.date }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] });
+    },
+  });
+
+  const markRecurring = useMutation({
+    mutationFn: (input: { merchant: string; amount: number; frequency: 'monthly' | 'yearly' }) =>
+      api.post('/api/recurring/mark', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recurring'] });
+    },
+  });
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold fg-primary">Transactions</h1>
@@ -630,9 +650,18 @@ export function Transactions() {
                       {TYPE_STYLE[t.type].sign}{formatMoney(t.amount)}
                     </td>
                     <td className="py-2 text-right hidden md:table-cell">
-                      <button onClick={(e) => { e.stopPropagation(); del.mutate(t.id); }} className="text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-900/30 rounded p-1">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
+                      <div className="inline-flex items-center gap-0.5">
+                        <button onClick={(e) => { e.stopPropagation(); del.mutate(t.id); }} className="text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-900/30 rounded p-1">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setActionTx(t); }}
+                          className="fg-tertiary hover:fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 rounded p-1 transition-colors"
+                          aria-label="Transaction actions"
+                        >
+                          <MoreVertical className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -772,6 +801,20 @@ export function Transactions() {
           transaction={detailTx}
           onClose={() => setDetailTx(null)}
           onDelete={(id) => { del.mutate(id); setDetailTx(null); }}
+        />
+      )}
+
+      {actionTx && (
+        <TransactionActionModal
+          transaction={actionTx}
+          onClose={() => setActionTx(null)}
+          onUpdateDate={async (id, date) => {
+            await updateTxDate.mutateAsync({ id, date });
+          }}
+          onMarkRecurring={async (merchant, amount, frequency) => {
+            await markRecurring.mutateAsync({ merchant, amount, frequency });
+          }}
+          isPending={updateTxDate.isPending || markRecurring.isPending}
         />
       )}
     </div>
@@ -1459,6 +1502,145 @@ function AddTransactionModal({
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * TransactionActionModal — opened by the triple-dot button on each
+ * transaction row. Allows editing the posting date and marking the
+ * transaction's merchant as recurring (monthly or yearly).
+ */
+function TransactionActionModal({
+  transaction: t,
+  onClose,
+  onUpdateDate,
+  onMarkRecurring,
+  isPending,
+}: {
+  transaction: Transaction;
+  onClose: () => void;
+  onUpdateDate: (id: string, date: string) => Promise<void>;
+  onMarkRecurring: (merchant: string, amount: number, frequency: 'monthly' | 'yearly') => Promise<void>;
+  isPending: boolean;
+}) {
+  const [date, setDate] = useState(t.date);
+  const [frequency, setFrequency] = useState<'monthly' | 'yearly'>('monthly');
+  const [dateChanged, setDateChanged] = useState(false);
+  const [recurringMarked, setRecurringMarked] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const onSaveDate = async () => {
+    if (date === t.date) return;
+    await onUpdateDate(t.id, date);
+    setDateChanged(true);
+  };
+
+  const onSaveRecurring = async () => {
+    await onMarkRecurring(t.merchant, t.amount, frequency);
+    setRecurringMarked(true);
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Transaction actions"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="card w-full max-w-md flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold fg-primary">Transaction Actions</h3>
+          <button type="button" onClick={onClose} className="fg-muted hover:fg-secondary" aria-label="Close">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="text-sm fg-secondary mb-4">
+          <span className="font-medium fg-primary">{t.merchant}</span>
+          {' · '}
+          <span className={clsx('font-semibold tabular-nums', TYPE_STYLE[t.type].amount)}>
+            {TYPE_STYLE[t.type].sign}{formatMoney(t.amount)}
+          </span>
+        </div>
+
+        {/* Edit posting date */}
+        <div className="space-y-2 pb-4 border-b border-default">
+          <label className="block text-xs font-medium fg-tertiary uppercase tracking-wide">
+            Posting Date
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => { setDate(e.target.value); setDateChanged(false); }}
+              disabled={isPending}
+              className={`flex-1 ${INPUT_CLS}`}
+            />
+            <button
+              type="button"
+              onClick={onSaveDate}
+              disabled={isPending || date === t.date}
+              className="btn-primary text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {dateChanged ? 'Saved ✓' : 'Update'}
+            </button>
+          </div>
+        </div>
+
+        {/* Mark as recurring */}
+        <div className="space-y-2 pt-4">
+          <label className="block text-xs font-medium fg-tertiary uppercase tracking-wide">
+            Mark as Recurring
+          </label>
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1.5 flex-1">
+              {(['monthly', 'yearly'] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setFrequency(f)}
+                  disabled={isPending}
+                  className={clsx(
+                    'flex-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50',
+                    frequency === f
+                      ? 'bg-amber-500 text-slate-900 border-amber-500'
+                      : 'bg-surface fg-secondary border-default hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-400',
+                  )}
+                >
+                  {f === 'monthly' ? 'Monthly' : 'Yearly'}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={onSaveRecurring}
+              disabled={isPending || recurringMarked}
+              className="btn-primary text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {recurringMarked ? 'Marked ✓' : 'Mark'}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

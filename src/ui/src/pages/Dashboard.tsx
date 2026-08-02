@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { formatMoney } from '../lib/format';
 import { netWorthContribution, isLiability } from '../lib/accounting';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, TrendingUp, TrendingDown, Wallet, ArrowLeftRight } from 'lucide-react';
+import { ArrowRight, TrendingUp, TrendingDown, Wallet, ArrowLeftRight, ChevronRight } from 'lucide-react';
 import { SummaryCard } from '../components/SummaryCard';
 import clsx from 'clsx';
 
@@ -30,6 +31,13 @@ function txTypeStyle(type: Transaction['type']): { sign: string; amount: string 
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const toggleSection = (key: string) =>
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api.get<Account[]>('/api/accounts') });
   const txns = useQuery({
     queryKey: ['transactions'],
@@ -52,10 +60,14 @@ export function Dashboard() {
   const liabilityAccounts = accounts.data?.filter((a) => isLiability(a.type)) ?? [];
   const totalAssets = assetAccounts.reduce((s, a) => s + Math.abs(a.balance), 0);
   const totalLiabilities = liabilityAccounts.reduce((s, a) => s + Math.abs(a.balance), 0);
-  const cashTotal = assetAccounts.filter((a) => a.type === 'checking' || a.type === 'savings').reduce((s, a) => s + Math.abs(a.balance), 0);
-  const investmentTotal = assetAccounts.filter((a) => a.type === 'investment').reduce((s, a) => s + Math.abs(a.balance), 0);
-  const creditTotal = liabilityAccounts.filter((a) => a.type === 'credit').reduce((s, a) => s + Math.abs(a.balance), 0);
-  const loanTotal = liabilityAccounts.filter((a) => a.type === 'loan').reduce((s, a) => s + Math.abs(a.balance), 0);
+  const cashAccounts = assetAccounts.filter((a) => a.type === 'checking' || a.type === 'savings');
+  const investmentAccounts = assetAccounts.filter((a) => a.type === 'investment');
+  const creditAccounts = liabilityAccounts.filter((a) => a.type === 'credit');
+  const loanAccounts = liabilityAccounts.filter((a) => a.type === 'loan');
+  const cashTotal = cashAccounts.reduce((s, a) => s + Math.abs(a.balance), 0);
+  const investmentTotal = investmentAccounts.reduce((s, a) => s + Math.abs(a.balance), 0);
+  const creditTotal = creditAccounts.reduce((s, a) => s + Math.abs(a.balance), 0);
+  const loanTotal = loanAccounts.reduce((s, a) => s + Math.abs(a.balance), 0);
 
   return (
     <div className="space-y-6">
@@ -95,15 +107,21 @@ export function Dashboard() {
               <span className="text-sm font-semibold fg-primary">Assets</span>
               <span className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatMoney(totalAssets)}</span>
             </div>
-            <ul className="space-y-1.5 pl-3">
-              <li className="flex items-center justify-between text-sm">
-                <span className="fg-muted">Cash</span>
-                <span className="tabular-nums fg-primary">{formatMoney(cashTotal)}</span>
-              </li>
-              <li className="flex items-center justify-between text-sm">
-                <span className="fg-muted">Investments</span>
-                <span className="tabular-nums fg-primary">{formatMoney(investmentTotal)}</span>
-              </li>
+            <ul className="space-y-1 pl-3">
+              <ExpandableSubcategory
+                label="Cash"
+                total={cashTotal}
+                accounts={cashAccounts}
+                expanded={expandedSections.has('cash')}
+                onToggle={() => toggleSection('cash')}
+              />
+              <ExpandableSubcategory
+                label="Investments"
+                total={investmentTotal}
+                accounts={investmentAccounts}
+                expanded={expandedSections.has('investments')}
+                onToggle={() => toggleSection('investments')}
+              />
             </ul>
           </div>
           {/* Liabilities */}
@@ -112,15 +130,21 @@ export function Dashboard() {
               <span className="text-sm font-semibold fg-primary">Liabilities</span>
               <span className="text-sm font-semibold tabular-nums text-rose-600 dark:text-rose-400">{formatMoney(totalLiabilities)}</span>
             </div>
-            <ul className="space-y-1.5 pl-3">
-              <li className="flex items-center justify-between text-sm">
-                <span className="fg-muted">Credit Cards</span>
-                <span className="tabular-nums fg-primary">{formatMoney(creditTotal)}</span>
-              </li>
-              <li className="flex items-center justify-between text-sm">
-                <span className="fg-muted">Loans</span>
-                <span className="tabular-nums fg-primary">{formatMoney(loanTotal)}</span>
-              </li>
+            <ul className="space-y-1 pl-3">
+              <ExpandableSubcategory
+                label="Credit Cards"
+                total={creditTotal}
+                accounts={creditAccounts}
+                expanded={expandedSections.has('credit')}
+                onToggle={() => toggleSection('credit')}
+              />
+              <ExpandableSubcategory
+                label="Loans"
+                total={loanTotal}
+                accounts={loanAccounts}
+                expanded={expandedSections.has('loans')}
+                onToggle={() => toggleSection('loans')}
+              />
             </ul>
           </div>
         </div>
@@ -189,5 +213,59 @@ export function Dashboard() {
         </ul>
       </section>
     </div>
+  );
+}
+
+/**
+ * ExpandableSubcategory — a subcategory row (e.g. "Cash", "Loans") that
+ * can be expanded to reveal the individual accounts contributing to the
+ * total. The arrow rotates 90° when expanded for a clear visual cue.
+ */
+function ExpandableSubcategory({
+  label,
+  total,
+  accounts,
+  expanded,
+  onToggle,
+}: {
+  label: string;
+  total: number;
+  accounts: Account[];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex items-center justify-between text-sm w-full py-1 group"
+        aria-expanded={expanded}
+      >
+        <span className="flex items-center gap-1 fg-muted">
+          <ChevronRight
+            className={clsx(
+              'h-3 w-3 transition-transform duration-150',
+              expanded && 'rotate-90',
+            )}
+          />
+          {label}
+        </span>
+        <span className="tabular-nums fg-primary">{formatMoney(total)}</span>
+      </button>
+      {expanded && accounts.length > 0 && (
+        <ul className="pl-5 space-y-0.5 pb-1">
+          {accounts.map((a) => (
+            <li key={a.id} className="flex items-center justify-between text-xs">
+              <span className="fg-tertiary truncate mr-2">{a.name}</span>
+              <span className="tabular-nums fg-secondary shrink-0">{formatMoney(a.balance)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {expanded && accounts.length === 0 && (
+        <p className="pl-5 text-xs fg-tertiary pb-1">No accounts</p>
+      )}
+    </li>
   );
 }

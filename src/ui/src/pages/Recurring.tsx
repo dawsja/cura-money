@@ -6,10 +6,10 @@
  * memberships, and recurring bills to help users stay on top of
  * recurring charges, catch fraud, or cancel unused services.
  */
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { formatMoney, formatDate } from '../lib/format';
-import { RefreshCw, AlertCircle, Calendar, CreditCard, Tag } from 'lucide-react';
+import { RefreshCw, AlertCircle, Calendar, CreditCard, Tag, X } from 'lucide-react';
 import clsx from 'clsx';
 
 interface RecurringCharge {
@@ -35,9 +35,18 @@ const FREQUENCY_BADGE: Record<string, string> = {
 };
 
 export function Recurring() {
+  const qc = useQueryClient();
   const { data, isLoading, error } = useQuery<RecurringCharge[]>({
     queryKey: ['recurring'],
     queryFn: () => api.get('/api/recurring'),
+  });
+
+  const dismiss = useMutation({
+    mutationFn: (charge: { merchant: string; amount: number }) =>
+      api.post('/api/recurring/dismiss', charge),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recurring'] });
+    },
   });
 
   const monthlyTotal = data
@@ -143,16 +152,28 @@ export function Recurring() {
                 </div>
               </div>
 
-              {/* Right: amount */}
-              <div className="text-right shrink-0">
-                <p className="text-base font-semibold text-rose-600 dark:text-rose-400">
-                  {formatMoney(charge.amount)}
-                </p>
-                <p className="text-xs fg-tertiary">
-                  {charge.frequency === 'monthly' && `${formatMoney(charge.amount * 12)}/yr`}
-                  {charge.frequency === 'quarterly' && `${formatMoney(charge.amount * 4)}/yr`}
-                  {charge.frequency === 'yearly' && 'per year'}
-                </p>
+              {/* Right: amount + dismiss */}
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="text-right">
+                  <p className="text-base font-semibold text-rose-600 dark:text-rose-400">
+                    {formatMoney(charge.amount)}
+                  </p>
+                  <p className="text-xs fg-tertiary">
+                    {charge.frequency === 'monthly' && `${formatMoney(charge.amount * 12)}/yr`}
+                    {charge.frequency === 'quarterly' && `${formatMoney(charge.amount * 4)}/yr`}
+                    {charge.frequency === 'yearly' && 'per year'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => dismiss.mutate({ merchant: charge.merchant, amount: charge.amount })}
+                  disabled={dismiss.isPending}
+                  className="rounded-lg p-1.5 fg-tertiary hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors disabled:opacity-50"
+                  aria-label={`Dismiss ${charge.merchant}`}
+                  title="Remove from recurring"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
             </div>
           ))}
