@@ -1,0 +1,25 @@
+# Keep secrets, build artifacts, and dev-only files out of the Docker
+# builder image. The runtime stage only copies specific sub-paths from
+# the builder, but a leaking .env into the builder stage is still a
+# concern (e.g. BuildKit layer cache, image inspection).
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+node_modules
+public/assets
+public/index.html
+src/ui/node_modules
+src/ui/dist
+*.log
+build.log
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+.vite
+dist
+coverage
+*.tsbuildinfo
+drizzle/.snapshot

@@ -1,0 +1,237 @@
+/**
+ * Hono application entry. Wires:
+ *   1. /health (public, no auth)
+ *   2. /api/auth/* → Better Auth handler
+ *   3. /api/setup/* → first-run wizard (public until complete)
+ *   4. /api/{accounts,budget,categories,goals,transactions,simplefin}/* → resource routes
+ *   5. Everything else → Vite-built static SPA (Caddy serves it in prod; in dev
+ *      Vite proxies to here and the SPA fallback is handled by Caddy too)
+ *
+ * On boot: run migrations, then ensureSetupState() (prints bootstrap token).
+ */
+import { Hono } from 'hono';
+import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { getAuth, initAuth, isLocalAuthDisabled } from '@/auth';
+import { ensureSetupState } from '@/auth/setup';
+import { guard } from '@/lib/guard';
+import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
+import { closeDb } from '@/db/client';
+import { runMigrations } from '@/db/migrate';
+import { startCron } from '@/jobs/cron';
+import { runRetention } from '@/jobs/retention';
+import { authRoutes } from '@/routes/auth';
+import { setupRoutes } from '@/routes/setup';
+import { accountRoutes } from '@/routes/accounts';
+import { budgetRoutes } from '@/routes/budget';
+import { categoryRoutes } from '@/routes/categories';
+import { transactionRoutes } from '@/routes/transactions';
+import { simplefinRoutes } from '@/routes/simplefin';
+import { adminOidcRoutes } from '@/routes/admin-oidc';
+import { adminUserRoutes } from '@/routes/admin-users';
+import { adminAuthRoutes } from '@/routes/admin-auth';
+import { paydownRoutes } from '@/routes/paydown';
+import { goalRoutes } from '@/routes/goals';
+import { reportRoutes } from '@/routes/reports';
+import { ruleRoutes } from '@/routes/rules';
+import { reviewRoutes } from '@/routes/reviews';
+
+export const app = new Hono();
+
+// ---- Logging + error JSON -----------------------------------------------
+app.use('*', async (c, next) => {
+  const start = Date.now();
+  await next();
+  const ms = Date.now() - start;
+  logger.debug(
+    { method: c.req.method, path: c.req.path, status: c.res.status, ms },
+    'http',
+  );
+});
+
+app.onError((err, c) => {
+  logger.error({ err, path: c.req.path }, 'unhandled');
+  return c.json({ error: 'internal server error', code: 'unhandled' }, 500);
+});
+
+app.notFound((c) => c.json({ error: 'not found', code: 'not_found' }, 404));
+
+// ---- Health (public) ----------------------------------------------------
+app.get('/health', (c) => c.json({ status: 'ok' }));
+
+// ---- Local-auth gate (mounted BEFORE Better Auth) -----------------------
+//
+// When `local_auth_disabled` is TRUE, sign-in/sign-up/change-password
+// via email+password are blocked. The OIDC endpoints
+// (/api/auth/sign-in/oauth2, /api/auth/oauth2/callback/*) are NOT
+// gated here — they fall through to the Better Auth handler below.
+//
+// We only short-circuit POSTs against the three known email/password
+// endpoints. Everything else (GET session, OAuth, etc.) flows through
+// to Better Auth untouched. The check is one cheap indexed SELECT per
+// attempt — acceptable on the auth path, and the read is consistent
+// with the value the sign-in page is rendering against.
+const LOCAL_AUTH_GATED_POSTS = new Set([
+  '/api/auth/sign-in/email',
+  '/api/auth/sign-up/email',
+  '/api/auth/change-password',
+  // Password reset flow: blocking the request side (and the consume
+  // side, for defense in depth) prevents account-takeover via the
+  // "request a reset email to a known address" path while local auth
+  // is supposedly off.
+  '/api/auth/request-password-reset',
+  '/api/auth/reset-password',
+  // verify-password is an internal session-gated check (used by
+  // confirm-delete-style flows) — gate it too so a stale session
+  // can't be repurposed against the now-disabled email/password
+  // world.
+  '/api/auth/verify-password',
+]);
+
+app.use('/api/auth/*', async (c, next) => {
+  if (c.req.method !== 'POST') return next();
+  if (!LOCAL_AUTH_GATED_POSTS.has(c.req.path)) return next();
+  if (!(await isLocalAuthDisabled())) return next();
+  return c.json(
+    {
+      error: 'Email/password authentication is disabled. Sign in with an OIDC provider.',
+      code: 'local_auth_disabled',
+    },
+    403,
+  );
+});
+
+// ---- Better Auth handler (public, mounted BEFORE guard) -----------------
+app.on(['GET', 'POST'], '/api/auth/*', (c) => getAuth().handler(c.req.raw));
+
+// ---- Setup wizard (public until bootstrap completes) -------------------
+app.route('/api/setup', setupRoutes);
+
+// ---- Auth (sign-in / sign-up / sign-out thin wrappers, public) ----------
+//    Better Auth's own /api/auth/sign-in/email is used by the SPA; this
+//    router exposes /api/auth/me, /api/auth/logout helpers the UI uses.
+app.route('/api/auth-app', authRoutes);
+
+// ---- Guard everything below --------------------------------------------
+app.use('*', guard);
+
+// ---- Resource routes (all require auth) ---------------------------------
+app.route('/api/accounts', accountRoutes);
+app.route('/api/budget', budgetRoutes);
+app.route('/api/categories', categoryRoutes);
+app.route('/api/transactions', transactionRoutes);
+app.route('/api/simplefin', simplefinRoutes);
+app.route('/api/admin/oidc', adminOidcRoutes);
+app.route('/api/admin/users', adminUserRoutes);
+app.route('/api/admin/auth', adminAuthRoutes);
+app.route('/api/paydown', paydownRoutes);
+app.route('/api/goals', goalRoutes);
+app.route('/api/rules', ruleRoutes);
+app.route('/api/reviews', reviewRoutes);
+app.route('/api/reports', reportRoutes);
+
+// ---- Static SPA ------------------------------------------------------------
+// The Vite-built SPA is baked into ./public at image-build time. Serve the
+// static assets first, then fall back to index.html for client-side routes.
+// Works identically in dev and prod — the operator doesn't need a separate
+// Vite dev server to view the UI; just hit the root URL.
+//
+// Note: @hono/node-server's `serveStatic({ root })` has a known path-join
+// quirk (path.join('./public', '/foo.png') drops the root on some path
+// libs) that ends up falling through to the index.html fallback for files
+// at the top of `public/`. We do the static serving ourselves with a tiny
+// custom middleware — only ~20 lines and the behaviour is obvious.
+import { createReadStream, statSync, existsSync } from 'node:fs';
+import { resolve, join, normalize } from 'node:path';
+import { getMimeType } from 'hono/utils/mime';
+
+const PUBLIC_DIR = resolve('./public');
+const STATIC_INDEX = join(PUBLIC_DIR, 'index.html');
+
+app.use('/*', async (c, next) => {
+  // Only GET/HEAD are served as static; everything else falls through.
+  if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return next();
+
+  // Strip the leading slash and URL-decode. Reject any path that tries
+  // to escape the public dir (../, absolute paths, null bytes).
+  let rel = decodeURIComponent(c.req.path).replace(/^\/+/, '');
+  if (!rel) rel = 'index.html';
+  const target = normalize(join(PUBLIC_DIR, rel));
+  if (!target.startsWith(PUBLIC_DIR + '/') && target !== PUBLIC_DIR) {
+    return next(); // traversal attempt, fall through
+  }
+  if (!existsSync(target)) return next();
+
+  const stats = statSync(target);
+  let filePath = target;
+  if (stats.isDirectory()) {
+    filePath = join(target, 'index.html');
+    if (!existsSync(filePath)) return next();
+  }
+
+  const ctype = getMimeType(filePath) || 'application/octet-stream';
+  c.header('Content-Type', ctype);
+  c.header('Cache-Control', 'public, max-age=3600');
+  const stream = createReadStream(filePath);
+  // Hono's helper converts a Node Readable into a Web ReadableStream.
+  const { Readable } = await import('node:stream');
+  return c.body(Readable.toWeb(stream) as unknown as ReadableStream, 200);
+});
+
+// SPA fallback: any GET that didn't match a real file → index.html.
+app.get('*', async (c) => {
+  if (!existsSync(STATIC_INDEX)) return c.text('not found', 404);
+  const ctype = getMimeType(STATIC_INDEX) || 'text/html';
+  c.header('Content-Type', ctype);
+  const { Readable } = await import('node:stream');
+  const stream = createReadStream(STATIC_INDEX);
+  return c.body(Readable.toWeb(stream) as unknown as ReadableStream, 200);
+});
+
+// ---- Boot ---------------------------------------------------------------
+async function main() {
+  await runMigrations();
+  await ensureSetupState();
+  // Initialise Better Auth with whatever OIDC providers are currently in
+  // the DB. Providers are hot-registered via `refreshAuth()` from the
+  // setup wizard and the admin OIDC endpoints — no restart required.
+  await initAuth();
+
+  // Retention sweep on boot — a fresh deploy needs to clean up old
+  // data immediately, not wait for the next 04:00 UTC cron tick. The
+  // job is idempotent (no-op when there's nothing to delete).
+  try {
+    await runRetention();
+  } catch (err) {
+    logger.error({ err }, 'retention: boot sweep failed');
+  }
+
+  if (env.RUN_CRON) {
+    startCron();
+  } else {
+    logger.warn('cron: disabled by RUN_CRON=false');
+  }
+
+  serve({ fetch: app.fetch, port: env.PORT }, (info) => {
+    logger.info({ port: info.port, env: env.NODE_ENV, cron: env.RUN_CRON }, 'cura-money v2 listening');
+  });
+}
+
+const shutdown = async (signal: string) => {
+  logger.warn({ signal }, 'shutting down');
+  try {
+    await closeDb();
+  } finally {
+    process.exit(0);
+  }
+};
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+if (import.meta.main) {
+  main().catch((err) => {
+    logger.fatal({ err }, 'boot failed');
+    process.exit(1);
+  });
+}

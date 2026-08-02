@@ -1,0 +1,111 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1785325609429,
+      "tag": "0000_initial",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785336843741,
+      "tag": "0001_add_forecast_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785337628103,
+      "tag": "0002_big_mentallo",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785337860012,
+      "tag": "0003_fearless_silk_fever",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785338580663,
+      "tag": "0004_workable_tana_nile",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785340762747,
+      "tag": "0005_empty_robbie_robertson",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785341552450,
+      "tag": "0006_mushy_ravenous",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785350500000,
+      "tag": "0007_add_transaction_transfer_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785354000000,
+      "tag": "0008_add_accounts_hidden",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785357000000,
+      "tag": "0009_add_accounts_alias",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785360000000,
+      "tag": "0010_add_goals",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785370000000,
+      "tag": "0011_monthly_paydown",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785511939086,
+      "tag": "0012_add_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785600000000,
+      "tag": "0013_add_transactions_needs_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785700000000,
+      "tag": "0014_add_setup_state_local_auth_disabled",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "name": "cura-money-v2",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "dev:web": "cd src/ui && bun run dev",
+    "build": "bun build src/index.ts --target=bun --outdir=dist && bun run build:ui",
+    "build:ui": "cd src/ui && bun install --frozen-lockfile && bun run build",
+    "start": "bun run dist/index.js",
+    "db:generate": "bunx @better-auth/cli@latest generate --config src/auth/config.ts --output src/db/schema/auth.ts -y && bunx drizzle-kit generate",
+    "db:migrate": "bun run src/db/migrate.ts",
+    "db:push": "bunx drizzle-kit push",
+    "db:studio": "bunx drizzle-kit studio",
+    "jobs:simplefin": "bun run src/jobs/simplefin-poll.ts",
+    "jobs:rollforward": "bun run src/jobs/budget-rollforward.ts",
+    "jobs:retention": "bun run src/jobs/retention.ts",
+    "bootstrap:token": "bun run scripts/bootstrap-token.ts",
+    "lint": "bun run --bun eslint .",
+    "typecheck": "bun run tsc --noEmit"
+  },
+  "dependencies": {
+    "better-auth": "^1.6.20",
+    "drizzle-orm": "^0.36.0",
+    "postgres": "^3.4.0",
+    "hono": "^4.6.0",
+    "@hono/node-server": "^1.13.0",
+    "zod": "^3.23.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "nanoid": "^5.0.7",
+    "date-fns": "^4.1.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "@types/node": "^22.7.0",
+    "@types/node-cron": "^3.0.11",
+    "drizzle-kit": "^0.28.0",
+    "typescript": "^5.6.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.0"
+  },
+  "trustedDependencies": [
+    "sharp"
+  ]
+}

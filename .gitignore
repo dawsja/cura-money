@@ -1,0 +1,44 @@
+# Build / runtime
+node_modules/
+dist/
+.bun/
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+bun-debug.log*
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Local backups
+backups/*.sql.gz
+backups/*.dump
+
+# Ad-hoc dev SQL scratch files (underscore prefix makes them easy to spot)
+scripts/_*.sql
+
+# Generated UI build (built by Vite into /public at the repo root).
+# Brand assets (logo.png, logo.ico) live in src/ui/public/ and are copied
+# into public/ at build time — only the built bundle is ignored.
+public/index.html
+public/assets/
+
+# UI source build dir + deps
+src/ui/dist/
+src/ui/node_modules/

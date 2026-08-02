@@ -1,0 +1,93 @@
+name: curamoney
+
+services:
+  db:
+    image: postgres:16.5-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cura}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-cura}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cura} -d ${POSTGRES_DB:-cura}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - internal
+
+  redis:
+    image: redis:7.2-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 128mb
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - internal
+
+  app:
+    image: ghcr.io/dawsja/cura-money:latest
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+        required: true
+      redis:
+        condition: service_healthy
+        required: true
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      # Leave APP_URL / BETTER_AUTH_URL / OIDC_REDIRECT_BASE empty for IP-only
+      # access (the app derives origins from the request's Host header). Set
+      # them when you put a stable domain in front (e.g. https://cura.example.com).
+      APP_URL: ${APP_URL:-}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-}
+      OIDC_REDIRECT_BASE: ${OIDC_REDIRECT_BASE:-}
+
+      PORT: ${PORT:-3000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cura}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-cura}
+      REDIS_URL: redis://redis:6379
+
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+
+      RUN_CRON: ${RUN_CRON:-true}
+    ports:
+      - "${PORT:-3000}:3000"
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - fetch('http://localhost:3000/health').then(r=>r.ok?process.exit(0):process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  db_data:
+  redis_data:

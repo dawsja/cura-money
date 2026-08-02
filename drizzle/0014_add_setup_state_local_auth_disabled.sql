@@ -1,0 +1,13 @@
+-- Add `local_auth_disabled` flag to setup_state. When TRUE, the
+-- email/password sign-in / sign-up / change-password endpoints return
+-- 403 and the sign-in page hides the local-auth form.
+--
+-- Defaults to FALSE so every existing install keeps working unchanged:
+-- local auth is on by default. Admins can opt into disabling local
+-- auth from /admin/settings once at least one OIDC user has been
+-- promoted to admin (the precondition is enforced in the API, not
+-- here, so this migration is a no-op for everyone).
+--
+-- See src/auth/local_auth.ts for the read/toggle helpers and the
+-- canDisableLocalAuth() guard.
+ALTER TABLE "setup_state" ADD COLUMN "local_auth_disabled" boolean DEFAULT false NOT NULL;

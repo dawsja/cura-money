@@ -1,0 +1,446 @@
+@import 'tailwindcss';
+
+/*
+ * Dark mode strategy: class-based. A `.dark` class on the document root
+ * (set by the inline init script in index.html, and toggled at runtime
+ * by `lib/theme.ts`) enables all `dark:` Tailwind variants. This lets us
+ * support a user override AND fall back to the OS preference on first
+ * load, without the flash of light theme you'd get with the default
+ * `prefers-color-scheme` media-query strategy.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * ============================================================================
+ * GITHUB DARK + MUTED GITHUB LIGHT, GREEN CTA — Light + Dark
+ * ============================================================================
+ *
+ * Single source of truth for the app's palette. Every Tailwind color scale
+ * (slate / amber / emerald / rose / sky / violet) is wired through a CSS
+ * variable that swaps between light and dark mode automatically.
+ *
+ * The dark mode mirrors GitHub Dark's primer palette (canvas/overlay
+ * hierarchy + syntax accents) verbatim:
+ *
+ *   #0d1117  Main canvas (color-canvas-default)
+ *   #161b22  Secondary canvas (color-canvas-subtle)
+ *   #21262d  Overlay / elevated (color-canvas-overlay)
+ *   #30363d  Border
+ *   #c9d1d9  Primary text
+ *   #8b949e  Secondary text
+ *
+ *   #22c55e  Green CTA              (Tailwind `amber-*` scale — vivid fresh green)
+ *   #3fb950  Success green (the user's spec) (Tailwind `emerald-*` scale)
+ *   #ff7b72  Danger red             (Tailwind `rose-*` scale)
+ *   #d29922  Warning yellow         (Tailwind `sky-*` scale)
+ *   #d2a8ff  Purple depth           (Tailwind `violet-*` scale)
+ *   #ffa657  Orange (chart only)
+ *   #a5d6ff  Syntax blue (originally the CTA in stock GitHub — repurposed
+ *            here as the dark `amber-200/300` readable-text tints)
+ *
+ * The light mode is built off GitHub Light but with the page canvas
+ * muted to off-white so the app feels calm rather than blinding:
+ *
+ *   #e9eef2  Main canvas       (most muted surface — the one you stare at)
+ *   #dde4ea  Secondary canvas  (a notch further muted — insets)
+ *   #f6f8fa  Overlay / cards   (lifted surface — no pure white anywhere)
+ *   #d1d9e0  Border
+ *   #1f2328  Primary text
+ *   #59636e  Secondary text
+ *
+ *   #22c55e  Green CTA            (Tailwind `amber-*` scale)
+ *   #1a7f37  Success green        (Tailwind `emerald-*` scale)
+ *   #cf222e  Danger red           (Tailwind `rose-*` scale)
+ *   #9a6700  Warning yellow       (Tailwind `sky-*` scale)
+ *   #8250df  Purple depth         (Tailwind `violet-*` scale)
+ *   #bc4c00  Orange (chart only)
+ *
+ * The CTA is GREEN (not GitHub's blue) — distinguishes the app's
+ * brand from stock GitHub. amber-500 = #22c55e in both modes because
+ * it's medium-saturation: dark text passes AA on either page bg
+ * (#0d1117 dark or #e9eef2 light), and it has enough contrast against
+ * both to feel like a distinct, clickable surface. Same-hex-on-both-
+ * modes keeps every existing `bg-amber-500 text-slate-900` component
+ * pattern working unchanged.
+ *
+ * The amber and emerald scales are intentionally BOTH green but with
+ * distinct shades:
+ *   - amber = vivid Tailwind green-500 (#22c55e) → the brand CTA
+ *   - emerald = GitHub Primer green (#1a7f37 light / #3fb950 dark) →
+ *     success state, "all good / saved" semantic
+ * They share the green family but stay visually distinguishable.
+ *
+ * The accent scales are non-monotonic in dark mode (same role-driven
+ * convention as the previous palette) — 200/300/400 are LIGHT for
+ * readable text on dark, 50/100/700+ are dark for subtle backgrounds.
+ *
+ * Slate is intentionally NOT redefined in `.dark` — see the file
+ * header for why. The semantic tokens below (--fg-*, --bg-*,
+ * --border-*) handle the mode swap; slate scale values stay neutral.
+ *
+ * Orange (#ffa657 dark / #bc4c00 light) is intentionally NOT exposed as
+ * a Tailwind `orange-*` scale — no component uses an `orange-*`
+ * utility, so it's wired into the chart palette as `--chart-orange`
+ * for Recharts series colors only.
+ */
+@theme {
+  /* ── Amber = Green primary CTA (see file header for why green) ──── */
+  --color-amber-50:  var(--mp-amber-50);
+  --color-amber-100: var(--mp-amber-100);
+  --color-amber-200: var(--mp-amber-200);
+  --color-amber-300: var(--mp-amber-300);
+  --color-amber-400: var(--mp-amber-400);
+  --color-amber-500: var(--mp-amber-500);
+  --color-amber-600: var(--mp-amber-600);
+  --color-amber-700: var(--mp-amber-700);
+  --color-amber-800: var(--mp-amber-800);
+  --color-amber-900: var(--mp-amber-900);
+
+  /* ── Slate = Neutrals (consistent cool-neutral ramp — see header) ─ */
+  --color-slate-50:  var(--mp-slate-50);
+  --color-slate-100: var(--mp-slate-100);
+  --color-slate-200: var(--mp-slate-200);
+  --color-slate-300: var(--mp-slate-300);
+  --color-slate-400: var(--mp-slate-400);
+  --color-slate-500: var(--mp-slate-500);
+  --color-slate-600: var(--mp-slate-600);
+  --color-slate-700: var(--mp-slate-700);
+  --color-slate-800: var(--mp-slate-800);
+  --color-slate-900: var(--mp-slate-900);
+
+  /* ── Emerald = Success (green) ──────────────────────────────────── */
+  --color-emerald-50:  var(--mp-emerald-50);
+  --color-emerald-100: var(--mp-emerald-100);
+  --color-emerald-300: var(--mp-emerald-300);
+  --color-emerald-400: var(--mp-emerald-400);
+  --color-emerald-500: var(--mp-emerald-500);
+  --color-emerald-600: var(--mp-emerald-600);
+  --color-emerald-700: var(--mp-emerald-700);
+  --color-emerald-900: var(--mp-emerald-900);
+
+  /* ── Rose = Danger (red) ─────────────────────────────────────────── */
+  --color-rose-50:  var(--mp-rose-50);
+  --color-rose-100: var(--mp-rose-100);
+  --color-rose-300: var(--mp-rose-300);
+  --color-rose-400: var(--mp-rose-400);
+  --color-rose-500: var(--mp-rose-500);
+  --color-rose-600: var(--mp-rose-600);
+  --color-rose-700: var(--mp-rose-700);
+  --color-rose-900: var(--mp-rose-900);
+
+  /* ── Sky = Warning (yellow) ─────────────────────────────────────── */
+  --color-sky-50:  var(--mp-sky-50);
+  --color-sky-100: var(--mp-sky-100);
+  --color-sky-300: var(--mp-sky-300);
+  --color-sky-500: var(--mp-sky-500);
+  --color-sky-700: var(--mp-sky-700);
+  --color-sky-900: var(--mp-sky-900);
+
+  /* ── Violet = Depth (purple) ────────────────────────────────────── */
+  --color-violet-600: var(--mp-violet-600);
+
+  /* ── Pure black/white — used for overlays and button labels ──────── */
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+/*
+ * ── Light-mode palette tokens ──────────────────────────────────────────
+ * All three surfaces are muted off-white — no pure white anywhere on
+ * screen. Page is the most muted (#e9eef2 — the surface you stare at),
+ * secondary canvas is a notch further muted (#dde4ea — insets, sidebar
+ * rails), and overlay/cards are slightly lighter (#f6f8fa — the lifted
+ * surface that still gives cards elevation without "flash-banging" the
+ * user). Borders and text tones match GitHub Light's primer palette.
+ * The CTA is GREEN (#22c55e, Tailwind green-500) — medium-saturation
+ * so dark text on it passes AA in both modes — keeps the existing
+ * `bg-amber-500 text-slate-900` component patterns working unchanged.
+ */
+:root {
+  /* Slate neutrals — shared by both modes (cool blue-gray ramp).
+     slate-50 is the lightest hover bg, slate-200 is the border,
+     slate-900 is the darkest "text on amber" tone. */
+  --mp-slate-50:  #f6f8fa;  /* lightest — hover bg in light mode */
+  --mp-slate-100: #eaeef2;
+  --mp-slate-200: #d1d9e0;  /* border-default */
+  --mp-slate-300: #afb8c1;
+  --mp-slate-400: #8b949e;
+  --mp-slate-500: #6e7681;
+  --mp-slate-600: #57606a;
+  --mp-slate-700: #424a53;
+  --mp-slate-800: #32383f;
+  --mp-slate-900: #0d1117;  /* darkest — text on amber buttons (~6.6:1 on #22c55e) */
+
+  /* Amber = Green primary CTA (Tailwind green-500 family).
+     500 is the vivid green CTA, dark text passes AA on it. Lower
+     slots are light green tints (e.g. the active sidebar item:
+     bg-amber-50). Distinct from emerald (success) — emerald is
+     the deeper forest-green family. */
+  --mp-amber-50:  #dcfce7;  /* very light green bg */
+  --mp-amber-100: #bbf7d0;
+  --mp-amber-200: #86efac;
+  --mp-amber-300: #4ade80;
+  --mp-amber-400: #34d870;
+  --mp-amber-500: #22c55e;  /* primary CTA — dark text passes AA (~6.6:1) */
+  --mp-amber-600: #16a34a;  /* CTA hover */
+  --mp-amber-700: #15803d;
+  --mp-amber-800: #166534;
+  --mp-amber-900: #14532d;
+
+  /* Emerald = Success (GitHub Primer green, deeper forest-green family).
+     Distinct from the amber CTA green above — emerald is the
+     "all good / saved" semantic. */
+  --mp-emerald-50:  #dafbe1;
+  --mp-emerald-100: #aceebb;
+  --mp-emerald-300: #4ac26b;
+  --mp-emerald-400: #2da44e;
+  --mp-emerald-500: #1a7f37;  /* success */
+  --mp-emerald-600: #116329;
+  --mp-emerald-700: #0f542b;
+  --mp-emerald-900: #033a16;
+
+  /* Rose = Danger (GitHub Primer red) */
+  --mp-rose-50:  #ffebe9;
+  --mp-rose-100: #ffd1cc;
+  --mp-rose-300: #ff8a82;
+  --mp-rose-400: #ff6e64;
+  --mp-rose-500: #cf222e;  /* danger */
+  --mp-rose-600: #a40e26;
+  --mp-rose-700: #82071e;
+  --mp-rose-900: #460809;
+
+  /* Sky = Warning (GitHub Primer attention yellow) */
+  --mp-sky-50:  #fff8c5;
+  --mp-sky-100: #f8e3a1;
+  --mp-sky-300: #d4a72c;
+  --mp-sky-500: #9a6700;  /* warning CTA */
+  --mp-sky-700: #7d4e00;
+  --mp-sky-900: #573a00;
+
+  /* Violet = Purple depth accent (GitHub Primer done/accent purple) */
+  --mp-violet-600: #8250df;
+}
+
+/*
+ * ── Dark-mode palette tokens ───────────────────────────────────────────
+ * Mirrors GitHub Dark's primer palette exactly for the canvas
+ * hierarchy (page #0d1117, secondary #161b22, overlay #21262d),
+ * text, and borders. The amber CTA is intentionally GREEN (not blue)
+ * — see the file header for the rationale.
+ *
+ * The amber scale is non-monotonic in dark mode (same role-driven
+ * convention as before): 200/300/400 are LIGHT for readable text on
+ * dark surfaces (#86efac → #4ade80 light-green tints that read on the
+ * #0d1117 page), 50/100/700+ are dark for subtle backgrounds.
+ * The CTA itself is #22c55e (vivid Tailwind green-500) — same as
+ * light mode for a consistent brand across themes.
+ *
+ * Slate is intentionally NOT redefined here — see the file header for
+ * why. The semantic tokens below (--fg-*, --bg-*, --border-*) handle
+ * the mode swap; slate scale values stay neutral.
+ */
+.dark {
+  /* Amber = Green primary CTA (Tailwind green family, non-monotonic).
+     200/300/400 are LIGHT for readable text on dark surfaces (light
+     green tints — readable green on the #0d1117 page bg); 50/100/700+
+     are dark for subtle backgrounds. amber-500 = GitHub's bright
+     success green #3fb950 (used prominently as the dark-mode CTA). */
+  --mp-amber-50:  #052e16;  /* deep green bg */
+  --mp-amber-100: #0d3f1f;
+  --mp-amber-200: #86efac;  /* light, readable text on dark */
+  --mp-amber-300: #4ade80;  /* light, readable text on dark */
+  --mp-amber-400: #4ade80;  /* light, readable text on dark */
+  --mp-amber-500: #22c55e;  /* primary CTA — dark text passes AA (~7.2:1) */
+  --mp-amber-600: #16a34a;  /* CTA hover */
+  --mp-amber-700: #15803d;
+  --mp-amber-800: #166534;
+  --mp-amber-900: #14532d;
+
+  /* Emerald = Success (GitHub Primer green, non-monotonic).
+     Slightly lighter "all good" green than the amber CTA — they share
+     the green family but remain visually distinguishable. */
+  --mp-emerald-50:  #033a16;
+  --mp-emerald-100: #062e15;
+  --mp-emerald-300: #7ee787;  /* light, readable on dark */
+  --mp-emerald-400: #56d364;  /* light, readable on dark */
+  --mp-emerald-500: #3fb950;  /* success (GitHub syntax green) */
+  --mp-emerald-600: #2ea043;
+  --mp-emerald-700: #238636;
+  --mp-emerald-900: #033a16;
+
+  /* Rose = Danger (GitHub Primer red, non-monotonic) */
+  --mp-rose-50:  #460809;
+  --mp-rose-100: #67060c;
+  --mp-rose-300: #ff8a82;  /* light, readable on dark */
+  --mp-rose-400: #ff6e64;  /* light, readable on dark */
+  --mp-rose-500: #ff7b72;  /* danger (GitHub syntax red) */
+  --mp-rose-600: #cf222e;
+  --mp-rose-700: #a40e26;
+  --mp-rose-900: #460809;
+
+  /* Sky = Warning (GitHub Primer attention yellow, non-monotonic) */
+  --mp-sky-50:  #341a00;
+  --mp-sky-100: #4a2900;
+  --mp-sky-300: #d29922;  /* light, readable on dark (GitHub warning yellow) */
+  --mp-sky-500: #bb8009;  /* warning CTA */
+  --mp-sky-700: #9a6700;
+  --mp-sky-900: #573a00;
+
+  /* Violet = Purple depth accent (GitHub syntax purple) */
+  --mp-violet-600: #d2a8ff;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-page);
+  color: var(--fg-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* `--bg-page` / `--fg-primary` are defined on :root and overridden
+   inside .dark — the variables cascade through the body regardless of
+   which element carries the .dark class. The inline script in
+   index.html applies .dark to <html> before React mounts, so the very
+   first paint already shows the right colors. */
+
+.btn-primary {
+  background: var(--mp-amber-500);
+  /* Dark text on the green CTA — AGENTS.md: amber buttons always use
+     dark text. Contrast vs. #22c55e = ~6.6:1 with --mp-slate-900
+     (#0d1117), passes AA in both light and dark modes. */
+  color: var(--mp-slate-900);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  transition: background 150ms;
+}
+.btn-primary:hover {
+  background: var(--mp-amber-600);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/*
+ * Card: white surface lifted off the #f6f8fa page background in
+ * light mode; dark #21262d overlay lifted off the #0d1117 page in
+ * dark mode. Border is a subtle divider; hover drops a deeper
+ * border for a stronger divider.
+ */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+.card:hover {
+  border-color: var(--border-strong);
+}
+
+/* Number inputs: keep browser numeric validation (type="number" already
+   rejects letters and shows a numeric keypad on mobile) but hide the
+   up/down spinner arrows — they look unprofessional and the user
+   typically types rather than clicks them. */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/*
+ * Chart palette — exposes per-series CSS variables so the Recharts
+ * components can reference them by name and swap automatically with
+ * the `.dark` class. Light mode uses the cool-neutral ramp + amber
+ * (green) baseline; dark mode uses GitHub Dark surfaces + the same
+ * amber green baseline for a consistent brand across themes.
+ *
+ * Orange (#ffa657 dark / #bc4c00 light) is exposed as `--chart-orange`
+ * for use as a fourth Recharts series color — there is no Tailwind
+ * `orange-*` scale because no component uses `orange-*` utilities.
+ */
+:root {
+  --chart-grid: #d1d9e0;
+  --chart-axis: #59636e;
+  --chart-tooltip-bg: #f6f8fa;  /* matches --bg-surface — no pure white */
+  --chart-tooltip-border: #d1d9e0;
+  --chart-tooltip-fg: #1f2328;
+  --chart-tooltip-muted: #59636e;
+  --chart-total: #1f2328;
+  --chart-baseline: #22c55e;  /* amber CTA green — light mode */
+  --chart-orange: #bc4c00;
+}
+.dark {
+  --chart-grid: #21262d;
+  --chart-axis: #8b949e;
+  --chart-tooltip-bg: #161b22;
+  --chart-tooltip-border: #30363d;
+  --chart-tooltip-fg: #c9d1d9;
+  --chart-tooltip-muted: #8b949e;
+  --chart-total: #c9d1d9;
+  --chart-baseline: #22c55e;  /* amber CTA green — dark mode */
+  --chart-orange: #ffa657;
+}
+
+/*
+ * Semantic design tokens — the single source of truth for surfaces,
+ * text, and borders across the app. Components reference these via
+ * utility classes (.fg-primary, .bg-surface, .border-default, etc.)
+ * so a palette change touches one block instead of dozens of class
+ * strings.
+ *
+ * Three-tier surface hierarchy in both modes (light / dark):
+ *   Main canvas       #e9eef2 / #0d1117   bg-page  (the surface you stare at)
+ *   Secondary canvas  #dde4ea / #161b22   bg-canvas-subtle  (insets, sidebar)
+ *   Overlay           #f6f8fa / #21262d   bg-surface  (lifted cards/modals)
+ *
+ * Note: light mode deliberately avoids pure white on every surface —
+ * the page is the most muted, the lifted overlay is slightly lighter
+ * for subtle elevation. Reduces "flash bang" on large monitors.
+ *
+ *   Primary text      #1f2328 / #c9d1d9   fg-primary
+ *   Secondary text    #59636e / #8b949e   fg-secondary
+ *   Border default    #d1d9e0 / #30363d
+ */
+:root {
+  --fg-primary: #1f2328;
+  --fg-secondary: #59636e;
+  --fg-tertiary: #6e7681;
+  --fg-muted: #8b949e;
+  --bg-surface: #f6f8fa;
+  --bg-canvas-subtle: #dde4ea;
+  --bg-page: #e9eef2;
+  --border-default: #d1d9e0;
+  --border-strong: #afb8c1;
+}
+.dark {
+  --fg-primary: #c9d1d9;
+  --fg-secondary: #8b949e;
+  --fg-tertiary: #6e7681;
+  --fg-muted: #484f58;
+  --bg-surface: #21262d;
+  --bg-canvas-subtle: #161b22;
+  --bg-page: #0d1117;
+  --border-default: #30363d;
+  --border-strong: #484f58;
+}
+
+.fg-primary { color: var(--fg-primary); }
+.fg-secondary { color: var(--fg-secondary); }
+.fg-tertiary { color: var(--fg-tertiary); }
+.fg-muted { color: var(--fg-muted); }
+.bg-surface { background-color: var(--bg-surface); }
+.bg-page { background-color: var(--bg-page); }
+.bg-canvas-subtle { background-color: var(--bg-canvas-subtle); }
+.border-default { border-color: var(--border-default); }
