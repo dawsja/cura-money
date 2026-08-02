@@ -15,6 +15,7 @@ import { Paydown } from './pages/Paydown';
 import { SaveUp } from './pages/SaveUp';
 import { Reports } from './pages/Reports';
 import { Rules } from './pages/Rules';
+import { Recurring } from './pages/Recurring';
 
 interface SetupStatus {
   needsSetup: boolean;
@@ -77,6 +78,7 @@ export default function App() {
           <Route path="/saveup" element={<SaveUp />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/rules" element={<Rules />} />
+          <Route path="/recurring" element={<Recurring />} />
           <Route path="/admin/settings" element={<AdminSettings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

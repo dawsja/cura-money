@@ -2315,3 +2315,96 @@ export async function getBudgetVsActual(
   out.sort((a, b) => Math.max(b.planned, b.actual) - Math.max(a.planned, a.actual));
   return out;
 }
+
+// ---- Recurring charges detection ----------------------------------------
+
+export interface RecurringCharge {
+  merchant: string;
+  amount: number;
+  frequency: 'monthly' | 'quarterly' | 'yearly';
+  occurrences: number;
+  lastDate: string;
+  category: string;
+  account: string;
+}
+
+/**
+ * Detect recurring charges by finding transactions from the same merchant
+ * with the same amount that appear in multiple months. Groups by
+ * merchant + amount (rounded to 2 decimal places) and returns candidates
+ * that appear at least 2 times across distinct months.
+ */
+export async function getRecurringCharges(userId: string): Promise<RecurringCharge[]> {
+  // Fetch all expense transactions (recurring charges are expenses), excluding hidden accounts
+  const meta = new Map<string, { hidden: boolean; alias: string | null }>();
+  for (const r of await db
+    .select({ name: accounts.name, hidden: accounts.hidden, alias: accounts.alias })
+    .from(accounts)
+    .where(eq(accounts.userId, userId))) {
+    meta.set(r.name, { hidden: r.hidden, alias: r.alias ?? null });
+  }
+
+  const rows = await db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.type, 'expense')))
+    .orderBy(desc(transactions.date));
+
+  // Filter hidden accounts and group by merchant + rounded amount
+  const groups = new Map<string, { merchant: string; amount: number; dates: string[]; category: string; account: string }>();
+
+  for (const r of rows) {
+    if (meta.get(r.account)?.hidden) continue;
+    const amount = Math.round(r.amount * 100) / 100;
+    const key = `${r.merchant.toLowerCase()}|${amount}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.dates.push(r.date);
+    } else {
+      groups.set(key, {
+        merchant: r.merchant,
+        amount,
+        dates: [r.date],
+        category: r.category,
+        account: meta.get(r.account)?.alias || r.account,
+      });
+    }
+  }
+
+  const results: RecurringCharge[] = [];
+
+  for (const g of groups.values()) {
+    // Get distinct months
+    const months = new Set(g.dates.map((d) => d.slice(0, 7)));
+    if (months.size < 2) continue;
+
+    // Determine frequency based on average gap between occurrences
+    const sortedDates = [...g.dates].sort();
+    let totalGapDays = 0;
+    for (let i = 1; i < sortedDates.length; i++) {
+      const prev = new Date(sortedDates[i - 1]!);
+      const curr = new Date(sortedDates[i]!);
+      totalGapDays += (curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24);
+    }
+    const avgGap = totalGapDays / (sortedDates.length - 1);
+
+    let frequency: 'monthly' | 'quarterly' | 'yearly';
+    if (avgGap <= 45) frequency = 'monthly';
+    else if (avgGap <= 120) frequency = 'quarterly';
+    else frequency = 'yearly';
+
+    results.push({
+      merchant: g.merchant,
+      amount: g.amount,
+      frequency,
+      occurrences: g.dates.length,
+      lastDate: sortedDates[sortedDates.length - 1]!,
+      category: g.category,
+      account: g.account,
+    });
+  }
+
+  // Sort by most recent last date, then by amount descending
+  results.sort((a, b) => b.lastDate.localeCompare(a.lastDate) || b.amount - a.amount);
+  return results;
+}
