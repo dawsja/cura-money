@@ -30,6 +30,7 @@ interface Account {
   name: string;
   type: 'checking' | 'savings' | 'credit' | 'investment' | 'loan';
   plannedPayment: number;
+  minPayment: number;
   includeInPaydown: boolean;
   hidden: boolean;
 }
@@ -124,7 +125,7 @@ export function Budget() {
     for (const a of accounts.data ?? []) {
       if (!a.includeInPaydown) continue;
       if (a.type !== 'credit' && a.type !== 'loan') continue;
-      plannedDebt += snapshotByAccount.get(a.id) ?? a.plannedPayment ?? 0;
+      plannedDebt += snapshotByAccount.get(a.id) ?? (a.plannedPayment > 0 ? a.plannedPayment : a.minPayment ?? 0);
     }
     return { plannedIncome, earnedIncome, plannedExpense, spentExpense, plannedDebt };
   }, [cats.data, mergedPlanned, earnedMap, spentMap, accounts.data, paydownSnapshot.data]);
