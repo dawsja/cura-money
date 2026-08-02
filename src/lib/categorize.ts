@@ -216,8 +216,17 @@ export function inferAccountType(
     }
   }
 
-  // (2) Negative balance — credit/loan.
-  if (balance < -100) return 'credit';
+  // (2) Negative balance — credit or loan. Check for loan keywords
+  //     first so a "Personal Loan" or "Auto Loan" with a negative
+  //     balance isn't misclassified as a credit card.
+  if (balance < -100) {
+    if (
+      lowerName.includes('loan') || lowerName.includes('mortgage') ||
+      lowerName.includes('debt') || lowerName.includes('student') ||
+      lowerName.includes('auto loan') || lowerName.includes('personal loan')
+    ) return 'loan';
+    return 'credit';
+  }
 
   // (3) Institution signal. Strong investment org names imply
   // investment even when the account name is generic.
