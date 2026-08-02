@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { formatMoney } from '../lib/format';
-import { netWorthContribution } from '../lib/accounting';
+import { netWorthContribution, isLiability } from '../lib/accounting';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, TrendingUp, TrendingDown, Wallet, PiggyBank, ArrowLeftRight } from 'lucide-react';
 import { SummaryCard } from '../components/SummaryCard';
@@ -48,6 +48,16 @@ export function Dashboard() {
   const net30 = income - expense;
   const transferCount = last30.filter((t) => t.type === 'transfer').length;
 
+  // Assets vs Liabilities breakdown
+  const assetAccounts = accounts.data?.filter((a) => !isLiability(a.type)) ?? [];
+  const liabilityAccounts = accounts.data?.filter((a) => isLiability(a.type)) ?? [];
+  const totalAssets = assetAccounts.reduce((s, a) => s + Math.abs(a.balance), 0);
+  const totalLiabilities = liabilityAccounts.reduce((s, a) => s + Math.abs(a.balance), 0);
+  const cashTotal = assetAccounts.filter((a) => a.type === 'checking' || a.type === 'savings').reduce((s, a) => s + Math.abs(a.balance), 0);
+  const investmentTotal = assetAccounts.filter((a) => a.type === 'investment').reduce((s, a) => s + Math.abs(a.balance), 0);
+  const creditTotal = liabilityAccounts.filter((a) => a.type === 'credit').reduce((s, a) => s + Math.abs(a.balance), 0);
+  const loanTotal = liabilityAccounts.filter((a) => a.type === 'loan').reduce((s, a) => s + Math.abs(a.balance), 0);
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold fg-primary">Dashboard</h1>
@@ -91,6 +101,46 @@ export function Dashboard() {
           icon={<PiggyBank className="h-4 w-4" />}
         />
       </div>
+
+      <section className="card">
+        <h2 className="text-lg font-semibold fg-primary mb-4">Assets & Liabilities</h2>
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Assets */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-semibold fg-primary">Assets</span>
+              <span className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatMoney(totalAssets)}</span>
+            </div>
+            <ul className="space-y-1.5 pl-3">
+              <li className="flex items-center justify-between text-sm">
+                <span className="fg-muted">Cash</span>
+                <span className="tabular-nums fg-primary">{formatMoney(cashTotal)}</span>
+              </li>
+              <li className="flex items-center justify-between text-sm">
+                <span className="fg-muted">Investments</span>
+                <span className="tabular-nums fg-primary">{formatMoney(investmentTotal)}</span>
+              </li>
+            </ul>
+          </div>
+          {/* Liabilities */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-semibold fg-primary">Liabilities</span>
+              <span className="text-sm font-semibold tabular-nums text-rose-600 dark:text-rose-400">{formatMoney(totalLiabilities)}</span>
+            </div>
+            <ul className="space-y-1.5 pl-3">
+              <li className="flex items-center justify-between text-sm">
+                <span className="fg-muted">Credit Cards</span>
+                <span className="tabular-nums fg-primary">{formatMoney(creditTotal)}</span>
+              </li>
+              <li className="flex items-center justify-between text-sm">
+                <span className="fg-muted">Loans</span>
+                <span className="tabular-nums fg-primary">{formatMoney(loanTotal)}</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
 
       <section className="card">
         <div className="flex items-center justify-between mb-3">
