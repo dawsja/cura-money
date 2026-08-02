@@ -384,6 +384,10 @@ export function Transactions() {
   // queue if the user left needs_review unset on creation).
   const [addOpen, setAddOpen] = useState(false);
 
+  // Mobile detail modal — tapping a row on small screens opens a
+  // read-only detail sheet showing all fields.
+  const [detailTx, setDetailTx] = useState<Transaction | null>(null);
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold fg-primary">Transactions</h1>
@@ -527,13 +531,13 @@ export function Transactions() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase fg-muted">
-                <th className="py-2">Date</th>
+                <th className="py-2 hidden md:table-cell">Date</th>
                 <th className="py-2">Merchant</th>
-                <th className="py-2">Type</th>
-                <th className="py-2">Category</th>
-                <th className="py-2">Account</th>
+                <th className="py-2 hidden md:table-cell">Type</th>
+                <th className="py-2 hidden md:table-cell">Category</th>
+                <th className="py-2 hidden md:table-cell">Account</th>
                 <th className="py-2 text-right">Amount</th>
-                <th className="py-2" />
+                <th className="py-2 hidden md:table-cell" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -554,8 +558,8 @@ export function Transactions() {
                   return JSON.stringify({ category: cat.name });
                 })();
                 return (
-                  <tr key={t.id}>
-                    <td className="py-2 whitespace-nowrap fg-secondary">{formatDate(t.date)}</td>
+                  <tr key={t.id} className="md:cursor-default cursor-pointer" onClick={() => { if (window.innerWidth < 768) setDetailTx(t); }}>
+                    <td className="py-2 whitespace-nowrap fg-secondary hidden md:table-cell">{formatDate(t.date)}</td>
                     <td className="py-2 fg-primary">{t.merchant}</td>
                     {/* Type drop-down. Neutral styling so the open menu's
                         options stay readable; the amount cell carries
@@ -563,7 +567,7 @@ export function Transactions() {
                         change (no save button) and PATCHes the row's
                         type + a category from the new bucket in the
                         same call so the row stays consistent. */}
-                    <td className="py-2">
+                    <td className="py-2 hidden md:table-cell">
                       <select
                         value={t.type}
                         disabled={updateTypeInline.isPending}
@@ -601,7 +605,7 @@ export function Transactions() {
                         ))}
                       </select>
                     </td>
-                    <td className="py-2">
+                    <td className="py-2 hidden md:table-cell">
                       <select
                         value={currentValue}
                         onChange={(e) => onPickCategory(t.id, e.target.value)}
@@ -621,12 +625,12 @@ export function Transactions() {
                         ))}
                       </select>
                     </td>
-                    <td className="py-2 fg-tertiary">{t.account}</td>
+                    <td className="py-2 fg-tertiary hidden md:table-cell">{t.account}</td>
                     <td className={clsx('py-2 text-right font-semibold tabular-nums', TYPE_STYLE[t.type].amount)}>
                       {TYPE_STYLE[t.type].sign}{formatMoney(t.amount)}
                     </td>
-                    <td className="py-2 text-right">
-                      <button onClick={() => del.mutate(t.id)} className="text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-900/30 rounded p-1">
+                    <td className="py-2 text-right hidden md:table-cell">
+                      <button onClick={(e) => { e.stopPropagation(); del.mutate(t.id); }} className="text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-900/30 rounded p-1">
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </td>
@@ -762,6 +766,103 @@ export function Transactions() {
           }}
         />
       )}
+
+      {detailTx && (
+        <TransactionDetailModal
+          transaction={detailTx}
+          onClose={() => setDetailTx(null)}
+          onDelete={(id) => { del.mutate(id); setDetailTx(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * TransactionDetailModal — mobile-only bottom sheet showing full details
+ * of a tapped transaction. Renders date, merchant, type, category,
+ * account, amount, and notes in a readable card layout. Includes a
+ * delete action so the user doesn't lose that capability on mobile.
+ */
+function TransactionDetailModal({
+  transaction: t,
+  onClose,
+  onDelete,
+}: {
+  transaction: Transaction;
+  onClose: () => void;
+  onDelete: (id: string) => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Transaction details"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 md:hidden"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="card w-full rounded-b-none rounded-t-2xl max-h-[80vh] overflow-y-auto pb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold fg-primary">Transaction Details</h3>
+          <button type="button" onClick={onClose} className="fg-muted hover:fg-secondary" aria-label="Close">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <dl className="space-y-3 text-sm">
+          <div className="flex justify-between">
+            <dt className="fg-tertiary">Date</dt>
+            <dd className="fg-primary font-medium">{formatDate(t.date)}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="fg-tertiary">Merchant</dt>
+            <dd className="fg-primary font-medium">{t.merchant}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="fg-tertiary">Type</dt>
+            <dd className="fg-primary font-medium">{TYPE_STYLE[t.type].label}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="fg-tertiary">Category</dt>
+            <dd className="fg-primary font-medium">{t.subCategory ? `${t.category} › ${t.subCategory}` : t.category}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="fg-tertiary">Account</dt>
+            <dd className="fg-primary font-medium">{t.account}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="fg-tertiary">Amount</dt>
+            <dd className={clsx('font-semibold tabular-nums', TYPE_STYLE[t.type].amount)}>
+              {TYPE_STYLE[t.type].sign}{formatMoney(t.amount)}
+            </dd>
+          </div>
+          {t.notes && (
+            <div className="flex justify-between">
+              <dt className="fg-tertiary">Notes</dt>
+              <dd className="fg-primary font-medium text-right max-w-[60%]">{t.notes}</dd>
+            </div>
+          )}
+        </dl>
+
+        <div className="mt-6 flex justify-end">
+          <button
+            type="button"
+            onClick={() => onDelete(t.id)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 px-3 py-2 text-sm font-medium hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-colors"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
