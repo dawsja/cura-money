@@ -3,7 +3,7 @@ import { api } from '../lib/api';
 import { formatMoney } from '../lib/format';
 import { netWorthContribution, isLiability } from '../lib/accounting';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, TrendingUp, TrendingDown, Wallet, PiggyBank, ArrowLeftRight } from 'lucide-react';
+import { ArrowRight, TrendingUp, TrendingDown, Wallet, ArrowLeftRight } from 'lucide-react';
 import { SummaryCard } from '../components/SummaryCard';
 import clsx from 'clsx';
 
@@ -45,7 +45,6 @@ export function Dashboard() {
   // between two of the user's own accounts and don't change net worth.
   const income = last30.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const expense = last30.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-  const net30 = income - expense;
   const transferCount = last30.filter((t) => t.type === 'transfer').length;
 
   // Assets vs Liabilities breakdown
@@ -86,21 +85,6 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <SummaryCard
-          label="Net (30d)"
-          sub={net30 >= 0 ? 'Cash flow is positive' : 'Cash flow is negative'}
-          tone={net30 >= 0 ? 'emerald' : 'rose'}
-          value={`${net30 >= 0 ? '+' : '−'}${formatMoney(Math.abs(net30))}`}
-        />
-        <SummaryCard
-          label="Accounts"
-          sub={`${accounts.data?.length ?? 0} tracked`}
-          value={String(accounts.data?.length ?? 0)}
-          tone="slate"
-          icon={<PiggyBank className="h-4 w-4" />}
-        />
-      </div>
 
       <section className="card">
         <h2 className="text-lg font-semibold fg-primary mb-4">Assets & Liabilities</h2>
@@ -180,7 +164,7 @@ export function Dashboard() {
           </div>
         </div>
         <ul className="divide-y divide-slate-100 dark:divide-slate-700">
-          {txns.data?.slice(0, 8).map((t) => {
+          {txns.data?.slice(0, 4).map((t) => {
             const style = txTypeStyle(t.type);
             return (
               <li key={t.id} className="flex justify-between py-2 text-sm">

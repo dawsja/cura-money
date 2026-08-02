@@ -21,7 +21,6 @@ export function Header() {
     <header className="shrink-0 flex items-center justify-between bg-page px-4 md:px-8 py-3">
       <div className="md:hidden flex items-center gap-2">
         <img src="/logo.png" alt="Cura Money" className="h-7 w-7" />
-        <span className="font-bold fg-primary">Cura Money</span>
       </div>
       {/* On md+ screens the sidebar carries the brand; the right cluster
           holds the bell + profile menu in a single flex row. The bell
