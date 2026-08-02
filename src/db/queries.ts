@@ -1068,7 +1068,7 @@ export async function getPaydownSnapshotMeta(
  */
 export async function syncMonthlyPaydown(userId: string, yearMonth: string): Promise<{ rowCount: number; syncedAt: Date }> {
   const rows = await db
-    .select({ id: accounts.id, type: accounts.type, plannedPayment: accounts.plannedPayment })
+    .select({ id: accounts.id, type: accounts.type, plannedPayment: accounts.plannedPayment, minPayment: accounts.minPayment })
     .from(accounts)
     .where(and(eq(accounts.userId, userId), eq(accounts.includeInPaydown, true)));
   const snapshottable = rows.filter((r) => r.type === 'credit' || r.type === 'loan');
@@ -1089,18 +1089,22 @@ export async function syncMonthlyPaydown(userId: string, yearMonth: string): Pro
 
   await db.transaction(async (tx) => {
     for (const row of snapshottable) {
+      // Fall back to minPayment when plannedPayment is 0 — matches the
+      // scenario path in syncMonthlyPaydownWithScenario so accounts that
+      // rely on the minimum are never snapshotted as $0.
+      const planned = row.plannedPayment > 0 ? row.plannedPayment : row.minPayment;
       await tx
         .insert(monthlyPaydown)
         .values({
           userId,
           accountId: row.id,
           yearMonth,
-          planned: row.plannedPayment,
+          planned,
           updatedAt: syncedAt,
         })
         .onConflictDoUpdate({
           target: [monthlyPaydown.userId, monthlyPaydown.accountId, monthlyPaydown.yearMonth],
-          set: { planned: row.plannedPayment, updatedAt: syncedAt },
+          set: { planned, updatedAt: syncedAt },
         });
     }
     await tx
@@ -1257,6 +1261,7 @@ export async function getPaydownModalData(userId: string, yearMonth: string): Pr
       type: accounts.type,
       interestRate: accounts.interestRate,
       plannedPayment: accounts.plannedPayment,
+      minPayment: accounts.minPayment,
       includeInPaydown: accounts.includeInPaydown,
       hidden: accounts.hidden,
     })
@@ -1314,7 +1319,7 @@ export async function getPaydownModalData(userId: string, yearMonth: string): Pr
   const meta = await getPaydownSnapshotMeta(userId, yearMonth);
 
   const rows: PaydownModalRow[] = visible.map((a) => {
-    const planned = snapshotByAccount.get(a.id) ?? a.plannedPayment;
+    const planned = snapshotByAccount.get(a.id) ?? (a.plannedPayment > 0 ? a.plannedPayment : a.minPayment);
     const actual = actualByName.get(a.name) ?? 0;
     return {
       accountId: a.id,

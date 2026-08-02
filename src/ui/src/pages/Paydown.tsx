@@ -120,6 +120,7 @@ export function Paydown() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [toast, setToast] = useState<{ rowCount: number; ym: string } | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // Baseline projection — "Planned" with no extras. Drives the chart
   // when no simulation is active.
@@ -188,9 +189,14 @@ export function Paydown() {
       });
     },
     onSuccess: (result) => {
+      setSyncError(null);
       qc.invalidateQueries({ queryKey: ['paydown'] });
       qc.invalidateQueries({ queryKey: ['accounts'] });
+      qc.invalidateQueries({ queryKey: ['budget'] });
       setToast({ rowCount: result.rowCount, ym: currentYm });
+    },
+    onError: () => {
+      setSyncError('Failed to save to budget. Please try again.');
     },
   });
 
@@ -199,6 +205,12 @@ export function Paydown() {
     const t = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(t);
   }, [toast]);
+
+  useEffect(() => {
+    if (!syncError) return;
+    const t = setTimeout(() => setSyncError(null), 5000);
+    return () => clearTimeout(t);
+  }, [syncError]);
 
   const editing = baseline.data ?? EMPTY;
   const active = simulation.data ?? (showSim ? null : editing);
@@ -303,6 +315,21 @@ export function Paydown() {
           <button
             type="button"
             onClick={() => setToast(null)}
+            className="fg-muted hover:fg-secondary"
+            aria-label="Dismiss"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {syncError && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-sm rounded-lg border border-rose-300 dark:border-rose-700 bg-surface shadow-lg px-4 py-3 text-sm flex items-start gap-3">
+          <AlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0 fg-primary">{syncError}</div>
+          <button
+            type="button"
+            onClick={() => setSyncError(null)}
             className="fg-muted hover:fg-secondary"
             aria-label="Dismiss"
           >
