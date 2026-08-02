@@ -52,13 +52,13 @@ export function PaydownBudgetSection({
           {isCollapsed ? <ChevronRight className="h-4 w-4 fg-muted" /> : <ChevronDown className="h-4 w-4 fg-muted" />}
           {title}
         </h2>
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-3 sm:gap-6">
           {meta.syncedAt && (
             <span className="hidden sm:inline text-xs fg-muted tabular-nums">
               Last synced: <span className="fg-secondary">{timeAgo(meta.syncedAt)}</span>
             </span>
           )}
-          <div className="flex items-baseline gap-6 text-sm tabular-nums">
+          <div className="flex items-baseline gap-3 sm:gap-6 text-sm tabular-nums">
             <div className="hidden sm:block">
               <span className="fg-muted text-xs uppercase tracking-wider mr-2">Planned</span>
               <span className="font-semibold fg-primary">{formatMoney(totalPlanned)}</span>
@@ -68,7 +68,7 @@ export function PaydownBudgetSection({
               <span className="font-semibold fg-primary">{formatMoney(totalActual)}</span>
             </div>
             <div>
-              <span className="fg-muted text-xs uppercase tracking-wider mr-2">Remaining</span>
+              <span className="fg-muted text-xs uppercase tracking-wider mr-1 sm:mr-2">Left</span>
               <span className={clsx(
                 'font-semibold',
                 totalRemaining < 0
@@ -83,11 +83,66 @@ export function PaydownBudgetSection({
       </button>
 
       {!isCollapsed && (
-        <div className="px-4 pb-3 pt-1">
+        <div className="px-2 sm:px-4 pb-3 pt-1">
           {rows.length === 0 ? (
             <EmptyState onSyncClick={() => navigate('/paydown')} synced={!!meta.syncedAt} />
           ) : (
-            <table className="w-full text-sm table-fixed">
+            <>
+              {/* Mobile card-list layout */}
+              <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-700">
+                {rows.map((r) => {
+                  const showProgress = r.planned > 0;
+                  const pct = showProgress ? Math.min(100, (r.actual / r.planned) * 100) : 0;
+                  return (
+                    <div key={r.accountId} className="py-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm fg-primary font-medium flex items-center gap-1.5 truncate">
+                          {r.type === 'credit' ? (
+                            <CreditCard className="h-3.5 w-3.5 fg-muted shrink-0" />
+                          ) : (
+                            <Banknote className="h-3.5 w-3.5 fg-muted shrink-0" />
+                          )}
+                          {r.accountName}
+                        </span>
+                        <span className={clsx(
+                          'text-sm font-semibold tabular-nums shrink-0',
+                          r.remaining < 0
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : 'text-emerald-600 dark:text-emerald-400',
+                        )}>
+                          {r.remaining < 0 ? '−' : ''}{formatMoney(Math.abs(r.remaining))}
+                        </span>
+                      </div>
+                      {showProgress && (
+                        <Progress value={pct} tone="slate" className="w-full" />
+                      )}
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="fg-muted tabular-nums">{(r.apr * 100).toFixed(2)}% APR</span>
+                        <span className="fg-secondary tabular-nums">
+                          {formatMoney(r.planned)} planned · {formatMoney(r.actual)} actual
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="py-2.5 flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold fg-primary">Total</span>
+                  <div className="flex items-center gap-3 text-xs tabular-nums">
+                    <span className="fg-secondary">{formatMoney(totalPlanned)} planned</span>
+                    <span className={clsx(
+                      'text-sm font-semibold',
+                      totalRemaining < 0
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-emerald-600 dark:text-emerald-400',
+                    )}>
+                      {totalRemaining < 0 ? '−' : ''}{formatMoney(Math.abs(totalRemaining))}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Desktop table */}
+              <table className="hidden sm:table w-full text-sm table-fixed">
               <colgroup>
                 <col />
                 <col className="w-40" />
@@ -161,6 +216,7 @@ export function PaydownBudgetSection({
                 </tr>
               </tbody>
             </table>
+            </>
           )}
         </div>
       )}
