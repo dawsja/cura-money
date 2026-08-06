@@ -1,0 +1,430 @@
+@import 'tailwindcss';
+
+/*
+ * Dark-only app. There is no light mode and no theme toggle.
+ *
+ * Many components still use `dark:` utility pairs from the dual-theme
+ * era (`text-rose-600 dark:text-rose-400`). The custom variant below
+ * makes every `dark:` selector always match, so those pairs resolve to
+ * the dark side without a mass component rewrite. Prefer bare utilities
+ * (or semantic tokens) for new code.
+ */
+@custom-variant dark (&);
+
+/*
+ * ============================================================================
+ * GITHUB DARK + GREEN CTA — Dark only
+ * ============================================================================
+ *
+ * Single source of truth for the app's palette. Every Tailwind color scale
+ * (slate / amber / emerald / rose / sky / violet) is wired through a CSS
+ * variable on `:root`.
+ *
+ * Surfaces mirror GitHub Dark's primer palette (canvas/overlay hierarchy
+ * + syntax accents):
+ *
+ *   #0d1117  Main canvas (color-canvas-default)
+ *   #161b22  Secondary canvas (color-canvas-subtle)
+ *   #21262d  Overlay / elevated (color-canvas-overlay)
+ *   #30363d  Border
+ *   #c9d1d9  Primary text
+ *   #8b949e  Secondary text
+ *
+ *   #22c55e  Green CTA              (Tailwind `amber-*` scale — vivid fresh green)
+ *   #3fb950  Success green          (Tailwind `emerald-*` scale)
+ *   #ff7b72  Danger red             (Tailwind `rose-*` scale)
+ *   #d29922  Warning yellow         (Tailwind `sky-*` scale)
+ *   #d2a8ff  Purple depth           (Tailwind `violet-*` scale)
+ *   #ffa657  Orange (chart only)
+ *
+ * The CTA is GREEN (not GitHub's blue) — distinguishes the app's brand.
+ * amber-500 = #22c55e: medium-saturation so dark text (slate-900 /
+ * #0d1117) passes AA (~7.2:1). Existing `bg-amber-500 text-slate-900`
+ * patterns keep working.
+ *
+ * The amber and emerald scales are intentionally BOTH green but with
+ * distinct shades:
+ *   - amber = vivid Tailwind green-500 (#22c55e) → the brand CTA
+ *   - emerald = GitHub Primer green (#3fb950) → success / "all good"
+ * They share the green family but stay visually distinguishable.
+ *
+ * Accent scales are non-monotonic (role-driven): 200/300/400 are LIGHT
+ * for readable text on dark surfaces; 50/100/700+ are dark for subtle
+ * backgrounds. Do not flatten to a conventional light→dark ramp.
+ *
+ * Slate is a shared cool-neutral ramp: light slots double as readable
+ * light text (`text-slate-100`) and dark slots as elevated surfaces.
+ *
+ * Orange (#ffa657) is NOT a Tailwind `orange-*` scale — only
+ * `--chart-orange` for Recharts.
+ */
+@theme {
+  /* ── Amber = Green primary CTA (see file header for why green) ──── */
+  --color-amber-50:  var(--mp-amber-50);
+  --color-amber-100: var(--mp-amber-100);
+  --color-amber-200: var(--mp-amber-200);
+  --color-amber-300: var(--mp-amber-300);
+  --color-amber-400: var(--mp-amber-400);
+  --color-amber-500: var(--mp-amber-500);
+  --color-amber-600: var(--mp-amber-600);
+  --color-amber-700: var(--mp-amber-700);
+  --color-amber-800: var(--mp-amber-800);
+  --color-amber-900: var(--mp-amber-900);
+
+  /* ── Slate = Neutrals (cool-neutral ramp — see header) ──────────── */
+  --color-slate-50:  var(--mp-slate-50);
+  --color-slate-100: var(--mp-slate-100);
+  --color-slate-200: var(--mp-slate-200);
+  --color-slate-300: var(--mp-slate-300);
+  --color-slate-400: var(--mp-slate-400);
+  --color-slate-500: var(--mp-slate-500);
+  --color-slate-600: var(--mp-slate-600);
+  --color-slate-700: var(--mp-slate-700);
+  --color-slate-800: var(--mp-slate-800);
+  --color-slate-900: var(--mp-slate-900);
+
+  /* ── Emerald = Success (green) ──────────────────────────────────── */
+  --color-emerald-50:  var(--mp-emerald-50);
+  --color-emerald-100: var(--mp-emerald-100);
+  --color-emerald-300: var(--mp-emerald-300);
+  --color-emerald-400: var(--mp-emerald-400);
+  --color-emerald-500: var(--mp-emerald-500);
+  --color-emerald-600: var(--mp-emerald-600);
+  --color-emerald-700: var(--mp-emerald-700);
+  --color-emerald-900: var(--mp-emerald-900);
+
+  /* ── Rose = Danger (red) ─────────────────────────────────────────── */
+  --color-rose-50:  var(--mp-rose-50);
+  --color-rose-100: var(--mp-rose-100);
+  --color-rose-300: var(--mp-rose-300);
+  --color-rose-400: var(--mp-rose-400);
+  --color-rose-500: var(--mp-rose-500);
+  --color-rose-600: var(--mp-rose-600);
+  --color-rose-700: var(--mp-rose-700);
+  --color-rose-900: var(--mp-rose-900);
+
+  /* ── Sky = Warning (yellow) ─────────────────────────────────────── */
+  --color-sky-50:  var(--mp-sky-50);
+  --color-sky-100: var(--mp-sky-100);
+  --color-sky-300: var(--mp-sky-300);
+  --color-sky-500: var(--mp-sky-500);
+  --color-sky-700: var(--mp-sky-700);
+  --color-sky-900: var(--mp-sky-900);
+
+  /* ── Violet = Depth (purple) ────────────────────────────────────── */
+  --color-violet-600: var(--mp-violet-600);
+
+  /* ── Pure black/white — overlays and button labels ──────────────── */
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+/*
+ * ── Palette tokens (dark only) ─────────────────────────────────────
+ * GitHub Dark canvas hierarchy + green CTA. Amber/emerald/rose/sky are
+ * non-monotonic: 200/300/400 are LIGHT readable text on dark; 50/100
+ * are deep tint backgrounds.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Mobile app geometry. These stay separate from the palette so the
+     shell can account for notches and the home indicator consistently. */
+  --app-header-height: 4rem;
+  --app-tab-height: 4.25rem;
+
+  /* Slate — cool blue-gray ramp (light end = readable text on dark). */
+  --mp-slate-50:  #f6f8fa;
+  --mp-slate-100: #eaeef2;
+  --mp-slate-200: #d1d9e0;
+  --mp-slate-300: #afb8c1;
+  --mp-slate-400: #8b949e;
+  --mp-slate-500: #6e7681;
+  --mp-slate-600: #57606a;
+  --mp-slate-700: #424a53;
+  --mp-slate-800: #32383f;
+  --mp-slate-900: #0d1117;  /* darkest — text on amber buttons (~7.2:1 on #22c55e) */
+
+  /* Amber = Green primary CTA (non-monotonic). */
+  --mp-amber-50:  #052e16;  /* deep green bg */
+  --mp-amber-100: #0d3f1f;
+  --mp-amber-200: #86efac;  /* light, readable text on dark */
+  --mp-amber-300: #4ade80;  /* light, readable text on dark */
+  --mp-amber-400: #4ade80;  /* light, readable text on dark */
+  --mp-amber-500: #22c55e;  /* primary CTA — dark text passes AA (~7.2:1) */
+  --mp-amber-600: #16a34a;  /* CTA hover */
+  --mp-amber-700: #15803d;
+  --mp-amber-800: #166534;
+  --mp-amber-900: #14532d;
+
+  /* Emerald = Success (GitHub Primer green, non-monotonic). */
+  --mp-emerald-50:  #033a16;
+  --mp-emerald-100: #062e15;
+  --mp-emerald-300: #7ee787;  /* light, readable on dark */
+  --mp-emerald-400: #56d364;  /* light, readable on dark */
+  --mp-emerald-500: #3fb950;  /* success (GitHub syntax green) */
+  --mp-emerald-600: #2ea043;
+  --mp-emerald-700: #238636;
+  --mp-emerald-900: #033a16;
+
+  /* Rose = Danger (GitHub Primer red, non-monotonic) */
+  --mp-rose-50:  #460809;
+  --mp-rose-100: #67060c;
+  --mp-rose-300: #ff8a82;  /* light, readable on dark */
+  --mp-rose-400: #ff6e64;  /* light, readable on dark */
+  --mp-rose-500: #ff7b72;  /* danger (GitHub syntax red) */
+  --mp-rose-600: #cf222e;
+  --mp-rose-700: #a40e26;
+  --mp-rose-900: #460809;
+
+  /* Sky = Warning (GitHub Primer attention yellow, non-monotonic) */
+  --mp-sky-50:  #341a00;
+  --mp-sky-100: #4a2900;
+  --mp-sky-300: #d29922;  /* light, readable on dark */
+  --mp-sky-500: #bb8009;  /* warning CTA */
+  --mp-sky-700: #9a6700;
+  --mp-sky-900: #573a00;
+
+  /* Violet = Purple depth accent (GitHub syntax purple) */
+  --mp-violet-600: #d2a8ff;
+
+  /* Chart palette */
+  --chart-grid: #21262d;
+  --chart-axis: #8b949e;
+  --chart-tooltip-bg: #161b22;
+  --chart-tooltip-border: #30363d;
+  --chart-tooltip-fg: #c9d1d9;
+  --chart-tooltip-muted: #8b949e;
+  --chart-total: #c9d1d9;
+  --chart-baseline: #22c55e;  /* amber CTA green */
+  --chart-orange: #ffa657;
+
+  /* Semantic surfaces / text / borders */
+  --fg-primary: #c9d1d9;
+  --fg-secondary: #8b949e;
+  --fg-tertiary: #6e7681;
+  --fg-muted: #484f58;
+  --bg-surface: #21262d;
+  --bg-canvas-subtle: #161b22;
+  --bg-page: #0d1117;
+  --border-default: #30363d;
+  --border-strong: #484f58;
+  --coffee-accent: #c58b5a;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--bg-page);
+  color: var(--fg-primary);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-shell {
+  height: 100%;
+  height: 100dvh;
+}
+
+.app-header-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.app-main {
+  scroll-padding-top: 1rem;
+  scrollbar-gutter: stable;
+}
+
+.app-tab-bar {
+  min-height: var(--app-tab-height);
+}
+
+.app-mobile-bottom-space {
+  padding-bottom: calc(var(--app-tab-height) + env(safe-area-inset-bottom, 0px) + 1rem);
+}
+
+.app-toast {
+  bottom: calc(var(--app-tab-height) + env(safe-area-inset-bottom, 0px) + 0.75rem);
+  left: 1rem;
+  right: 1rem;
+}
+
+.mobile-sheet {
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 0.75rem);
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+}
+
+.btn-primary {
+  background: var(--mp-amber-500);
+  /* Dark text on the green CTA — AGENTS.md: amber buttons always use
+     dark text. Contrast vs. #22c55e ≈ 7.2:1 with --mp-slate-900. */
+  color: var(--mp-slate-900);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  transition: background 150ms;
+  min-height: 2.75rem;
+}
+.btn-primary:hover {
+  background: var(--mp-amber-600);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/*
+ * Card: #21262d overlay lifted off the #0d1117 page. Border is a
+ * subtle divider; hover drops a deeper border for a stronger divider.
+ */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+.card:hover {
+  border-color: var(--border-strong);
+}
+.card.card-goal-reached {
+  background: color-mix(in srgb, var(--mp-emerald-900) 20%, var(--bg-surface));
+  border-color: var(--mp-emerald-700);
+  transition: border-color 150ms, box-shadow 150ms, background-color 150ms;
+}
+.card.card-goal-reached:hover {
+  border-color: var(--mp-emerald-500);
+}
+.card.card-goal-active:hover {
+  border-color: var(--mp-amber-600);
+}
+.goal-progress-gradient {
+  background: linear-gradient(
+    90deg,
+    var(--mp-violet-600) 0%,
+    var(--mp-sky-300) 35%,
+    var(--mp-amber-500) 68%,
+    var(--mp-emerald-500) 100%
+  );
+}
+
+/* Number inputs: keep browser numeric validation (type="number" already
+   rejects letters and shows a numeric keypad on mobile) but hide the
+   up/down spinner arrows — they look unprofessional and the user
+   typically types rather than clicks them. */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/*
+ * Semantic design tokens — surfaces, text, and borders. Components
+ * reference these via utility classes (.fg-primary, .bg-surface,
+ * .border-default, etc.) so a palette change touches one block.
+ *
+ * Three-tier surface hierarchy:
+ *   Main canvas       #0d1117   bg-page
+ *   Secondary canvas  #161b22   bg-canvas-subtle
+ *   Overlay           #21262d   bg-surface
+ *   Primary text      #c9d1d9   fg-primary
+ *   Secondary text    #8b949e   fg-secondary
+ *   Border default    #30363d
+ */
+.fg-primary { color: var(--fg-primary); }
+.fg-secondary { color: var(--fg-secondary); }
+.fg-tertiary { color: var(--fg-tertiary); }
+.fg-muted { color: var(--fg-muted); }
+.coffee-accent { color: var(--coffee-accent); }
+.bg-surface { background-color: var(--bg-surface); }
+.bg-page { background-color: var(--bg-page); }
+.bg-canvas-subtle { background-color: var(--bg-canvas-subtle); }
+.border-default { border-color: var(--border-default); }
+
+@media (min-width: 640px) {
+  .card { padding: 1.25rem; }
+
+  .app-toast {
+    bottom: 1.5rem;
+    left: auto;
+    right: 1.5rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-main h1 {
+    display: none;
+  }
+
+  .mobile-popover {
+    position: fixed;
+    inset: auto 0.75rem calc(var(--app-tab-height) + env(safe-area-inset-bottom, 0px) + 0.75rem);
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - var(--app-header-height) - var(--app-tab-height) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 1.5rem);
+    overflow-y: auto;
+    border-radius: 1rem;
+  }
+
+  [class~='fixed'][class~='inset-0'][class~='z-50']:not(.app-toast) {
+    align-items: flex-end;
+    padding: 0;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  [class~='fixed'][class~='inset-0'][class~='z-50']:not(.app-toast) > .card {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 0.75rem);
+    overflow-y: auto;
+    border-bottom: 0;
+    border-radius: 1.5rem 1.5rem 0 0;
+    padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    min-height: 2.75rem;
+    font-size: 1rem;
+  }
+
+  button,
+  [role='button'] {
+    touch-action: manipulation;
+  }
+}
+
+@media (display-mode: standalone) {
+  .app-shell {
+    user-select: none;
+  }
+
+  .app-main input,
+  .app-main textarea,
+  .app-main select,
+  .app-main [contenteditable='true'] {
+    user-select: text;
+  }
+}

@@ -1,0 +1,16 @@
+-- Add `hidden` flag to accounts. Used by the Accounts page's "Hide" button
+-- (next to Delete) to remove an account from every read view (dashboard,
+-- accounts list, transactions, budget, paydown) AND from SimpleFIN sync.
+--
+-- For SimpleFIN-synced accounts: when the row exists with hidden=true, the
+-- sync helper (`src/lib/simplefin.ts`) skips both the account upsert and
+-- its transaction import. That's the whole point — delete gets undone by
+-- the next sync, but hidden survives because the sync helper checks the
+-- existing row before writing.
+--
+-- For manually-added accounts: hidden just removes them from the listings.
+-- No sync logic applies.
+--
+-- All existing rows default to hidden=false so nothing changes for users
+-- who haven't opted in.
+ALTER TABLE "accounts" ADD COLUMN "hidden" boolean DEFAULT false NOT NULL;

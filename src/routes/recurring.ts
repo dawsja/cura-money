@@ -1,0 +1,80 @@
+/**
+ * /api/recurring — detect recurring charges from transaction history.
+ *
+ * Analyzes past transactions to find charges from the same merchant at
+ * the same amount that repeat across multiple months (subscriptions,
+ * memberships, recurring bills). Helps users identify fraud or forgotten
+ * subscriptions.
+ *
+ * Users can dismiss detected charges they don't want to see. Dismissed
+ * keys are stored in the per-user settings KV store as a JSON array
+ * under the `dismissed_recurring` key.
+ */
+import { Hono } from 'hono';
+import { userId } from '@/lib/tenant';
+import { safe, badRequest } from '@/lib/errors';
+import {
+  dismissRecurring,
+  loadActiveRecurringCharges,
+  markRecurring,
+  markedRecurringSchema,
+  recurringIdentitySchema,
+  restoreRecurring,
+  unmarkRecurring,
+} from '@/services/recurring';
+
+export const recurringRoutes = new Hono();
+
+recurringRoutes.get(
+  '/',
+  safe(async (c) => {
+    return c.json(await loadActiveRecurringCharges(userId(c)));
+  }),
+);
+
+recurringRoutes.post(
+  '/dismiss',
+  safe(async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const parsed = recurringIdentitySchema.safeParse(body);
+    if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
+    await dismissRecurring(userId(c), parsed.data.merchant, parsed.data.amount);
+    return c.json({ ok: true });
+  }),
+);
+
+recurringRoutes.post(
+  '/restore',
+  safe(async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const parsed = recurringIdentitySchema.safeParse(body);
+    if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
+    await restoreRecurring(userId(c), parsed.data.merchant, parsed.data.amount);
+    return c.json({ ok: true });
+  }),
+);
+
+recurringRoutes.post(
+  '/mark',
+  safe(async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const parsed = markedRecurringSchema.safeParse(body);
+    if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
+    await markRecurring(userId(c), parsed.data);
+    return c.json({ ok: true });
+  }),
+);
+
+// POST /api/recurring/unmark — remove a user mark AND dismiss so
+// auto-detect cannot resurrect the charge. Prefer /dismiss from the
+// UI for "None"; this path stays safe for older clients.
+recurringRoutes.post(
+  '/unmark',
+  safe(async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const parsed = recurringIdentitySchema.safeParse(body);
+    if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
+    await unmarkRecurring(userId(c), parsed.data.merchant, parsed.data.amount);
+    return c.json({ ok: true });
+  }),
+);

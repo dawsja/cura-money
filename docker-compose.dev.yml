@@ -1,0 +1,34 @@
+# =============================================================================
+# Cura Money — development override. Use together with docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Differences from the base compose:
+#   - Builds from source using the `builder` stage of the Dockerfile
+#     (Bun + full toolchain, not the distroless runtime).
+#   - Runs via `bun --watch` for hot-reload on source edits.
+#   - Bind-mounts source folders so edits on the host are picked up live.
+#   - Forces NODE_ENV=development so dev-only behaviour (e.g. insecure
+#     cookies over http://) is active.
+# =============================================================================
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    image: cura-money-dev:local
+    pull_policy: never
+    command: ["bun", "run", "--watch", "src/index.ts"]
+    volumes:
+      - ./src:/app/src:ro
+      - ./drizzle:/app/drizzle:ro
+      - ./scripts:/app/scripts:ro
+      # Bind-mount ./public so Vite rebuilds on the host show up live in
+      # the running container without a `docker compose build`. Run
+      # `bun run build:ui` on the host after editing src/ui/**; the new
+      # bundle hash will be served on the next page load (hard-refresh
+      # the browser to bust the cached bundle).
+      - ./public:/app/public:rw
+    environment:
+      NODE_ENV: development

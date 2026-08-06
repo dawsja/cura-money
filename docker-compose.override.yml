@@ -1,0 +1,11 @@
+# =============================================================================
+# DEPRECATED — this file used to auto-merge for `docker compose up` in dev.
+# It now intentionally overrides nothing. Devs use docker-compose.dev.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Safe to delete this file. Keeping it as a stub so anyone with muscle
+# memory from the old workflow doesn't get silent surprise (the dev
+# override no longer activates automatically).
+# =============================================================================
+services: {}

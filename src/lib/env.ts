@@ -1,0 +1,130 @@
+/**
+ * Centralised, validated environment loader. Imported everywhere we need config
+ * so we crash loudly on boot if anything required is missing or malformed.
+ *
+ * Design note: this app is built to be self-hostable behind any reverse proxy
+ * (Caddy, nginx, Traefik, Cloudflare Tunnel, plain port-forward, …). The URL
+ * env vars below are therefore all OPTIONAL. If unset, the app derives the
+ * effective origin from the incoming request's `Host` + `X-Forwarded-Proto`
+ * headers. Set them only when you want a stable URL across all requests —
+ * typically when running behind a domain-fronting proxy.
+ */
+import { z } from 'zod';
+
+const httpOrigin = z.string().default('').superRefine((value, ctx) => {
+  if (!value) return;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be a valid URL' });
+    return;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must use http or https' });
+  }
+  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be an origin without credentials, path, query, or fragment' });
+  }
+});
+
+const databaseUrl = z.string().url().superRefine((value, ctx) => {
+  const protocol = new URL(value).protocol;
+  if (protocol !== 'postgres:' && protocol !== 'postgresql:') {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must use postgres or postgresql' });
+  }
+});
+
+const previousEncryptionKeys = z.preprocess(
+  (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+  z.string().optional().superRefine((value, ctx) => {
+    if (value === undefined) return;
+    const keys = value.split(',').map((key) => key.trim());
+    if (keys.some((key) => key.length < 32)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'each DATA_ENCRYPTION_KEY_PREVIOUS key must be at least 32 chars',
+      });
+    }
+  }),
+);
+
+const Env = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+
+  // External-facing URL of the app. Empty → derive per-request from headers.
+  // Set this when you want OIDC callbacks and self-references to always use
+  // a stable domain (e.g. https://cura.zerd.cc). Leave empty for raw-IP dev
+  // or when the public hostname is the same as the request's Host header.
+  APP_URL: httpOrigin,
+
+  // Better Auth's self-reference. Same semantics as APP_URL — leave empty to
+  // derive from the request. If you do set it, it must match what the user
+  // types in the browser (or what the proxy forwards as Host).
+  BETTER_AUTH_URL: httpOrigin,
+
+  // Redirect base sent to OIDC providers as the post-login callback. Defaults
+  // to the request origin (or BETTER_AUTH_URL if set). Set this explicitly
+  // when your reverse proxy rewrites the host.
+  OIDC_REDIRECT_BASE: httpOrigin,
+
+  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+
+  // Injected by the release image build. Empty in host development, where
+  // there is no meaningful running container revision to compare.
+  APP_REVISION: z.string().max(128).default(''),
+
+  DATABASE_URL: databaseUrl,
+
+  BETTER_AUTH_SECRET: z.string().min(32, 'BETTER_AUTH_SECRET must be at least 32 chars'),
+  DATA_ENCRYPTION_KEY: z.preprocess(
+    (value) => value === '' ? undefined : value,
+    z.string().min(32, 'DATA_ENCRYPTION_KEY must be at least 32 chars').optional(),
+  ),
+  DATA_ENCRYPTION_KEY_PREVIOUS: previousEncryptionKeys,
+
+  // Enable the in-process cron scheduler (SimpleFIN poll + budget roll-forward
+  // + retention sweep). Advisory locks make this safe across app replicas.
+  RUN_CRON: z
+    .union([z.literal('true'), z.literal('false'), z.literal('1'), z.literal('0'), z.literal('')])
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
+
+  // Destructive retention is opt-in. Zero keeps financial history forever.
+  RETENTION_DAYS: z.coerce.number().int().min(0).max(36_500).default(0),
+});
+
+export type Env = z.infer<typeof Env>;
+
+function loadEnv(): Env {
+  const parsed = Env.safeParse(process.env);
+  if (!parsed.success) {
+    console.error('[env] invalid environment:', parsed.error.flatten().fieldErrors);
+    throw new Error('Invalid environment; see logs above');
+  }
+  return parsed.data;
+}
+
+export const env = loadEnv();
+
+/**
+ * Resolve the effective external origin for a given request.
+ * Priority: env override (APP_URL / BETTER_AUTH_URL) → request headers.
+ * The result is the scheme + host (no trailing slash, no path).
+ */
+export function resolveOrigin(request: Request, fallback: 'app' | 'auth' | 'oidc' = 'app'): string {
+  const configured =
+    fallback === 'app' ? env.APP_URL : fallback === 'auth' ? env.BETTER_AUTH_URL : env.OIDC_REDIRECT_BASE;
+  if (configured && configured.length > 0) {
+    const u = new URL(configured);
+    return `${u.protocol}//${u.host}`;
+  }
+  const host = request.headers.get('host') ?? request.headers.get('x-forwarded-host') ?? 'localhost:3000';
+  const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase();
+  const inferredProto = host.startsWith('localhost') || host.startsWith('127.') || host.startsWith('192.168.')
+    ? 'http'
+    : 'https';
+  const proto = forwardedProto === 'http' || forwardedProto === 'https' ? forwardedProto : inferredProto;
+  return `${proto}://${host}`;
+}

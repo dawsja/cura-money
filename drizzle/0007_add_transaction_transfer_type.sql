@@ -1,0 +1,12 @@
+-- Add 'transfer' to the transaction_type enum. Transfers are money moving
+-- between two of the user's own accounts (credit card payments, ACH between
+-- own accounts, etc.) — they're excluded from income/expense totals because
+-- they don't change net worth, they just reallocate it.
+--
+-- The data migration (reclassify existing transactions, seed the Transfer
+-- category for every user) lives in src/db/migrate.ts → applyTransferMigration()
+-- and runs AFTER this drizzle migrate() call returns. Postgres won't let a
+-- transaction reference an enum value that the same transaction added, and
+-- drizzle's migrate() runs every file in a single transaction — so the
+-- data migration has to be a separate, post-migrate step.
+ALTER TYPE "transaction_type" ADD VALUE IF NOT EXISTS 'transfer';

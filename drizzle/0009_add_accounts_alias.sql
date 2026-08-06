@@ -1,0 +1,15 @@
+-- Add `alias` column to accounts. User-set display name that overrides
+-- the canonical `name` field in every UI surface (accounts list,
+-- dashboard, transactions, budget, paydown). Nullable — NULL means
+-- "no alias, use the name".
+--
+-- Why this works across SimpleFIN syncs:
+--   1. The sync helper (`src/lib/simplefin.ts → syncSimpleFinToDatabase`)
+--      upserts via `upsertAccount`, which only updates
+--      name/type/balance/institution on conflict — `alias` is preserved.
+--   2. The Transactions page resolves the alias on read via a small
+--      in-memory map, so renames flow through to historical
+--      transactions without touching the ledger.
+--
+-- NULL default = no change for existing rows.
+ALTER TABLE "accounts" ADD COLUMN "alias" text;

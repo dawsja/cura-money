@@ -1,0 +1,45 @@
+import { sql } from 'drizzle-orm';
+import { bigint, check, foreignKey, index, integer, pgTable, text, timestamp, unique } from 'drizzle-orm/pg-core';
+import { user } from './auth';
+import { transactionTypeEnum } from './categories';
+import { transactions } from './transactions';
+
+/** Effective ledger allocations for a transaction; the parent remains the source record. */
+export const transactionSplits = pgTable(
+  'transaction_splits',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    transactionId: text('transaction_id').notNull(),
+    amountCents: bigint('amount_cents', { mode: 'number' }).notNull(),
+    category: text('category').notNull(),
+    subCategory: text('sub_category').notNull(),
+    type: transactionTypeEnum('type').notNull(),
+    sortOrder: integer('sort_order').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('idx_transaction_splits_user').on(t.userId),
+    transactionIdx: index('idx_transaction_splits_transaction').on(t.userId, t.transactionId),
+    transactionOrderUnique: unique('transaction_splits_transaction_order_unique').on(
+      t.userId,
+      t.transactionId,
+      t.sortOrder,
+    ),
+    tenantTransactionFk: foreignKey({
+      columns: [t.userId, t.transactionId],
+      foreignColumns: [transactions.userId, transactions.id],
+      name: 'transaction_splits_user_transaction_fk',
+    }).onDelete('cascade'),
+    positiveSafeAmount: check(
+      'transaction_splits_amount_cents_positive_safe_integer',
+      sql`${t.amountCents} BETWEEN 1 AND 9007199254740991`,
+    ),
+    nonNegativeOrder: check('transaction_splits_sort_order_non_negative', sql`${t.sortOrder} >= 0`),
+  }),
+);
+
+export type TransactionSplitRow = typeof transactionSplits.$inferSelect;
+export type NewTransactionSplitRow = typeof transactionSplits.$inferInsert;
