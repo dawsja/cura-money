@@ -48,7 +48,14 @@ async function applyTransferMigration(client: postgres.Sql): Promise<void> {
       sub_id TEXT;
       inserted_count INTEGER := 0;
     BEGIN
-      FOR uid IN SELECT id FROM "user" LOOP
+      FOR uid IN
+        SELECT u.id
+        FROM "user" u
+        WHERE EXISTS (
+          SELECT 1 FROM settings s
+          WHERE s.user_id = u.id AND s.key = 'initial_categories_seeded'
+        )
+      LOOP
         IF NOT EXISTS (
           SELECT 1 FROM categories
           WHERE user_id = uid AND name = 'Transfer' AND type = 'transfer'

@@ -17,6 +17,7 @@ import { Reports } from './pages/Reports';
 import { Rules } from './pages/Rules';
 import { Recurring } from './pages/Recurring';
 import { AsyncQueryState } from './components/ui/AsyncQueryState';
+import { FinancialOnboardingProvider } from './components/FinancialOnboardingProvider';
 
 interface SetupStatus {
   needsSetup: boolean;
@@ -105,22 +106,24 @@ export default function App() {
 
   return (
     <ReviewsProvider>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/accounts" element={<Accounts />} />
-          <Route path="/budget" element={<Budget />} />
-          <Route path="/categories" element={<Categories />} />
-          <Route path="/transactions" element={<Transactions />} />
-          <Route path="/paydown" element={<Paydown />} />
-          <Route path="/saveup" element={<SaveUp />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/rules" element={<Rules />} />
-          <Route path="/recurring" element={<Recurring />} />
-          <Route path="/admin/settings" element={<AdminSettings />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Layout>
+      <FinancialOnboardingProvider userId={meQ.data.user.id}>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/accounts" element={<Accounts />} />
+            <Route path="/budget" element={<Budget />} />
+            <Route path="/categories" element={<Categories />} />
+            <Route path="/transactions" element={<Transactions />} />
+            <Route path="/paydown" element={<Paydown />} />
+            <Route path="/saveup" element={<SaveUp />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/rules" element={<Rules />} />
+            <Route path="/recurring" element={<Recurring />} />
+            <Route path="/admin/settings" element={<AdminSettings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Layout>
+      </FinancialOnboardingProvider>
     </ReviewsProvider>
   );
 }

@@ -62,6 +62,7 @@ export function Sidebar() {
           <NavLink
             key={it.to}
             to={it.to}
+            data-onboarding-target={it.to === '/transactions' ? 'nav-transactions' : it.to === '/budget' ? 'nav-budget' : undefined}
             end={it.to === '/'}
             onClick={(event) => event.currentTarget.blur()}
             className={({ isActive }) =>
@@ -90,6 +91,7 @@ export function Sidebar() {
           <NavLink
             key={it.to}
             to={it.to}
+            data-onboarding-target={it.to === '/accounts' ? 'nav-accounts' : undefined}
             onClick={(event) => event.currentTarget.blur()}
             className={({ isActive }) =>
               clsx(

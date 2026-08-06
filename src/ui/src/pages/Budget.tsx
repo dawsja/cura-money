@@ -213,7 +213,7 @@ export function Budget() {
     });
   }, [ym]);
 
-  const commitOverride = useCallback(async (id: string) => {
+  const commitOverride = useCallback(async (id: string, type: 'income' | 'expense') => {
     const key = draftKey(ym, id);
     const live = liveOverridesRef.current.get(key);
     const server = serverPlannedMap.get(id) ?? 0;
@@ -227,6 +227,7 @@ export function Budget() {
     try {
       await setBudget.mutateAsync({ subCategoryId: id, yearMonth: ym, planned: live });
       await qc.invalidateQueries({ queryKey: ['budget', ym] }, { throwOnError: true });
+      window.dispatchEvent(new CustomEvent('cura:onboarding-budget-saved', { detail: { type } }));
       if (liveOverridesRef.current.get(key) === live) {
         setLiveOverrides((prev) => {
           const next = new Map(prev);
@@ -372,7 +373,7 @@ export function Budget() {
                   collapsed={collapsed}
                   onToggleCollapsed={toggleCollapsed}
                   onLiveChange={setLiveOverride}
-                  onLiveCommit={commitOverride}
+                  onLiveCommit={(id) => commitOverride(id, 'income')}
                   onLiveReset={clearLiveOverride}
                   statuses={budgetStatuses}
                   yearMonth={ym}
@@ -399,7 +400,7 @@ export function Budget() {
                     collapsed={collapsed}
                     onToggleCollapsed={toggleCollapsed}
                     onLiveChange={setLiveOverride}
-                    onLiveCommit={commitOverride}
+                    onLiveCommit={(id) => commitOverride(id, 'expense')}
                     onLiveReset={clearLiveOverride}
                     statuses={budgetStatuses}
                     yearMonth={ym}
@@ -507,7 +508,7 @@ function BudgetSection({
         <div className="px-2 sm:px-4 pb-3 pt-1">
           {/* Mobile: card-list layout. Desktop: full table. */}
           <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-700">
-            {allSubs.map(({ sub, categoryName }) => {
+            {allSubs.map(({ sub, categoryName }, index) => {
               const planned = plannedMap.get(sub.id) ?? sub.planned;
               const amount = amountMap.get(actualKey(categoryName, sub.name)) ?? 0;
               const status = statuses.get(draftKey(yearMonth, sub.id));
@@ -544,6 +545,7 @@ function BudgetSection({
                     <div className="flex items-center gap-1">
                       <span className="fg-muted">Planned</span>
                       <input
+                        data-onboarding-target={index === 0 ? (isIncome ? 'budget-plan-income' : 'budget-plan-expense') : undefined}
                         type="number"
                         min={0}
                         step="0.01"
@@ -605,7 +607,7 @@ function BudgetSection({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-              {allSubs.map(({ sub, categoryName }) => {
+              {allSubs.map(({ sub, categoryName }, index) => {
                 const planned = plannedMap.get(sub.id) ?? sub.planned;
                 const amount = amountMap.get(actualKey(categoryName, sub.name)) ?? 0;
                 const status = statuses.get(draftKey(yearMonth, sub.id));
@@ -632,6 +634,7 @@ function BudgetSection({
                     </td>
                     <td className="py-2 text-right pl-6">
                       <input
+                        data-onboarding-target={index === 0 ? (isIncome ? 'budget-plan-income' : 'budget-plan-expense') : undefined}
                         type="number"
                         min={0}
                         step="0.01"

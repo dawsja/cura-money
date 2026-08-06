@@ -180,9 +180,10 @@ export function Accounts() {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 min-w-0">
             <div className="font-medium text-sm fg-primary truncate">{displayName}</div>
-            <button
-              type="button"
-              onClick={() => setEditing(a)}
+              <button
+                type="button"
+                onClick={() => setEditing(a)}
+                data-onboarding-target={a.type === 'uncategorized' ? 'unclassified-account-edit' : undefined}
                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg fg-muted hover:bg-slate-700 hover:text-amber-600 dark:hover:text-amber-400 sm:h-7 sm:w-7"
               title="Edit account"
               aria-label={`Edit ${displayName}`}
@@ -256,7 +257,8 @@ export function Accounts() {
         </button>
       </div>
 
-      <section className="card">
+      <div className="space-y-6">
+      <section data-onboarding-target="simplefin-connect" className="card">
         <h2 className="text-lg font-semibold mb-3 fg-primary">SimpleFIN</h2>
         {sf.isPending ? (
           <p className="text-sm fg-muted flex items-center gap-2">
@@ -351,7 +353,7 @@ export function Accounts() {
         )}
       </section>
 
-      <section className="card">
+      <section data-onboarding-target="manual-account-add" className="card">
         <h2 className="text-lg font-semibold mb-3 fg-primary">Add account</h2>
         <p className="mb-3 text-xs fg-muted">Balances are entered and displayed in USD only. Enter a positive amount; account type determines whether it is an asset or amount owed.</p>
         <form onSubmit={onAdd} className="space-y-3">
@@ -379,6 +381,7 @@ export function Accounts() {
           </div>
         </form>
       </section>
+      </div>
 
       <section className="space-y-3">
         {accounts.isPending && (

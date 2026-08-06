@@ -108,7 +108,7 @@ export function Recurring() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 md:p-6">
       {/* Header */}
-      <div>
+      <div data-onboarding-target="recurring-summary">
         <h1 className="text-2xl font-bold fg-primary">Recurring</h1>
         <p className="text-sm fg-secondary mt-1">
           Automatically detected charges that repeat across months. Review these to catch unused subscriptions or unexpected charges.

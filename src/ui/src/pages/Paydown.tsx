@@ -441,7 +441,7 @@ export function Paydown() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div data-onboarding-target="paydown-summary" className="min-w-0">
           <h1 className="text-2xl font-bold fg-primary">Pay down</h1>
           <p className="text-sm fg-tertiary max-w-xl mt-1">
             Every credit card and loan is a goal. Set your interest rates

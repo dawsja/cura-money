@@ -141,7 +141,7 @@ export function Categories() {
             placeholder="Name (e.g. Housing, Salary)"
             className="flex-1 min-w-[200px] rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
           />
-          <div className="grid grid-cols-3 gap-1 rounded-lg border border-default p-1 bg-slate-50 dark:bg-slate-700/50">
+          <div data-onboarding-target="categories-add" className="grid grid-cols-3 gap-1 rounded-lg border border-default p-1 bg-slate-50 dark:bg-slate-700/50">
             <button
               type="button"
               onClick={() => setNewType('expense')}

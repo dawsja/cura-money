@@ -311,7 +311,7 @@ export function Reports() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
+      <div data-onboarding-target="reports-header" className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <div className="flex items-center">
             <h1 className="text-2xl font-bold fg-primary">Reports</h1>

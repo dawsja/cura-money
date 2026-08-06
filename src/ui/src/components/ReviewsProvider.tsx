@@ -39,6 +39,10 @@ import { ReviewCarouselModal } from './ReviewCarouselModal';
 interface ReviewsContextValue {
   /** 0-or-more pending count. Drives the bell badge. */
   count: number;
+  /** True until the initial pending-count request resolves. */
+  isLoading: boolean;
+  /** Refresh the count before deciding that a newly imported queue is empty. */
+  refreshCount: () => Promise<boolean>;
   /** True while the modal is mounted. */
   isOpen: boolean;
   /** Open the carousel (fetches the queue on first open). No-op when count = 0. */
@@ -84,6 +88,11 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
   }, [count, isOpen]);
 
   const closeModal = useCallback(() => setIsOpen(false), []);
+  const refetchCount = countQ.refetch;
+  const refreshCount = useCallback(async () => {
+    const result = await refetchCount();
+    return !result.isError;
+  }, [refetchCount]);
   const dismissCelebration = useCallback(() => setCelebratedKey(null), []);
 
   const decision = useMutation({
@@ -220,8 +229,8 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
   }, [celebratedKey, dismissCelebration]);
 
   const value = useMemo<ReviewsContextValue>(
-    () => ({ count, isOpen, openModal, closeModal }),
-    [count, isOpen, openModal, closeModal],
+    () => ({ count, isLoading: countQ.isLoading, refreshCount, isOpen, openModal, closeModal }),
+    [count, countQ.isLoading, refreshCount, isOpen, openModal, closeModal],
   );
 
   return (

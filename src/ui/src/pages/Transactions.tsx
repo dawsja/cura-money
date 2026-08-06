@@ -667,7 +667,7 @@ export function Transactions() {
       <h1 className="text-2xl font-bold fg-primary">Transactions</h1>
 
       {reviews.count > 0 && (
-        <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 flex items-center justify-between gap-3">
+        <div data-onboarding-target="review-transactions" className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm fg-primary">
             <BellRing className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
             <span>
@@ -840,6 +840,7 @@ export function Transactions() {
             <button
               type="button"
               onClick={() => setAddOpen(true)}
+              data-onboarding-target="add-transaction"
               disabled={dependenciesLoading || !!dependenciesError}
               className="col-span-2 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-900 px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 md:min-h-0 md:shrink-0"
               aria-label="Add transaction"

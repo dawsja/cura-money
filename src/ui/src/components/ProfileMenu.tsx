@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Settings } from 'lucide-react';
+import { CircleHelp, LogOut, Settings } from 'lucide-react';
 import clsx from 'clsx';
 import { fetchMe, signOut, SIGNOUT_FLAG_KEY } from '../lib/auth';
+import { useFinancialOnboarding } from './FinancialOnboardingProvider';
 
 /**
  * Profile menu — click the avatar to open a dropdown with:
@@ -16,6 +17,7 @@ import { fetchMe, signOut, SIGNOUT_FLAG_KEY } from '../lib/auth';
 export function ProfileMenu() {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const onboarding = useFinancialOnboarding();
   const me = useQuery({ queryKey: ['me'], queryFn: fetchMe });
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -118,6 +120,19 @@ export function ProfileMenu() {
                 <span className="flex-1 text-left">Settings</span>
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onboarding.restart();
+              }}
+              disabled={onboarding.isSaving}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
+              role="menuitem"
+            >
+              <CircleHelp className="h-4 w-4 shrink-0" />
+              <span className="flex-1 text-left">Financial tutorial</span>
+            </button>
             <button
               type="button"
               onClick={onSignOut}

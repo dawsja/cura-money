@@ -149,6 +149,16 @@ Exposed as utility classes: `.fg-primary`, `.fg-secondary`,
 `.bg-canvas-subtle`, `.border-default`, `.coffee-accent`. Prefer these over the raw
 Tailwind scales when touching component code.
 
+### Guided onboarding
+
+Financial onboarding uses the standard `bg-surface` coachmark over a
+dimmed page. The active control keeps its normal appearance and receives
+an amber outline with a subtle green halo through `.onboarding-spotlight`.
+The spotlight never captures pointer events, so the highlighted product
+control remains usable. Coachmarks measure their content and use the open
+space above, below, or beside the active control so they do not cover the
+panel being explained.
+
 ### Chart palette (`--chart-*`)
 
 | Token | Hex | Used by |

@@ -109,19 +109,36 @@ export async function seedInitialCategoriesIfEmpty(userId: string): Promise<void
       .from(settings)
       .where(and(eq(settings.userId, userId), eq(settings.key, 'initial_categories_seeded')))
       .limit(1);
-    if (seeded) return;
+    const existing = await tx
+      .select({
+        id: categories.id,
+        name: categories.name,
+        type: categories.type,
+        icon: categories.icon,
+        sortOrder: categories.sortOrder,
+      })
+      .from(categories)
+      .where(eq(categories.userId, userId));
+
+    // The startup transfer backfill used to run before a new user's first
+    // category read. That left exactly one canonical Transfer row, which the
+    // old seeder mistook for a customized tree and marked complete. Repair only
+    // that narrow signature; all other seeded/customized trees stay untouched.
+    const [onlyCategory] = existing;
+    const transferOnlyBootstrap = existing.length === 1
+      && onlyCategory?.id === `${userId}__cat-transfer`
+      && onlyCategory.name === 'Transfer'
+      && onlyCategory.type === 'transfer'
+      && onlyCategory.icon === 'ArrowLeftRight'
+      && onlyCategory.sortOrder === 9999;
+    if (seeded && !transferOnlyBootstrap) return;
 
     // Existing users predate the marker. Preserve their current tree exactly,
     // including categories they intentionally removed, and mark it complete.
-    const [existing] = await tx
-      .select({ id: categories.id })
-      .from(categories)
-      .where(eq(categories.userId, userId))
-      .limit(1);
-    if (existing) {
+    if (existing.length > 0 && !transferOnlyBootstrap) {
       await tx
         .insert(settings)
-        .values({ userId, key: 'initial_categories_seeded', value: 'true', updatedAt: new Date() })
+        .values({ userId, key: 'initial_categories_seeded', value: 'v2', updatedAt: new Date() })
         .onConflictDoNothing();
       return;
     }
@@ -158,8 +175,11 @@ export async function seedInitialCategoriesIfEmpty(userId: string): Promise<void
     }
     await tx
       .insert(settings)
-      .values({ userId, key: 'initial_categories_seeded', value: 'true', updatedAt: new Date() })
-      .onConflictDoNothing();
+      .values({ userId, key: 'initial_categories_seeded', value: 'v2', updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: [settings.userId, settings.key],
+        set: { value: 'v2', updatedAt: new Date() },
+      });
   });
 }
 

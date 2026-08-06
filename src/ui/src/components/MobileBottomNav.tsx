@@ -23,6 +23,7 @@ export function MobileBottomNav() {
           <li key={it.to} className="h-full p-1.5">
             <NavLink
               to={it.to}
+              data-onboarding-target={it.to === '/accounts' ? 'nav-accounts' : it.to === '/transactions' ? 'nav-transactions' : it.to === '/budget' ? 'nav-budget' : undefined}
               end={it.to === '/'}
               aria-label={it.label}
               className={({ isActive }) =>

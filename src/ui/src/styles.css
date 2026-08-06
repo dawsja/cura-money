@@ -271,6 +271,14 @@ textarea {
   padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
 }
 
+.onboarding-spotlight {
+  pointer-events: none;
+  border: 2px solid var(--mp-amber-400);
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 68%), 0 0 0 5px rgb(34 197 94 / 18%);
+}
+
+.onboarding-coachmark { max-height: calc(100dvh - 2rem); }
+
 .btn-primary {
   background: var(--mp-amber-500);
   /* Dark text on the green CTA — AGENTS.md: amber buttons always use
