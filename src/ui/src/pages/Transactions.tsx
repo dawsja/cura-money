@@ -820,7 +820,7 @@ export function Transactions() {
             <a
               href="/api/data/transactions.csv"
               download
-              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-default bg-surface px-2.5 py-1.5 text-xs font-medium fg-secondary transition-colors hover:border-amber-500 hover:text-amber-300 md:min-h-0"
+              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-default bg-surface px-2.5 py-1.5 text-xs font-medium fg-secondary transition-colors hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-300 md:min-h-0"
               aria-label="Download transactions as CSV"
             >
               <Download className="h-3.5 w-3.5" /> CSV
@@ -828,7 +828,7 @@ export function Transactions() {
             <a
               href="/api/data/export.json"
               download
-              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-default bg-surface px-2.5 py-1.5 text-xs font-medium fg-secondary transition-colors hover:border-amber-500 hover:text-amber-300 md:min-h-0"
+              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-default bg-surface px-2.5 py-1.5 text-xs font-medium fg-secondary transition-colors hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-300 md:min-h-0"
               aria-label="Download full data export as JSON"
             >
               <Download className="h-3.5 w-3.5" /> JSON
@@ -856,7 +856,7 @@ export function Transactions() {
           </p>
         )}
         {dependenciesError && (
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-900/60 bg-rose-900/20 px-3 py-2 text-sm text-rose-300" role="alert">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300" role="alert">
             <span>Categories or accounts could not be loaded. Editing is unavailable.</span>
             <button type="button" onClick={() => { void cats.refetch(); void accounts.refetch(); }} className="font-semibold hover:underline">
               Retry
@@ -881,7 +881,7 @@ export function Transactions() {
                 <tr><td colSpan={7} className="py-8 text-center text-sm fg-muted" role="status">Loading transactions…</td></tr>
               )}
               {txns.isError && (
-                <tr><td colSpan={7} className="py-8 text-center text-sm text-rose-300" role="alert">
+                <tr><td colSpan={7} className="py-8 text-center text-sm text-rose-700 dark:text-rose-300" role="alert">
                   <span>Transactions could not be loaded.</span>{' '}
                   <button type="button" onClick={() => void txns.refetch()} className="font-semibold hover:underline">Retry</button>
                 </td></tr>
@@ -985,7 +985,7 @@ export function Transactions() {
                     </td>
                   </tr>
                   {hasSplits && (
-                    <tr className="hidden border-b border-default bg-slate-900/20 md:table-row">
+                    <tr className="hidden border-b border-default bg-slate-50 dark:bg-slate-900/20 md:table-row">
                       <td />
                       <td colSpan={5} className="pb-2 pt-1">
                         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs fg-secondary">
@@ -1259,7 +1259,7 @@ function TransactionDetailModal({
         <div className="mx-auto -mt-1 mb-4 h-1.5 w-10 rounded-full bg-slate-600" aria-hidden="true" />
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold fg-primary">Transaction Details</h3>
-          <button type="button" onClick={onClose} className="flex h-11 w-11 items-center justify-center rounded-full fg-muted hover:bg-slate-700 hover:fg-secondary" aria-label="Close">
+          <button type="button" onClick={onClose} className="flex h-11 w-11 items-center justify-center rounded-full fg-muted hover:bg-slate-100 dark:hover:bg-slate-700 hover:fg-secondary" aria-label="Close">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -1630,7 +1630,7 @@ function FilterPopover({
                 className={clsx(
                   'flex min-h-11 cursor-pointer items-center gap-2 px-2.5 py-2 text-xs transition-colors',
                   active
-                    ? 'bg-amber-900/20 text-amber-200 font-medium'
+                    ? 'bg-amber-50 text-amber-800 font-medium dark:bg-amber-900/20 dark:text-amber-200'
                     : 'fg-secondary hover:bg-slate-50 dark:hover:bg-slate-800/40',
                 )}
               >
@@ -2195,7 +2195,7 @@ function EditTransactionModal({
       >
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 id={titleId} className="text-lg font-semibold fg-primary">Edit transaction</h2>
-          <button type="button" onClick={onClose} disabled={isPending} className="rounded-lg p-2 fg-muted hover:bg-slate-700 hover:fg-secondary disabled:opacity-50" aria-label="Close edit transaction">
+          <button type="button" onClick={onClose} disabled={isPending} className="rounded-lg p-2 fg-muted hover:bg-slate-100 dark:hover:bg-slate-700 hover:fg-secondary disabled:opacity-50" aria-label="Close edit transaction">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -2286,7 +2286,7 @@ function EditTransactionModal({
                             </optgroup>
                           ))}
                         </select>
-                        <button type="button" onClick={() => setSplits((current) => current.filter((_, i) => i !== index))} disabled={isPending || splits.length <= 2} className="rounded-lg p-2 text-rose-400 hover:bg-rose-900/30 disabled:cursor-not-allowed disabled:opacity-30" aria-label={`Remove allocation ${index + 1}`}>
+                        <button type="button" onClick={() => setSplits((current) => current.filter((_, i) => i !== index))} disabled={isPending || splits.length <= 2} className="rounded-lg p-2 text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-900/30 disabled:cursor-not-allowed disabled:opacity-30" aria-label={`Remove allocation ${index + 1}`}>
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
@@ -2294,10 +2294,10 @@ function EditTransactionModal({
                   );
                 })}
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <button type="button" onClick={() => setSplits((current) => [...current, emptySplit(type)])} disabled={isPending} className="inline-flex items-center gap-1 text-sm font-medium text-amber-300 hover:underline disabled:opacity-50">
+                  <button type="button" onClick={() => setSplits((current) => [...current, emptySplit(type)])} disabled={isPending} className="inline-flex items-center gap-1 text-sm font-medium text-amber-700 dark:text-amber-300 hover:underline disabled:opacity-50">
                     <Plus className="h-4 w-4" /> Add allocation
                   </button>
-                  <p className={clsx('text-sm tabular-nums', splitTotalValid ? 'fg-secondary' : 'text-rose-400')} role={!splitTotalValid ? 'alert' : undefined}>
+                  <p className={clsx('text-sm tabular-nums', splitTotalValid ? 'fg-secondary' : 'text-rose-600 dark:text-rose-400')} role={!splitTotalValid ? 'alert' : undefined}>
                     Allocated {formatMoney(splitTotalCents / 100)} of {formatMoney(amountCents / 100)}
                   </p>
                 </div>
@@ -2305,10 +2305,10 @@ function EditTransactionModal({
             )}
           </section>
 
-          {error && <p role="alert" className="rounded-lg border border-rose-900/60 bg-rose-900/20 px-3 py-2 text-sm text-rose-300">{error}</p>}
+          {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300">{error}</p>}
 
           <div className="flex justify-end gap-2 border-t border-default pt-4">
-            <button type="button" onClick={onClose} disabled={isPending} className="rounded-lg px-3 py-2 text-sm fg-secondary hover:bg-slate-700 disabled:opacity-50">Cancel</button>
+            <button type="button" onClick={onClose} disabled={isPending} className="rounded-lg px-3 py-2 text-sm fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50">Cancel</button>
             <button type="submit" disabled={!canSubmit} className="btn-primary disabled:cursor-not-allowed disabled:opacity-50">{isPending ? 'Saving…' : 'Save transaction'}</button>
           </div>
         </form>
@@ -2485,7 +2485,7 @@ function TransactionActionModal({
               type="button"
               onClick={onClose}
               disabled={isPending}
-              className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
+              className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
             >
               Close
             </button>

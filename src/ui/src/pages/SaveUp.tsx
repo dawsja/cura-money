@@ -123,7 +123,9 @@ export function SaveUp() {
         <div className="flex items-center gap-3 rounded-lg border border-default bg-canvas-subtle px-4 py-3">
           <div className={clsx(
             'flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
-            reachedGoals.length > 0 ? 'bg-emerald-900/40 text-emerald-400' : 'bg-amber-900/40 text-amber-300',
+            reachedGoals.length > 0
+              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+              : 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
           )}>
             {reachedGoals.length > 0 ? <Sparkles className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
           </div>
@@ -296,7 +298,7 @@ function GoalCard({
         scale: { duration: 0.55, ease: 'easeOut' },
       }}
       className={clsx(
-        'card w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
+        'card w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900',
         reached ? 'card-goal-reached' : 'card-goal-active',
       )}
     >
@@ -309,14 +311,14 @@ function GoalCard({
                 animate={{ scale: 1, rotate: 0 }}
                 transition={{ type: 'spring', stiffness: 320, damping: 16, delay: 0.35 }}
               >
-                <Trophy className="h-4 w-4 shrink-0 text-emerald-400" />
+                <Trophy className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
               </motion.span>
             ) : (
               <Target className="h-4 w-4 shrink-0 text-amber-500" />
             )}
             <div className="font-semibold fg-primary truncate">{goal.name}</div>
             {reached && (
-              <span className="shrink-0 rounded-full bg-emerald-900/50 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+              <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
                 Goal reached
               </span>
             )}
@@ -324,7 +326,7 @@ function GoalCard({
           <div className="mt-1 flex items-center gap-1 text-xs fg-muted">
             <Wallet className="h-3 w-3" />
             {goal.accountName ?? (
-              <span className="inline-flex items-center gap-1 text-rose-400">
+              <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400">
                 <Link2Off className="h-3 w-3" /> Account removed
               </span>
             )}
@@ -338,7 +340,7 @@ function GoalCard({
 
       <div className="mt-4 flex items-end justify-between gap-3 tabular-nums">
         <div>
-          <div className={clsx('text-sm font-bold', reached ? 'text-emerald-300' : 'text-slate-100')}>
+          <div className={clsx('text-sm font-bold', reached ? 'text-emerald-600 dark:text-emerald-300' : 'fg-primary')}>
             {goalStatusLabel(pct, reached)}
           </div>
           <div className="text-lg font-bold fg-primary">{formatMoney(current)}</div>
@@ -352,14 +354,14 @@ function GoalCard({
       {hasAccount ? (
         <GoalXpBar value={pct} reached={reached} celebrate={celebrate} />
       ) : (
-        <div className="mt-3 flex items-center gap-1.5 text-xs text-rose-400">
+        <div className="mt-3 flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400">
           <Link2Off className="h-3.5 w-3.5" /> Pick an account to track this goal.
         </div>
       )}
 
       {hasAccount && (
         <div className="mt-3 flex items-start justify-between gap-3 text-xs tabular-nums">
-          <div className={reached ? 'font-medium text-emerald-300' : 'fg-secondary'}>
+          <div className={reached ? 'font-medium text-emerald-600 dark:text-emerald-300' : 'fg-secondary'}>
             {reached
               ? current > goal.target
                 ? `${formatMoney(current - goal.target)} ahead of goal`
@@ -413,9 +415,9 @@ function AnimatedPercentage({ value, reached }: { value: number; reached: boolea
 }
 
 function progressTextClass(value: number, reached: boolean): string {
-  if (reached || value >= 75) return 'text-emerald-300';
-  if (value >= 50) return 'text-amber-300';
-  if (value >= 25) return 'text-sky-300';
+  if (reached || value >= 75) return 'text-emerald-600 dark:text-emerald-300';
+  if (value >= 50) return 'text-amber-700 dark:text-amber-300';
+  if (value >= 25) return 'text-sky-700 dark:text-sky-300';
   return 'text-violet-600';
 }
 
@@ -433,7 +435,7 @@ function GoalXpBar({
   return (
     <div className="mt-3">
       <div
-        className="relative h-3 rounded-full bg-slate-700"
+        className="relative h-3 rounded-full bg-slate-200 dark:bg-slate-700"
         role="progressbar"
         aria-label="Goal progress"
         aria-valuenow={Math.round(value)}
@@ -605,7 +607,7 @@ function GoalModal({
               The account whose balance drives the progress bar.
             </span>
             {sharedWith.length > 0 && (
-              <span className="mt-2 flex items-start gap-1.5 rounded-md border border-sky-700 bg-sky-900/20 px-2.5 py-2 text-xs text-sky-300">
+              <span className="mt-2 flex items-start gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-700 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 This account also tracks {sharedWith.map((other) => other.name).join(', ')}. Its full balance will count toward every linked goal.
               </span>

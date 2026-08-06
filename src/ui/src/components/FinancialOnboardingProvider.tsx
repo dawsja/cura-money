@@ -493,12 +493,12 @@ function OnboardingModal({
   return (
     <div className="onboarding-modal fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="presentation">
       <section ref={dialogRef} className="card w-full max-w-lg shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="financial-onboarding-title" aria-describedby="financial-onboarding-description">
-        <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-amber-900/30 text-amber-300">
+        <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
           {complete ? <Check className="h-6 w-6" /> : <CircleHelp className="h-6 w-6" />}
         </div>
         <h2 id="financial-onboarding-title" className="text-xl font-semibold fg-primary">{title}</h2>
         <p id="financial-onboarding-description" className="mt-2 text-sm leading-6 fg-secondary">{body}</p>
-        {error && <p className="mt-3 text-sm text-rose-400" role="alert">Could not save tutorial progress: {error}</p>}
+        {error && <p className="mt-3 text-sm text-rose-600 dark:text-rose-400" role="alert">Could not save tutorial progress: {error}</p>}
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="ghost" onClick={onSecondary} disabled={busy}>{secondaryLabel}</Button>
           <Button ref={primaryRef} onClick={onPrimary} disabled={busy}>{primaryLabel}</Button>
@@ -565,15 +565,15 @@ function Coachmark({
         aria-labelledby="onboarding-coachmark-title"
       >
         <div className="flex items-center justify-between gap-3">
-          <span className="text-xs font-semibold uppercase tracking-wide text-amber-300">Getting started · {progressIndex} of {STEP_IDS.length - 2}</span>
+          <span className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Getting started · {progressIndex} of {STEP_IDS.length - 2}</span>
           <button type="button" onClick={onSkipAll} className="rounded-md p-1 fg-muted hover:fg-primary" aria-label="Skip entire tutorial">
             <X className="h-4 w-4" />
           </button>
         </div>
         <h2 id="onboarding-coachmark-title" className="mt-2 text-lg font-semibold fg-primary">{definition.title}</h2>
         <p className="mt-1 text-sm leading-5 fg-secondary">{definition.body}</p>
-        {error && <p className="mt-2 text-xs text-rose-400" role="alert">Could not save progress: {error}</p>}
-        {!targetRect && <p className="mt-2 text-xs text-amber-300">The highlighted control is loading. You can skip this step if it does not apply.</p>}
+        {error && <p className="mt-2 text-xs text-rose-600 dark:text-rose-400" role="alert">Could not save progress: {error}</p>}
+        {!targetRect && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">The highlighted control is loading. You can skip this step if it does not apply.</p>}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
           <button type="button" onClick={onSkipAll} disabled={busy} className="text-xs fg-muted hover:fg-primary disabled:opacity-50">Skip all</button>
           <div className="flex gap-2">

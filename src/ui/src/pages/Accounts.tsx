@@ -184,7 +184,7 @@ export function Accounts() {
                 type="button"
                 onClick={() => setEditing(a)}
                 data-onboarding-target={a.type === 'uncategorized' ? 'unclassified-account-edit' : undefined}
-               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg fg-muted hover:bg-slate-700 hover:text-amber-600 dark:hover:text-amber-400 sm:h-7 sm:w-7"
+               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg fg-muted hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-amber-600 dark:hover:text-amber-400 sm:h-7 sm:w-7"
               title="Edit account"
               aria-label={`Edit ${displayName}`}
             >

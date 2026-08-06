@@ -1,10 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { CircleHelp, LogOut, Settings } from 'lucide-react';
+import { Check, CircleHelp, Laptop, LogOut, Moon, Settings, Sun } from 'lucide-react';
 import clsx from 'clsx';
 import { fetchMe, signOut, SIGNOUT_FLAG_KEY } from '../lib/auth';
 import { useFinancialOnboarding } from './FinancialOnboardingProvider';
+import { useTheme, type ThemePreference } from './ThemeProvider';
+
+const themeOptions: Array<{
+  value: ThemePreference;
+  label: string;
+  icon: typeof Laptop;
+}> = [
+  { value: 'system', label: 'System', icon: Laptop },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'light', label: 'Light', icon: Sun },
+];
 
 /**
  * Profile menu — click the avatar to open a dropdown with:
@@ -18,6 +29,7 @@ export function ProfileMenu() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const onboarding = useFinancialOnboarding();
+  const { preference, setPreference } = useTheme();
   const me = useQuery({ queryKey: ['me'], queryFn: fetchMe });
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -109,30 +121,62 @@ export function ProfileMenu() {
           </div>
 
           <div className="p-1.5">
+            <div role="group" aria-label="Appearance">
+              <div className="px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide fg-muted">
+                Appearance
+              </div>
+              {themeOptions.map((option) => {
+                const Icon = option.icon;
+                const selected = preference === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setPreference(option.value)}
+                    className={clsx(
+                      'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+                      selected
+                        ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                        : 'fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700',
+                    )}
+                    role="menuitemradio"
+                    aria-checked={selected}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="flex-1 text-left">{option.label}</span>
+                    {selected && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </div>
             {isAdmin && (
+              <div className="mt-1 border-t border-default pt-1">
+                <button
+                  type="button"
+                  onClick={() => go('/admin/settings')}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700"
+                  role="menuitem"
+                >
+                  <Settings className="h-4 w-4 shrink-0" />
+                  <span className="flex-1 text-left">Settings</span>
+                </button>
+              </div>
+            )}
+            <div className="mt-1 border-t border-default pt-1">
               <button
                 type="button"
-                onClick={() => go('/admin/settings')}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700"
+                onClick={() => {
+                  setOpen(false);
+                  onboarding.restart();
+                }}
+                disabled={onboarding.isSaving}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
                 role="menuitem"
               >
-                <Settings className="h-4 w-4 shrink-0" />
-                <span className="flex-1 text-left">Settings</span>
+                <CircleHelp className="h-4 w-4 shrink-0" />
+                <span className="flex-1 text-left">Tutorial</span>
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onboarding.restart();
-              }}
-              disabled={onboarding.isSaving}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
-              role="menuitem"
-            >
-              <CircleHelp className="h-4 w-4 shrink-0" />
-              <span className="flex-1 text-left">Financial tutorial</span>
-            </button>
+            </div>
             <button
               type="button"
               onClick={onSignOut}

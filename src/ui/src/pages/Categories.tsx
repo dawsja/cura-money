@@ -725,7 +725,7 @@ function EditableSubCategory({
           <button
             type="submit"
             disabled={saving || !name.trim()}
-            className="flex h-9 w-9 items-center justify-center rounded fg-muted hover:bg-emerald-900/30 hover:text-emerald-300 disabled:opacity-50"
+            className="flex h-9 w-9 items-center justify-center rounded fg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-300 disabled:opacity-50"
             title="Save name"
           >
             <Check className="h-4 w-4" />
@@ -740,7 +740,7 @@ function EditableSubCategory({
             <X className="h-4 w-4" />
           </button>
         </form>
-        {error && <p className="mt-1 text-xs text-rose-400">{error}</p>}
+        {error && <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">{error}</p>}
       </li>
     );
   }
@@ -758,7 +758,7 @@ function EditableSubCategory({
         </button>
         <button
           onClick={onDelete}
-          className="flex h-9 w-9 items-center justify-center rounded fg-muted hover:bg-rose-900/30 hover:text-rose-400"
+          className="flex h-9 w-9 items-center justify-center rounded fg-muted hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30 dark:hover:text-rose-400"
           title={`Delete ${sub.name}`}
         >
           <Trash2 className="h-3.5 w-3.5" />

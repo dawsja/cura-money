@@ -29,7 +29,7 @@ export function AsyncQueryState({
       {loading ? (
         <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin fg-muted" />
       ) : (
-        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
       )}
       <div className="min-w-0 space-y-1">
         <p className="font-semibold fg-primary">{title}</p>

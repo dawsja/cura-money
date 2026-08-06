@@ -1,24 +1,17 @@
 @import 'tailwindcss';
 
-/*
- * Dark-only app. There is no light mode and no theme toggle.
- *
- * Many components still use `dark:` utility pairs from the dual-theme
- * era (`text-rose-600 dark:text-rose-400`). The custom variant below
- * makes every `dark:` selector always match, so those pairs resolve to
- * the dark side without a mass component rewrite. Prefer bare utilities
- * (or semantic tokens) for new code.
- */
-@custom-variant dark (&);
+/* Class-based dark mode lets the saved preference override the OS while
+ * `system` keeps following prefers-color-scheme. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 /*
  * ============================================================================
- * GITHUB DARK + GREEN CTA — Dark only
+ * GITHUB LIGHT/DARK + GREEN CTA
  * ============================================================================
  *
  * Single source of truth for the app's palette. Every Tailwind color scale
  * (slate / amber / emerald / rose / sky / violet) is wired through a CSS
- * variable on `:root`.
+ * variable on `:root`; `.dark` swaps the complete palette.
  *
  * Surfaces mirror GitHub Dark's primer palette (canvas/overlay hierarchy
  * + syntax accents):
@@ -48,12 +41,9 @@
  *   - emerald = GitHub Primer green (#3fb950) → success / "all good"
  * They share the green family but stay visually distinguishable.
  *
- * Accent scales are non-monotonic (role-driven): 200/300/400 are LIGHT
- * for readable text on dark surfaces; 50/100/700+ are dark for subtle
- * backgrounds. Do not flatten to a conventional light→dark ramp.
- *
- * Slate is a shared cool-neutral ramp: light slots double as readable
- * light text (`text-slate-100`) and dark slots as elevated surfaces.
+ * The light palette uses dimmed, low-chroma blue-gray surfaces to reduce
+ * glare while keeping financial data calm and legible. The dark palette
+ * retains the established GitHub Dark surfaces and role-driven accents.
  *
  * Orange (#ffa657) is NOT a Tailwind `orange-*` scale — only
  * `--chart-orange` for Recharts.
@@ -122,21 +112,98 @@
 }
 
 /*
- * ── Palette tokens (dark only) ─────────────────────────────────────
- * GitHub Dark canvas hierarchy + green CTA. Amber/emerald/rose/sky are
- * non-monotonic: 200/300/400 are LIGHT readable text on dark; 50/100
- * are deep tint backgrounds.
+ * ── Light palette tokens ────────────────────────────────────────────
+ * Cool-neutral canvases reduce glare without using pure white surfaces.
+ * Green stays the primary brand action.
  */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
   /* Mobile app geometry. These stay separate from the palette so the
      shell can account for notches and the home indicator consistently. */
   --app-header-height: 4rem;
   --app-tab-height: 4.25rem;
 
-  /* Slate — cool blue-gray ramp (light end = readable text on dark). */
-  --mp-slate-50:  #f6f8fa;
+  /* Slate — cool blue-gray neutral ramp. */
+  --mp-slate-50:  #e3e8ec;
+  --mp-slate-100: #d7dee4;
+  --mp-slate-200: #c7d0d7;
+  --mp-slate-300: #adb9c2;
+  --mp-slate-400: #59636e;
+  --mp-slate-500: #53606b;
+  --mp-slate-600: #4f5d68;
+  --mp-slate-700: #424a53;
+  --mp-slate-800: #25292e;
+  --mp-slate-900: #0d1117;
+
+  /* Amber = Green primary CTA. */
+  --mp-amber-50:  #dcebe1;
+  --mp-amber-100: #c9e2d1;
+  --mp-amber-200: #add6ba;
+  --mp-amber-300: #78bd8d;
+  --mp-amber-400: #4ade80;
+  --mp-amber-500: #22c55e;
+  --mp-amber-600: #16a34a;
+  --mp-amber-700: #116329;
+  --mp-amber-800: #0d4f22;
+  --mp-amber-900: #14532d;
+
+  --mp-emerald-50:  #dcebe1;
+  --mp-emerald-100: #c9e2d1;
+  --mp-emerald-300: #78bd8d;
+  --mp-emerald-400: #4ade80;
+  --mp-emerald-500: #22c55e;
+  --mp-emerald-600: #116329;
+  --mp-emerald-700: #0d4f22;
+  --mp-emerald-900: #063d1b;
+
+  --mp-rose-50:  #f1dedc;
+  --mp-rose-100: #eacbc8;
+  --mp-rose-300: #dc9995;
+  --mp-rose-400: #d66f72;
+  --mp-rose-500: #e5484d;
+  --mp-rose-600: #b4232b;
+  --mp-rose-700: #a40e26;
+  --mp-rose-900: #460809;
+
+  --mp-sky-50:  #eee5c5;
+  --mp-sky-100: #e3d39a;
+  --mp-sky-300: #c2a34b;
+  --mp-sky-500: #bf8700;
+  --mp-sky-700: #765000;
+  --mp-sky-900: #573a00;
+
+  --mp-violet-600: #8250df;
+
+  /* Chart palette */
+  --chart-grid: #c7d0d7;
+  --chart-axis: #4f5d68;
+  --chart-tooltip-bg: #e9edf0;
+  --chart-tooltip-border: #b8c3cb;
+  --chart-tooltip-fg: #20262c;
+  --chart-tooltip-muted: #4f5d68;
+  --chart-total: #25292e;
+  --chart-baseline: #116329;
+  --chart-orange: #bc4c00;
+
+  /* Semantic surfaces / text / borders */
+  --fg-primary: #20262c;
+  --fg-secondary: #43515c;
+  --fg-tertiary: #485661;
+  --fg-muted: #4f5d68;
+  --bg-surface: #e9edf0;
+  --bg-canvas-subtle: #cfd8df;
+  --bg-page: #d9e0e5;
+  --border-default: #b8c3cb;
+  --border-strong: #96a5b0;
+  --coffee-accent: #8b5e34;
+}
+
+/* Dark palette preserves the original GitHub Dark-inspired visual state. */
+.dark {
+  color-scheme: dark;
+
+  --mp-slate-50: #f6f8fa;
   --mp-slate-100: #eaeef2;
   --mp-slate-200: #d1d9e0;
   --mp-slate-300: #afb8c1;
@@ -145,52 +212,45 @@
   --mp-slate-600: #57606a;
   --mp-slate-700: #424a53;
   --mp-slate-800: #32383f;
-  --mp-slate-900: #0d1117;  /* darkest — text on amber buttons (~7.2:1 on #22c55e) */
+  --mp-slate-900: #0d1117;
 
-  /* Amber = Green primary CTA (non-monotonic). */
-  --mp-amber-50:  #052e16;  /* deep green bg */
+  --mp-amber-50: #052e16;
   --mp-amber-100: #0d3f1f;
-  --mp-amber-200: #86efac;  /* light, readable text on dark */
-  --mp-amber-300: #4ade80;  /* light, readable text on dark */
-  --mp-amber-400: #4ade80;  /* light, readable text on dark */
-  --mp-amber-500: #22c55e;  /* primary CTA — dark text passes AA (~7.2:1) */
-  --mp-amber-600: #16a34a;  /* CTA hover */
+  --mp-amber-200: #86efac;
+  --mp-amber-300: #4ade80;
+  --mp-amber-400: #4ade80;
+  --mp-amber-500: #22c55e;
+  --mp-amber-600: #16a34a;
   --mp-amber-700: #15803d;
   --mp-amber-800: #166534;
   --mp-amber-900: #14532d;
 
-  /* Emerald = Success (GitHub Primer green, non-monotonic). */
-  --mp-emerald-50:  #033a16;
+  --mp-emerald-50: #033a16;
   --mp-emerald-100: #062e15;
-  --mp-emerald-300: #7ee787;  /* light, readable on dark */
-  --mp-emerald-400: #56d364;  /* light, readable on dark */
-  --mp-emerald-500: #3fb950;  /* success (GitHub syntax green) */
+  --mp-emerald-300: #7ee787;
+  --mp-emerald-400: #56d364;
+  --mp-emerald-500: #3fb950;
   --mp-emerald-600: #2ea043;
   --mp-emerald-700: #238636;
   --mp-emerald-900: #033a16;
 
-  /* Rose = Danger (GitHub Primer red, non-monotonic) */
-  --mp-rose-50:  #460809;
+  --mp-rose-50: #460809;
   --mp-rose-100: #67060c;
-  --mp-rose-300: #ff8a82;  /* light, readable on dark */
-  --mp-rose-400: #ff6e64;  /* light, readable on dark */
-  --mp-rose-500: #ff7b72;  /* danger (GitHub syntax red) */
+  --mp-rose-300: #ff8a82;
+  --mp-rose-400: #ff6e64;
+  --mp-rose-500: #ff7b72;
   --mp-rose-600: #cf222e;
   --mp-rose-700: #a40e26;
   --mp-rose-900: #460809;
 
-  /* Sky = Warning (GitHub Primer attention yellow, non-monotonic) */
-  --mp-sky-50:  #341a00;
+  --mp-sky-50: #341a00;
   --mp-sky-100: #4a2900;
-  --mp-sky-300: #d29922;  /* light, readable on dark */
-  --mp-sky-500: #bb8009;  /* warning CTA */
+  --mp-sky-300: #d29922;
+  --mp-sky-500: #bb8009;
   --mp-sky-700: #9a6700;
   --mp-sky-900: #573a00;
-
-  /* Violet = Purple depth accent (GitHub syntax purple) */
   --mp-violet-600: #d2a8ff;
 
-  /* Chart palette */
   --chart-grid: #21262d;
   --chart-axis: #8b949e;
   --chart-tooltip-bg: #161b22;
@@ -198,10 +258,9 @@
   --chart-tooltip-fg: #c9d1d9;
   --chart-tooltip-muted: #8b949e;
   --chart-total: #c9d1d9;
-  --chart-baseline: #22c55e;  /* amber CTA green */
+  --chart-baseline: #22c55e;
   --chart-orange: #ffa657;
 
-  /* Semantic surfaces / text / borders */
   --fg-primary: #c9d1d9;
   --fg-secondary: #8b949e;
   --fg-tertiary: #6e7681;
@@ -353,12 +412,7 @@ input[type='number'] {
  * .border-default, etc.) so a palette change touches one block.
  *
  * Three-tier surface hierarchy:
- *   Main canvas       #0d1117   bg-page
- *   Secondary canvas  #161b22   bg-canvas-subtle
- *   Overlay           #21262d   bg-surface
- *   Primary text      #c9d1d9   fg-primary
- *   Secondary text    #8b949e   fg-secondary
- *   Border default    #30363d
+ * Values switch between the light and dark palette blocks above.
  */
 .fg-primary { color: var(--fg-primary); }
 .fg-secondary { color: var(--fg-secondary); }

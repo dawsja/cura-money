@@ -98,7 +98,7 @@ export function ConfirmDialog({
         className="w-full max-w-md rounded-xl border border-default bg-surface p-5 shadow-2xl"
       >
         <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-900/30 text-rose-400">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">
             <AlertTriangle className="h-5 w-5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
@@ -110,7 +110,7 @@ export function ConfirmDialog({
         </div>
 
         {error && (
-          <p role="alert" className="mt-4 rounded-lg border border-rose-900/60 bg-rose-900/20 px-3 py-2 text-sm text-rose-300">
+          <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300">
             {error}
           </p>
         )}

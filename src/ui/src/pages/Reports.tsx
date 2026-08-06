@@ -328,7 +328,7 @@ export function Reports() {
             <button
               type="button"
               onClick={() => setExportOpen(true)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-default bg-surface fg-secondary hover:border-amber-500 hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-default bg-surface fg-secondary hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
               aria-label="Export data"
               title="Export data"
             >
@@ -446,7 +446,7 @@ function ExportModal({
             <h2 id={titleId} className="text-lg font-semibold fg-primary">Export your data</h2>
             <p className="mt-1 text-sm fg-muted">Choose what you want to download.</p>
           </div>
-          <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg fg-muted hover:bg-slate-700 hover:fg-secondary" aria-label="Close export dialog">
+          <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg fg-muted hover:bg-slate-100 dark:hover:bg-slate-700 hover:fg-secondary" aria-label="Close export dialog">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -459,8 +459,8 @@ function ExportModal({
             onClick={download}
             className="group rounded-xl border border-default bg-canvas-subtle p-4 transition-colors hover:border-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
           >
-            <FileSpreadsheet className="h-6 w-6 text-emerald-400" />
-            <span className="mt-3 block text-sm font-semibold fg-primary group-hover:text-amber-300">Transactions CSV</span>
+            <FileSpreadsheet className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+            <span className="mt-3 block text-sm font-semibold fg-primary group-hover:text-amber-700 dark:group-hover:text-amber-300">Transactions CSV</span>
             <span className="mt-1 block text-xs fg-muted">A spreadsheet-ready ledger of all transactions.</span>
           </a>
           <a
@@ -469,8 +469,8 @@ function ExportModal({
             onClick={download}
             className="group rounded-xl border border-default bg-canvas-subtle p-4 transition-colors hover:border-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
           >
-            <Archive className="h-6 w-6 text-sky-400" />
-            <span className="mt-3 block text-sm font-semibold fg-primary group-hover:text-amber-300">Full JSON archive</span>
+            <Archive className="h-6 w-6 text-sky-700 dark:text-sky-300" />
+            <span className="mt-3 block text-sm font-semibold fg-primary group-hover:text-amber-700 dark:group-hover:text-amber-300">Full JSON archive</span>
             <span className="mt-1 block text-xs fg-muted">Accounts, transactions, budgets, goals, rules, and settings.</span>
           </a>
         </div>
@@ -478,7 +478,7 @@ function ExportModal({
         <div className="mt-4 rounded-lg border border-default bg-canvas-subtle px-3 py-2 text-xs fg-muted" aria-live="polite">
           {retentionLoading && <p>Checking data retention policy…</p>}
           {retentionError && (
-            <p className="text-rose-400">
+            <p className="text-rose-600 dark:text-rose-400">
               Retention policy unavailable.{' '}
               <button type="button" onClick={onRetryRetention} className="underline">Retry</button>
             </p>

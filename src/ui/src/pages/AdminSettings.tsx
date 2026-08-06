@@ -158,7 +158,7 @@ function ContainerUpdateSection() {
             type="button"
             onClick={() => refresh.mutate()}
             disabled={checking}
-            className="px-3 py-2 text-sm rounded-lg border border-default bg-surface fg-primary hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2 shrink-0"
+            className="px-3 py-2 text-sm rounded-lg border border-default bg-surface fg-primary hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2 shrink-0"
           >
             <RefreshCw className={`h-4 w-4${checking ? ' animate-spin' : ''}`} />
             {checking ? 'Checking…' : 'Check'}
@@ -168,7 +168,7 @@ function ContainerUpdateSection() {
 
       {data?.updateAvailable ? (
         <div className="card border-l-4 border-sky-500 flex items-start gap-3" role="status">
-          <AlertTriangle className="h-5 w-5 text-sky-300 shrink-0 mt-0.5" />
+          <AlertTriangle className="h-5 w-5 text-sky-700 dark:text-sky-300 shrink-0 mt-0.5" />
           <div className="min-w-0">
             <h3 className="font-semibold fg-primary">A newer container image is available</h3>
             {checkedAt && <p className="text-xs fg-muted mt-1">Checked {checkedAt}</p>}
@@ -177,7 +177,7 @@ function ContainerUpdateSection() {
       ) : (
         <div className="card flex items-start gap-3">
           {data?.updateAvailable === false ? (
-            <Check className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+            <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
           ) : (
             <Container className="h-5 w-5 fg-muted shrink-0 mt-0.5" />
           )}
@@ -870,7 +870,7 @@ function UsersSection() {
             </button>
           </div>
           {createErr && (
-            <p className="text-sm text-rose-400 sm:col-span-3">{createErr}</p>
+            <p className="text-sm text-rose-600 dark:text-rose-400 sm:col-span-3">{createErr}</p>
           )}
         </form>
         {users.isLoading && <div className="fg-muted text-sm">Loading…</div>}

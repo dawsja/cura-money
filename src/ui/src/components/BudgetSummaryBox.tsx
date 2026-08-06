@@ -29,12 +29,12 @@ export function BudgetSummaryBox({
   const expenseRemaining = plannedExpense - spentExpense;
 
   const headerBg = balanced
-    ? 'bg-sky-900/20'
+    ? 'bg-sky-50 dark:bg-sky-900/20'
     : overAssigned
       ? 'bg-rose-50 dark:bg-rose-900/20'
       : 'bg-emerald-50 dark:bg-emerald-900/20';
   const headerText = balanced
-    ? 'text-sky-300'
+    ? 'text-sky-700 dark:text-sky-300'
     : overAssigned
       ? 'text-rose-700 dark:text-rose-300'
       : 'text-emerald-700 dark:text-emerald-300';

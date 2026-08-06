@@ -30,7 +30,7 @@ export function MobileBottomNav() {
                 clsx(
                   'relative flex h-full min-w-0 items-center justify-center rounded-xl px-1 transition-[color,background-color,transform] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500',
                   isActive
-                    ? 'text-amber-300 after:absolute after:left-1/2 after:top-1/2 after:h-9 after:w-12 after:-translate-x-1/2 after:-translate-y-1/2 after:rounded-full after:bg-amber-900/25'
+                    ? 'text-amber-700 after:absolute after:left-1/2 after:top-1/2 after:h-9 after:w-12 after:-translate-x-1/2 after:-translate-y-1/2 after:rounded-full after:bg-amber-50 dark:text-amber-300 dark:after:bg-amber-900/25'
                     : 'fg-tertiary',
                 )
               }

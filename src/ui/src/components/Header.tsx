@@ -74,7 +74,7 @@ export function Header() {
           aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
           aria-expanded={menuOpen}
           aria-controls="mobile-more-pages"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl fg-secondary hover:bg-slate-800 active:scale-95 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-[background-color,transform]"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl fg-secondary hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-[background-color,transform]"
         >
           {menuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
@@ -98,8 +98,8 @@ export function Header() {
                 className={({ isActive }) => clsx(
                   'flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                   isActive
-                    ? 'bg-amber-900/30 text-amber-300'
-                    : 'fg-secondary hover:bg-slate-800',
+                    ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                    : 'fg-secondary hover:bg-slate-100 dark:hover:bg-slate-800',
                 )}
               >
                 <item.icon className="h-5 w-5 shrink-0" />
