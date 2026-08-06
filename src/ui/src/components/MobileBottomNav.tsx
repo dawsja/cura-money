@@ -3,8 +3,8 @@ import { House, Wallet, BarChart3, TrendingDown, Receipt } from 'lucide-react';
 import clsx from 'clsx';
 
 // Bottom nav for mobile (md- breakpoint). Shows the most-used
-// destinations in icon + label form, mirroring the desktop sidebar but
-// trimmed to 5 items that fit on a phone screen. The paydown page is
+// destinations as icons, mirroring the desktop sidebar but trimmed to
+// 5 items that fit on a phone screen. The paydown page is
 // the debt-payoff calculator — Monarch-style. The full category list
 // is reachable from the main Categories page.
 const items = [
@@ -24,17 +24,17 @@ export function MobileBottomNav() {
             <NavLink
               to={it.to}
               end={it.to === '/'}
+              aria-label={it.label}
               className={({ isActive }) =>
                 clsx(
-                  'relative flex h-full min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[0.6875rem] font-medium transition-[color,background-color,transform] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500',
+                  'relative flex h-full min-w-0 items-center justify-center rounded-xl px-1 transition-[color,background-color,transform] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500',
                   isActive
-                    ? 'bg-amber-900/25 text-amber-300'
+                    ? 'text-amber-300 after:absolute after:left-1/2 after:top-1/2 after:h-9 after:w-12 after:-translate-x-1/2 after:-translate-y-1/2 after:rounded-full after:bg-amber-900/25'
                     : 'fg-tertiary',
                 )
               }
             >
-              <it.icon className="h-[1.35rem] w-[1.35rem]" strokeWidth={2.2} />
-              <span className="truncate">{it.label}</span>
+              <it.icon className="relative z-10 h-6 w-6" strokeWidth={2.2} />
             </NavLink>
           </li>
         ))}
