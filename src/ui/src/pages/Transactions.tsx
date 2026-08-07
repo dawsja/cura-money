@@ -26,10 +26,8 @@ import {
   pageWindow,
 } from '../components/ui/pagination';
 import { DatePicker } from '../components/ui/date-picker';
-import { RuleFormModal } from '../components/RuleFormModal';
 import { useReviews } from '../components/ReviewsProvider';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
-import { merchantMatchesRule } from '../lib/merchant-match';
 import clsx from 'clsx';
 
 /** Date-range toolbar presets. `custom` is set when the user edits from/to. */
@@ -79,7 +77,10 @@ const TX_TYPES: TxType[] = ['income', 'expense', 'transfer'];
 const PAGE_SIZE = 25;
 
 interface Transaction {
-  id: string; date: string; merchant: string; category: string;
+  id: string; date: string; merchant: string;
+  sourceCategory: string; sourceSubCategory?: string; sourceType: TxType;
+  sourceClassificationTrusted: boolean;
+  category: string;
   subCategory?: string; account: string; accountId?: string; amount: number; type: TxType; notes?: string;
   splits?: TransactionSplit[];
 }
@@ -90,6 +91,10 @@ interface TransactionSplit {
   subCategory: string;
   type: TxType;
 }
+type EditableTransaction = Omit<
+  Transaction,
+  'id' | 'splits' | 'sourceCategory' | 'sourceSubCategory' | 'sourceType' | 'sourceClassificationTrusted'
+>;
 interface PageResponse { rows: Transaction[]; total: number; }
 interface MainCategory { id: string; name: string; type: TxType; subCategories: { id: string; name: string }[]; }
 interface Account { id: string; name: string; alias?: string; type?: string; }
@@ -416,7 +421,7 @@ export function Transactions() {
   // picker's. Refresh both the page query and the merchants list so
   // the new merchant immediately appears in the filter dropdown.
   const addTx = useMutation({
-    mutationFn: (input: Omit<Transaction, 'id'>) =>
+    mutationFn: (input: EditableTransaction) =>
       api.post<Transaction>('/api/transactions', input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] });
@@ -432,99 +437,116 @@ export function Transactions() {
     id: string;
     matchType: 'exact';
     matchValue: string;
+    accountId?: string;
+    sourceType?: TxType;
+    sourceCategory?: string;
+    sourceSubCategory?: string;
     category: string;
     subCategory?: string;
     type?: TxType;
+    updatedAt: string;
+    version: number;
   }
-  const rules = useQuery({
-    queryKey: ['rules'],
-    queryFn: () => api.get<Rule[]>('/api/rules'),
-  });
 
-  // Popup + modal state. `rulePrompt` is the bottom-right toast shown
-  // after an inline category change asks "Create rule for this?".
-  // `ruleModal` is the form modal opened when the user clicks "Create
-  // rule" on the popup. Single-slot prompts mean rapid edits just
+  // `rulePrompt` is the bottom-right toast shown after an assignment
+  // correction. Single-slot prompts mean rapid edits just
   // replace the current popup (its 8s timer resets) — earlier prompts
   // are silently overwritten, which is acceptable for a non-blocking
   // suggestion.
   const [rulePrompt, setRulePrompt] = useState<{
-    merchant: string;
-    category: string;
-    subCategory?: string;
-    type?: TxType;
     rowId: string;
-  } | null>(null);
-  const [ruleModal, setRuleModal] = useState<{
     merchant: string;
+    account: string;
+    sourceType: TxType;
+    sourceCategory: string;
+    sourceSubCategory?: string;
+    sourceClassificationTrusted: boolean;
     category: string;
     subCategory?: string;
-    type?: TxType;
+    type: TxType;
+  } | null>(null);
+  const rulePromptIdRef = useRef<string | null>(null);
+  const [ruleConfirmation, setRuleConfirmation] = useState<{
+    transactionId: string;
+    existingRule: Rule;
+  } | null>(null);
+  const [assignmentDraft, setAssignmentDraft] = useState<{
+    transaction: Transaction;
+    type: TxType;
+    categoryPick: string;
   } | null>(null);
 
-  // Auto-dismiss the popup 8s after it appears. Slightly longer than
-  // Paydown's 4s toast (which is informational) because the popup here
-  // requires a decision — but still bounded so it doesn't pile up.
-  useEffect(() => {
-    if (!rulePrompt) return;
-    const t = setTimeout(() => setRulePrompt(null), 8000);
-    return () => clearTimeout(t);
-  }, [rulePrompt]);
-
-  const createRule = useMutation({
-    mutationFn: (input: {
-      matchValue: string;
-      category: string;
-      subCategory: string;
-      type?: TxType;
-    }) => api.post<Rule>('/api/rules', input),
-    onSuccess: () => {
+  type RuleFromTransactionResult = {
+    status: 'created' | 'narrowed' | 'updated' | 'unchanged' | 'confirmation_required';
+    rule: Rule;
+  };
+  const createRuleFromTransaction = useMutation({
+    mutationFn: (input: { transactionId: string; replaceRuleId?: string; expectedVersion?: number }) =>
+      api.post<RuleFromTransactionResult>(`/api/rules/from-transaction/${input.transactionId}`, {
+        replaceRuleId: input.replaceRuleId,
+        expectedVersion: input.expectedVersion,
+      }),
+    onSuccess: (result, input) => {
+      if (rulePromptIdRef.current !== input.transactionId && !input.replaceRuleId) return;
+      if (result.status === 'confirmation_required') {
+        setRuleConfirmation({ transactionId: input.transactionId, existingRule: result.rule });
+        rulePromptIdRef.current = null;
+        setRulePrompt(null);
+        return;
+      }
       qc.invalidateQueries({ queryKey: ['rules'] });
-      setRuleModal(null);
+      setRuleConfirmation(null);
+      rulePromptIdRef.current = null;
       setRulePrompt(null);
     },
   });
 
-  // Inline edit: PATCH category / subCategory. After success always
-  // offer "Create rule?" unless a rule already covers this merchant
-  // (exact or prefix match). Merchant/type travel on the mutation
-  // vars so the prompt does not depend on the row still being on the
-  // current page after invalidate.
-  const updateCategoryInline = useMutation({
+  // Pause auto-dismiss while the server is checking for an existing broad
+  // rule so a required narrowing confirmation cannot be discarded.
+  useEffect(() => {
+    if (!rulePrompt || createRuleFromTransaction.isPending) return;
+    const t = setTimeout(() => {
+      rulePromptIdRef.current = null;
+      setRulePrompt(null);
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [rulePrompt, createRuleFromTransaction.isPending]);
+
+  // Type and category form one assignment and are always written together.
+  // Rule creation is a separate, explicit action after the correction saves.
+  const updateAssignmentInline = useMutation({
     mutationFn: (input: {
-      id: string;
-      merchant: string;
+      transaction: Transaction;
       type: TxType;
       category: string;
       subCategory: string;
     }) =>
-      api.patch<{ ok: true; ruleCreated: boolean }>(`/api/transactions/${input.id}`, {
+      api.patch<{ ok: true }>(`/api/transactions/${input.transaction.id}`, {
+        type: input.type,
         category: input.category,
         subCategory: input.subCategory,
       }),
     onSuccess: (_data, vars) => {
+      createRuleFromTransaction.reset();
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['reviews'] });
-      qc.invalidateQueries({ queryKey: ['rules'] });
-      const existingRule = (rules.data ?? []).some((r) =>
-        merchantMatchesRule(vars.merchant, r.matchValue),
-      );
-      if (existingRule) return;
+      setDetailTx((current) => current?.id === vars.transaction.id ? null : current);
+      rulePromptIdRef.current = vars.transaction.id;
       setRulePrompt({
-        merchant: vars.merchant,
+        rowId: vars.transaction.id,
+        merchant: vars.transaction.merchant,
+        account: vars.transaction.account,
+        sourceType: vars.transaction.sourceType,
+        sourceCategory: vars.transaction.sourceCategory,
+        sourceSubCategory: vars.transaction.sourceSubCategory,
+        sourceClassificationTrusted: vars.transaction.sourceClassificationTrusted,
         category: vars.category,
         subCategory: vars.subCategory,
         type: vars.type,
-        rowId: vars.id,
       });
     },
   });
-  const onPickCategory = (
-    id: string,
-    merchant: string,
-    type: TxType,
-    jsonValue: string,
-  ) => {
+  const onPickCategory = (transaction: Transaction, jsonValue: string) => {
     let parsed: { category: string; subCategory: string };
     try {
       parsed = JSON.parse(jsonValue);
@@ -532,31 +554,13 @@ export function Transactions() {
       return; // malformed option value, ignore
     }
     if (!parsed.category || !parsed.subCategory) return;
-    updateCategoryInline.mutate({
-      id,
-      merchant,
-      type,
+    updateAssignmentInline.mutate({
+      transaction,
+      type: transaction.type,
       category: parsed.category,
       subCategory: parsed.subCategory,
     });
   };
-  // Inline type switch. Changing type auto-trains a rule on the server
-  // so future imports of this merchant keep the corrected type
-  // (transfer → expense, etc.). No create-rule popup — type memory is
-  // implicit.
-  const updateTypeInline = useMutation({
-    mutationFn: (input: { id: string; type: TxType; category: string; subCategory: string }) =>
-      api.patch<{ ok: true; ruleCreated: boolean }>(`/api/transactions/${input.id}`, {
-        type: input.type,
-        category: input.category,
-        subCategory: input.subCategory,
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-      qc.invalidateQueries({ queryKey: ['reviews'] });
-      qc.invalidateQueries({ queryKey: ['rules'] });
-    },
-  });
 
   const toggleType = (t: TxType) => {
     setFilters((prev) => {
@@ -606,7 +610,7 @@ export function Transactions() {
   const updateTransaction = useMutation({
     mutationFn: (input: {
       id: string;
-      parent: Omit<Transaction, 'id' | 'splits'>;
+      parent: EditableTransaction;
       splits: Omit<TransactionSplit, 'id'>[];
     }) => api.put<Transaction>(`/api/transactions/${input.id}/full`, {
       transaction: input.parent,
@@ -617,7 +621,7 @@ export function Transactions() {
 
   const updateTxDate = useMutation({
     mutationFn: (input: { id: string; date: string }) =>
-      api.patch<{ ok: true; ruleCreated: boolean }>(`/api/transactions/${input.id}`, { date: input.date }),
+      api.patch<{ ok: true }>(`/api/transactions/${input.id}`, { date: input.date }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] });
     },
@@ -643,23 +647,21 @@ export function Transactions() {
 
   const changeTransactionType = (t: Transaction, newType: TxType) => {
     if (newType === t.type) return;
-    const newBucketCats = (cats.data ?? []).filter((c) => c.type === newType);
+    const newBucketCats = (cats.data ?? []).filter((c) => c.type === newType || c.name === 'Pay down goals');
     const currentCategory = newBucketCats.find((c) => c.name === t.category);
     const stillValid = !!t.subCategory
       && currentCategory?.subCategories.some((s) => s.name === t.subCategory);
     if (stillValid && t.subCategory) {
-      updateTypeInline.mutate({ id: t.id, type: newType, category: t.category, subCategory: t.subCategory });
+      updateAssignmentInline.mutate({
+        transaction: t,
+        type: newType,
+        category: t.category,
+        subCategory: t.subCategory,
+      });
       return;
     }
-    const fallbackCategory = newBucketCats.find((c) => c.subCategories.length > 0);
-    const fallbackSub = fallbackCategory?.subCategories[0];
-    if (!fallbackCategory || !fallbackSub) return;
-    updateTypeInline.mutate({
-      id: t.id,
-      type: newType,
-      category: fallbackCategory.name,
-      subCategory: fallbackSub.name,
-    });
+    if (detailTx?.id === t.id) setDetailTx(null);
+    setAssignmentDraft({ transaction: t, type: newType, categoryPick: '' });
   };
 
   return (
@@ -930,7 +932,7 @@ export function Transactions() {
                     <td className="py-2 hidden md:table-cell">
                       <select
                         value={t.type}
-                        disabled={hasSplits || updateTypeInline.isPending || !!cats.error}
+                        disabled={hasSplits || updateAssignmentInline.isPending || createRuleFromTransaction.isPending || !!cats.error}
                         aria-label="Transaction type"
                         title={hasSplits ? 'Edit the transaction to change split allocations.' : undefined}
                         className={`${INPUT_CLS} w-56 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50`}
@@ -948,8 +950,8 @@ export function Transactions() {
                     <td className="py-2 hidden md:table-cell">
                       <select
                         value={currentValue}
-                        onChange={(e) => onPickCategory(t.id, t.merchant, t.type, e.target.value)}
-                        disabled={hasSplits || updateCategoryInline.isPending || !!cats.error}
+                        onChange={(e) => onPickCategory(t, e.target.value)}
+                        disabled={hasSplits || updateAssignmentInline.isPending || createRuleFromTransaction.isPending || !!cats.error}
                         aria-label="Transaction category"
                         title={hasSplits ? 'Edit the transaction to change split allocations.' : (t.subCategory ? `${t.category} › ${t.subCategory}` : t.category)}
                         className={`${INPUT_CLS} w-56 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50`}
@@ -1061,42 +1063,40 @@ export function Transactions() {
         )}
       </section>
 
-      {/*
-        "Create rule?" popup — appears after an inline category change
-        when no rule already exists for that merchant. Visual style
-        matches Paydown's Save-to-Budget toast (fixed bottom-right,
-        same border/shadow tokens, emerald check icon, dismiss X). Auto-
-        dismisses after 8s — see `useEffect` above. Clicking "Create
-        rule" opens the form modal with the merchant + category pre-
-        filled.
-      */}
       {rulePrompt && (
-        <div className="app-toast fixed z-50 max-w-sm rounded-lg border border-default bg-surface shadow-lg px-4 py-3 text-sm flex items-start gap-3">
+        <div className="app-toast fixed z-[60] max-w-sm rounded-lg border border-default bg-surface shadow-lg px-4 py-3 text-sm flex items-start gap-3">
           <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
             <div className="fg-primary">
-              Category updated to "{rulePrompt.category}
-              {rulePrompt.subCategory ? ` › ${rulePrompt.subCategory}` : ''}".
+              Saved {TYPE_STYLE[rulePrompt.type].label} · {rulePrompt.category}
+              {rulePrompt.subCategory ? ` › ${rulePrompt.subCategory}` : ''}.
+            </div>
+            <div className="mt-1 text-xs fg-muted">
+              {rulePrompt.sourceClassificationTrusted
+                ? `Match ${TYPE_STYLE[rulePrompt.sourceType].label} · ${rulePrompt.sourceCategory}${rulePrompt.sourceSubCategory ? ` › ${rulePrompt.sourceSubCategory}` : ''} on ${rulePrompt.account}.`
+                : `Match this merchant on ${rulePrompt.account}. Original type/category was not retained for this older transaction.`}
             </div>
             <button
               type="button"
-              onClick={() => {
-                setRuleModal({
-                  merchant: rulePrompt.merchant,
-                  category: rulePrompt.category,
-                  subCategory: rulePrompt.subCategory,
-                  type: rulePrompt.type,
-                });
-                setRulePrompt(null);
-              }}
-              className="mt-1 inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 hover:underline"
+              disabled={createRuleFromTransaction.isPending}
+              onClick={() => createRuleFromTransaction.mutate({ transactionId: rulePrompt.rowId })}
+              className="mt-1 inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 hover:underline disabled:opacity-50"
             >
-              Create rule <ArrowUpRight className="h-3 w-3" />
+              {createRuleFromTransaction.isPending ? 'Checking rule…' : 'Create scoped rule'}
+              <ArrowUpRight className="h-3 w-3" />
             </button>
+            {createRuleFromTransaction.isError && (
+              <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                {createRuleFromTransaction.error.message}
+              </div>
+            )}
           </div>
           <button
             type="button"
-            onClick={() => setRulePrompt(null)}
+              onClick={() => {
+                rulePromptIdRef.current = null;
+                setRulePrompt(null);
+              }}
             className="fg-muted hover:fg-secondary"
             aria-label="Dismiss"
           >
@@ -1105,22 +1105,98 @@ export function Transactions() {
         </div>
       )}
 
-      {/*
-        Rule form modal — shared component with the Rules page. Opened
-        from the popup CTA above. We pass the cached categories in the
-        shape the modal expects (just names + sub-categories).
-      */}
-      {ruleModal && (
-        <RuleFormModal
-          mode="create"
-          initial={ruleModal}
-          categories={(cats.data ?? []).map((c) => ({
-            name: c.name,
-            subCategories: c.subCategories.map((s) => ({ name: s.name })),
-          }))}
-          onSave={(input) => createRule.mutateAsync(input)}
-          onClose={() => setRuleModal(null)}
-        />
+      {updateAssignmentInline.isError && !assignmentDraft && (
+        <div className="app-toast fixed z-[60] max-w-sm rounded-lg border border-rose-200 bg-surface shadow-lg px-4 py-3 text-sm flex items-start gap-3">
+          <div className="flex-1 min-w-0 text-rose-600 dark:text-rose-400">
+            Assignment was not saved: {updateAssignmentInline.error.message}
+          </div>
+          <button
+            type="button"
+            onClick={() => updateAssignmentInline.reset()}
+            className="fg-muted hover:fg-secondary"
+            aria-label="Dismiss assignment error"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {ruleConfirmation && (
+        <ConfirmDialog
+          title={ruleConfirmation.existingRule.accountId ? 'Update existing scoped rule?' : 'Narrow existing broad rule?'}
+          confirmLabel={ruleConfirmation.existingRule.accountId ? 'Update rule' : 'Narrow rule'}
+          onConfirm={async () => {
+            const result = await createRuleFromTransaction.mutateAsync({
+              transactionId: ruleConfirmation.transactionId,
+              replaceRuleId: ruleConfirmation.existingRule.id,
+              expectedVersion: ruleConfirmation.existingRule.version,
+            });
+            if (result.status === 'confirmation_required') {
+              throw new Error('The matching rule changed. Review the updated rule and confirm again.');
+            }
+          }}
+          onClose={() => setRuleConfirmation(null)}
+        >
+          <p>
+            The existing rule for <span className="font-medium fg-primary">{ruleConfirmation.existingRule.matchValue}</span>{' '}
+            currently sets {ruleConfirmation.existingRule.type ? `${TYPE_STYLE[ruleConfirmation.existingRule.type].label} · ` : ''}
+            {ruleConfirmation.existingRule.category}
+            {ruleConfirmation.existingRule.subCategory ? ` › ${ruleConfirmation.existingRule.subCategory}` : ''}.
+          </p>
+          <p>
+            Confirming replaces it with this transaction&apos;s account, original type, and original category conditions.
+          </p>
+        </ConfirmDialog>
+      )}
+
+      {assignmentDraft && (
+        <ConfirmDialog
+          title={`Choose a category for ${TYPE_STYLE[assignmentDraft.type].label}`}
+          confirmLabel="Save assignment"
+          onConfirm={async () => {
+            let selected: { category: string; subCategory: string };
+            try {
+              selected = JSON.parse(assignmentDraft.categoryPick) as { category: string; subCategory: string };
+            } catch {
+              throw new Error('Choose a category before saving.');
+            }
+            if (!selected.category || !selected.subCategory) throw new Error('Choose a category before saving.');
+            await updateAssignmentInline.mutateAsync({
+              transaction: assignmentDraft.transaction,
+              type: assignmentDraft.type,
+              category: selected.category,
+              subCategory: selected.subCategory,
+            });
+          }}
+          onClose={() => setAssignmentDraft(null)}
+        >
+          <p>The transaction will not change until both its type and category can be saved together.</p>
+          <select
+            value={assignmentDraft.categoryPick}
+            onChange={(event) => setAssignmentDraft((current) => current ? {
+              ...current,
+              categoryPick: event.target.value,
+            } : null)}
+            className={`w-full ${INPUT_CLS}`}
+            aria-label="New transaction category"
+          >
+            <option value="">Choose a category</option>
+            {(cats.data ?? [])
+              .filter((category) => category.type === assignmentDraft.type || category.name === 'Pay down goals')
+              .map((category) => (
+                <optgroup key={category.id} label={category.name}>
+                  {category.subCategories.map((subCategory) => (
+                    <option
+                      key={subCategory.id}
+                      value={JSON.stringify({ category: category.name, subCategory: subCategory.name })}
+                    >
+                      {subCategory.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+          </select>
+        </ConfirmDialog>
       )}
 
       {addOpen && (
@@ -1141,10 +1217,10 @@ export function Transactions() {
         <TransactionDetailModal
           transaction={detailTx}
           categories={cats.data ?? []}
-          isPending={updateCategoryInline.isPending || updateTypeInline.isPending}
+          isPending={updateAssignmentInline.isPending || createRuleFromTransaction.isPending}
           onClose={() => setDetailTx(null)}
           onChangeType={(type) => changeTransactionType(detailTx, type)}
-          onChangeCategory={(value) => onPickCategory(detailTx.id, detailTx.merchant, detailTx.type, value)}
+          onChangeCategory={(value) => onPickCategory(detailTx, value)}
           onActions={() => { setActionTx(detailTx); setDetailTx(null); }}
           onDelete={() => setDeleteTx(detailTx)}
         />
@@ -1782,7 +1858,7 @@ function AddTransactionModal({
   isPending: boolean;
   error: string | null;
   onClose: () => void;
-  onSubmit: (input: Omit<Transaction, 'id'>) => Promise<void>;
+  onSubmit: (input: EditableTransaction) => Promise<void>;
 }) {
   const today = todayLocalISO();
   const [date, setDate] = useState(today);
@@ -2038,7 +2114,6 @@ function AddTransactionModal({
   );
 }
 
-type EditableTransaction = Omit<Transaction, 'id' | 'splits'>;
 type SplitDraft = Omit<TransactionSplit, 'id' | 'amount'> & { amount: string };
 
 function categoryValue(category: string, subCategory?: string): string {

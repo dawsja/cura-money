@@ -11,9 +11,14 @@ export interface ReviewTransaction {
   id: string;
   date: string;
   merchant: string;
+  sourceCategory: string;
+  sourceSubCategory?: string;
+  sourceType: 'income' | 'expense' | 'transfer';
+  sourceClassificationTrusted: boolean;
   category: string;
   subCategory?: string;
   account: string;
+  accountId?: string;
   amount: number;
   type: 'income' | 'expense' | 'transfer';
   notes?: string;
@@ -42,11 +47,44 @@ export interface ReviewDecisionResult {
   row: ReviewTransaction;
 }
 
+export interface ReviewRule {
+  id: string;
+  matchValue: string;
+  accountId?: string;
+  sourceType?: 'income' | 'expense' | 'transfer';
+  sourceCategory?: string;
+  sourceSubCategory?: string;
+  category: string;
+  subCategory?: string;
+  type?: 'income' | 'expense' | 'transfer';
+  updatedAt: string;
+  version: number;
+}
+
+export interface ReviewRuleResult {
+  status: 'created' | 'narrowed' | 'updated' | 'unchanged' | 'confirmation_required';
+  rule: ReviewRule;
+}
+
 export function decideReview(
   id: string,
   decision: ReviewDecision,
 ): Promise<ReviewDecisionResult> {
   return api.post<ReviewDecisionResult>(`/api/reviews/${id}/decision`, decision);
+}
+
+export function createReviewedTransactionRule(transactionId: string): Promise<ReviewRuleResult> {
+  return api.post<ReviewRuleResult>(`/api/rules/from-transaction/${transactionId}`, {});
+}
+
+export function confirmReviewedTransactionRule(
+  transactionId: string,
+  rule: ReviewRule,
+): Promise<ReviewRuleResult> {
+  return api.post<ReviewRuleResult>(`/api/rules/from-transaction/${transactionId}`, {
+    replaceRuleId: rule.id,
+    expectedVersion: rule.version,
+  });
 }
 
 export function skipAllReviews(): Promise<{ ok: true; cleared: number }> {

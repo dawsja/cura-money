@@ -197,6 +197,13 @@
       "when": 1786900000000,
       "tag": "0027_account_balance_and_transaction_splits",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1787000000000,
+      "tag": "0028_scoped_rules",
+      "breakpoints": true
     }
   ]
 }

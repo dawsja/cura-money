@@ -14,11 +14,9 @@
  * supplied main category. Empty patches (`action: 'skip'`) just clear
  * the flag.
  *
- * When a previously-pending row is categorized, the data layer
- * (`markTransactionReviewed`) auto-trains a rule on the
- * merchant → category mapping so the next import of the same
- * merchant skips the review queue. Skip actions do NOT create a
- * rule — the user didn't make a categorization decision.
+ * Review decisions never create or rewrite a rule implicitly. Rules are
+ * explicit because a merchant can post on several accounts with different
+ * source classifications.
  */
 import { Hono } from 'hono';
 import { z } from 'zod';

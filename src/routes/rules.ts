@@ -1,11 +1,9 @@
 /**
  * /api/rules — CRUD on user-defined categorization rules.
  *
- * Rules are "always set this merchant to this category" mappings. The
- * SimpleFIN import + manual add paths consult `findRuleForMerchant` so
- * the user only categorises a given merchant once. The Transactions
- * page consults it too, to decide whether to show the "Create rule?"
- * prompt after an inline category change.
+ * Rules combine merchant matching with optional source account, type, and
+ * category conditions. SimpleFIN, manual add, and historical runs use the
+ * same deterministic resolver.
  *
  * `POST /api/rules/:id/run` re-applies a single rule to every existing
  * transaction in the user's ledger (the ▶ button on the Rules page).
@@ -20,8 +18,10 @@ import {
   applyAllRulesToMatchingTransactions,
   applyRuleToAllMatchingTransactions,
   createRule,
+  createRuleFromTransaction,
   deleteRule,
   editRule,
+  getAccount,
   listRules,
   categoryAssignmentExists,
 } from '@/db/queries';
@@ -38,9 +38,16 @@ const TxType = z.enum(['income', 'expense', 'transfer']);
 const AddSchema = z.object({
   matchType: MatchType.optional(),
   matchValue: z.string().min(1).max(255),
+  accountId: z.string().min(1).max(500).optional(),
+  sourceType: TxType.optional(),
+  sourceCategory: z.string().min(1).max(120).optional(),
+  sourceSubCategory: z.string().min(1).max(120).optional(),
   category: z.string().min(1).max(120),
   subCategory: z.string().min(1).max(120),
-  type: TxType.optional(),
+  type: TxType,
+}).refine((value) => (value.sourceCategory === undefined) === (value.sourceSubCategory === undefined), {
+  message: 'sourceCategory and sourceSubCategory must be provided together',
+  path: ['sourceCategory'],
 });
 
 // Editable fields — matchValue is included so the user can rename a
@@ -48,10 +55,22 @@ const AddSchema = z.object({
 // Existing category-only rules remain readable, but any assignment edit
 // must provide a valid main + leaf pair. `type` accepts null to clear it.
 const EditSchema = z.object({
+  expectedVersion: z.number().int().positive(),
   matchValue: z.string().min(1).max(255).optional(),
+  accountId: z.string().min(1).max(500).nullable().optional(),
+  sourceType: TxType.nullable().optional(),
+  sourceCategory: z.string().min(1).max(120).nullable().optional(),
+  sourceSubCategory: z.string().min(1).max(120).nullable().optional(),
   category: z.string().min(1).max(120).optional(),
   subCategory: z.string().min(1).max(120).optional(),
   type: TxType.nullable().optional(),
+}).refine((value) => {
+  if (value.sourceCategory === undefined && value.sourceSubCategory === undefined) return true;
+  if (value.sourceCategory === null && value.sourceSubCategory === null) return true;
+  return typeof value.sourceCategory === 'string' && typeof value.sourceSubCategory === 'string';
+}, {
+  message: 'sourceCategory and sourceSubCategory must be changed together',
+  path: ['sourceCategory'],
 });
 
 ruleRoutes.get(
@@ -65,6 +84,9 @@ ruleRoutes.post(
     const body = await c.req.json().catch(() => null);
     const parsed = AddSchema.safeParse(body);
     if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
+    if (parsed.data.accountId && !await getAccount(userId(c), parsed.data.accountId)) {
+      return badRequest(c, 'accountId must belong to the user');
+    }
     if (!await categoryAssignmentExists(userId(c), parsed.data.category, parsed.data.subCategory)) {
       return badRequest(c, 'subCategory must belong to category');
     }
@@ -79,6 +101,9 @@ ruleRoutes.patch(
     const body = await c.req.json().catch(() => null);
     const parsed = EditSchema.safeParse(body);
     if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
+    if (parsed.data.accountId && !await getAccount(userId(c), parsed.data.accountId)) {
+      return badRequest(c, 'accountId must belong to the user');
+    }
     const changesAssignment = parsed.data.category !== undefined || parsed.data.subCategory !== undefined;
     if (changesAssignment) {
       if (!parsed.data.category || !parsed.data.subCategory) {
@@ -88,8 +113,26 @@ ruleRoutes.patch(
         return badRequest(c, 'subCategory must belong to category');
       }
     }
-    await editRule(userId(c), routeParam(c, 'id'), parsed.data);
-    return c.json({ ok: true });
+    const { expectedVersion, ...patch } = parsed.data;
+    return c.json(await editRule(userId(c), routeParam(c, 'id'), patch, expectedVersion));
+  }),
+);
+
+ruleRoutes.post(
+  '/from-transaction/:transactionId',
+  safe(async (c) => {
+    const parsed = z.object({
+      replaceRuleId: z.string().min(1).max(500).optional(),
+      expectedVersion: z.number().int().positive().optional(),
+    })
+      .safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
+    return c.json(await createRuleFromTransaction(
+      userId(c),
+      routeParam(c, 'transactionId'),
+      parsed.data.replaceRuleId,
+      parsed.data.expectedVersion,
+    ));
   }),
 );
 

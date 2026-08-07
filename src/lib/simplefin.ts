@@ -14,6 +14,7 @@ import {
   upsertAccount,
   addTransactionWithExternalId,
   deleteImportedTransactionsForAccount,
+  getAllCategories,
   listRulesForMatching,
 } from '@/db/queries';
 import type { InferredAccountType } from './categorize';
@@ -388,7 +389,19 @@ async function performSimpleFinSync(
   // Load the user's rules once and match per-transaction with
   // exact-or-prefix (longest wins). Rules win over the smart
   // categoriser — the user explicitly asked for that mapping.
+  const categoryRows = await getAllCategories(userId);
   const ruleRows = await listRulesForMatching(userId);
+  const validAssignments = new Set(
+    categoryRows.flatMap((category) =>
+      category.subCategories.map((subCategory) => `${category.name}\u0000${subCategory.name}`),
+    ),
+  );
+  const fallbackByType = new Map<string, { category: string; subCategory: string }>();
+  for (const category of categoryRows) {
+    const subCategory = category.subCategories[0];
+    if (!subCategory || category.name === 'Pay down goals' || fallbackByType.has(category.type)) continue;
+    fallbackByType.set(category.type, { category: category.name, subCategory: subCategory.name });
+  }
 
   let accountsSynced = 0;
   let transactionsSynced = 0;
@@ -522,21 +535,36 @@ async function performSimpleFinSync(
         // when no rule type is set). Trained merchants skip the review
         // queue entirely.
         const smart = smartCategorizeMerchant(merchant, signedAmountCents);
-        const ruleMatch = pickBestRuleMatch(merchant, ruleRows);
+        const sourceType = smart.type ?? (isIncome ? 'income' : 'expense');
+        const smartAssignmentValid = smart.subCategory != null
+          && validAssignments.has(`${smart.category}\u0000${smart.subCategory}`);
+        const fallback = fallbackByType.get(sourceType);
+        const suggestedCategory = smartAssignmentValid ? smart.category : fallback?.category ?? smart.category;
+        const suggestedSubCategory = smartAssignmentValid ? smart.subCategory : fallback?.subCategory ?? smart.subCategory;
+        const ruleMatch = pickBestRuleMatch({
+          merchant,
+          accountId: accId,
+          sourceCategory: smart.category,
+          sourceSubCategory: smart.subCategory,
+          sourceType,
+        }, ruleRows);
         // Legacy rules without a leaf cannot safely override the smart
         // category: pairing their parent with an unrelated smart leaf
         // would create an invalid assignment.
-        const category = ruleMatch?.subCategory ? ruleMatch.category : smart.category;
-        const subCategory = ruleMatch?.subCategory ?? smart.subCategory;
+        const category = ruleMatch?.subCategory ? ruleMatch.category : suggestedCategory;
+        const subCategory = ruleMatch?.subCategory ?? suggestedSubCategory;
         const txType =
           ruleMatch?.type
-          ?? smart.type
-          ?? (isIncome ? 'income' : 'expense');
+          ?? sourceType;
 
         const externalId = `sf-${stableSimpleFinId([sAcc.conn_id ?? '', sAcc.id, sTx.id])}`;
         const result = await addTransactionWithExternalId(userId, {
           date: dateStr,
           merchant,
+          sourceCategory: smart.category,
+          sourceSubCategory: smart.subCategory,
+          sourceType,
+          sourceClassificationTrusted: true,
           category,
           subCategory,
           accountId: accId,

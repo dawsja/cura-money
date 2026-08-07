@@ -25,7 +25,11 @@ import { oidcProviders } from './schema/oidc_providers';
 import { setupState } from './schema/setup_state';
 import { INITIAL_CATEGORIES } from './seed';
 import { firstMonthPaydownPayments, type PaydownAccount, type PaydownMethod } from '@/lib/paydown';
-import { merchantMatchesRule, normalizeMerchant, pickBestRuleMatch } from '@/lib/merchant-match';
+import {
+  normalizeMerchant,
+  pickBestRuleMatch,
+  type RuleMatchContext,
+} from '@/lib/merchant-match';
 import { centsToDollars, dollarsToCents } from '@/lib/money';
 import { latestBudgetsUpTo } from './budget-repository';
 
@@ -78,6 +82,10 @@ export interface Transaction {
   id: string;
   date: string;
   merchant: string;
+  sourceCategory: string;
+  sourceSubCategory?: string;
+  sourceType: TransactionType;
+  sourceClassificationTrusted: boolean;
   category: string;
   subCategory?: string;
   account: string;
@@ -288,6 +296,41 @@ export async function editAccount(userId: string, id: string, patch: Partial<Acc
           patch.alias === undefined ? existing.alias : patch.alias === null || patch.alias === '' ? null : patch.alias,
       })
       .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+    if (nextName !== existing.name) {
+      const [paydownCategory] = await tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(and(eq(categories.userId, userId), eq(categories.name, 'Pay down goals')))
+        .limit(1);
+      if (paydownCategory) {
+        await tx
+          .update(subCategories)
+          .set({ name: nextName })
+          .where(
+            and(
+              eq(subCategories.userId, userId),
+              eq(subCategories.mainCategoryId, paydownCategory.id),
+              eq(subCategories.name, existing.name),
+            ),
+          );
+        await tx
+          .update(transactions)
+          .set({ subCategory: nextName })
+          .where(
+            and(
+              eq(transactions.userId, userId),
+              eq(transactions.category, 'Pay down goals'),
+              eq(transactions.subCategory, existing.name),
+            ),
+          );
+        await tx
+          .update(rules)
+          .set({ subCategory: nextName, updatedAt: new Date(), version: sql`${rules.version} + 1` })
+          .where(
+            and(eq(rules.userId, userId), eq(rules.category, 'Pay down goals'), eq(rules.subCategory, existing.name)),
+          );
+      }
+    }
     if (nextType === 'investment') {
       // Only imported activity is cleanup-owned. Manual entries are never
       // removed merely because an account was reclassified or renamed.
@@ -393,6 +436,14 @@ export async function deleteAccount(userId: string, id: string): Promise<void> {
       .where(and(eq(categories.userId, userId), eq(categories.name, 'Pay down goals')))
       .limit(1);
     if (paydownCategory) {
+      await tx
+        .delete(rules)
+        .where(
+          and(
+            eq(rules.userId, userId),
+            and(eq(rules.category, 'Pay down goals'), eq(rules.subCategory, account.name)),
+          ),
+        );
       await tx
         .delete(subCategories)
         .where(
@@ -548,6 +599,32 @@ export async function categoryAssignmentExists(
   return rows.length > 0;
 }
 
+/** Validate a leaf plus transaction type, with Pay down goals intentionally type-agnostic. */
+export async function transactionAssignmentExists(
+  userId: string,
+  category: string,
+  subCategory: string,
+  type: TransactionType,
+): Promise<boolean> {
+  const rows = await db
+    .select({ type: categories.type })
+    .from(subCategories)
+    .innerJoin(
+      categories,
+      and(eq(categories.id, subCategories.mainCategoryId), eq(categories.userId, subCategories.userId)),
+    )
+    .where(
+      and(
+        eq(categories.userId, userId),
+        eq(categories.name, category),
+        eq(subCategories.userId, userId),
+        eq(subCategories.name, subCategory),
+      ),
+    )
+    .limit(1);
+  return rows.length === 1 && (rows[0]!.type === type || category === 'Pay down goals');
+}
+
 export async function mainCategoryExists(userId: string, id: string): Promise<boolean> {
   const rows = await db
     .select({ id: categories.id })
@@ -597,6 +674,9 @@ export async function editMainCategory(userId: string, id: string, name: string)
       .where(and(eq(categories.userId, userId), eq(categories.id, id)))
       .limit(1);
     if (!existing || existing.name === name) return;
+    if (existing.name === 'Pay down goals') {
+      throw Object.assign(new Error('Pay down goals is managed from the Pay down page'), { status: 400 });
+    }
 
     await tx
       .update(categories)
@@ -612,7 +692,7 @@ export async function editMainCategory(userId: string, id: string, name: string)
       .where(and(eq(transactionSplits.userId, userId), eq(transactionSplits.category, existing.name)));
     await tx
       .update(rules)
-      .set({ category: name })
+      .set({ category: name, updatedAt: new Date(), version: sql`${rules.version} + 1` })
       .where(and(eq(rules.userId, userId), eq(rules.category, existing.name)));
   });
 }
@@ -625,7 +705,17 @@ export async function deleteMainCategory(userId: string, id: string): Promise<vo
       .where(and(eq(categories.userId, userId), eq(categories.id, id)))
       .limit(1);
     if (!category) return;
-    await tx.delete(rules).where(and(eq(rules.userId, userId), eq(rules.category, category.name)));
+    if (category.name === 'Pay down goals') {
+      throw Object.assign(new Error('Pay down goals is managed from the Pay down page'), { status: 400 });
+    }
+    await tx
+      .delete(rules)
+      .where(
+        and(
+          eq(rules.userId, userId),
+          eq(rules.category, category.name),
+        ),
+      );
     await tx.delete(categories).where(and(eq(categories.userId, userId), eq(categories.id, id)));
   });
 }
@@ -793,6 +883,9 @@ export async function editSubCategory(
       )
       .limit(1);
     if (!existing) return;
+    if (existing.mainName === 'Pay down goals') {
+      throw Object.assign(new Error('Pay down goal categories follow their account names'), { status: 400 });
+    }
 
     await tx
       .update(subCategories)
@@ -824,7 +917,7 @@ export async function editSubCategory(
       );
     await tx
       .update(rules)
-      .set({ subCategory: name })
+      .set({ subCategory: name, updatedAt: new Date(), version: sql`${rules.version} + 1` })
       .where(
         and(eq(rules.userId, userId), eq(rules.category, existing.mainName), eq(rules.subCategory, existing.name)),
       );
@@ -849,13 +942,15 @@ export async function deleteSubCategory(userId: string, mainCategoryId: string, 
       )
       .limit(1);
     if (!assignment) return;
+    if (assignment.category === 'Pay down goals') {
+      throw Object.assign(new Error('Pay down goal categories are removed with their accounts'), { status: 400 });
+    }
     await tx
       .delete(rules)
       .where(
         and(
           eq(rules.userId, userId),
-          eq(rules.category, assignment.category),
-          eq(rules.subCategory, assignment.subCategory),
+          and(eq(rules.category, assignment.category), eq(rules.subCategory, assignment.subCategory)),
         ),
       );
     await tx
@@ -1048,6 +1143,10 @@ export async function getAllTransactions(userId: string): Promise<Transaction[]>
         id: r.id,
         date: r.date,
         merchant: r.merchant,
+        sourceCategory: r.sourceCategory,
+        sourceSubCategory: r.sourceSubCategory ?? undefined,
+        sourceType: r.sourceType,
+        sourceClassificationTrusted: r.sourceClassificationTrusted,
         category: r.category,
         subCategory: r.subCategory ?? undefined,
         // Resolve alias on read so renaming flows through to every
@@ -1334,6 +1433,10 @@ export async function listTransactions(
     id: r.id,
     date: r.date,
     merchant: r.merchant,
+    sourceCategory: r.sourceCategory,
+    sourceSubCategory: r.sourceSubCategory ?? undefined,
+    sourceType: r.sourceType,
+    sourceClassificationTrusted: r.sourceClassificationTrusted,
     category: r.category,
     subCategory: r.subCategory ?? undefined,
     account:
@@ -1369,22 +1472,51 @@ export async function getDistinctMerchants(userId: string): Promise<string[]> {
   return rows.map((r) => r.merchant).filter((m): m is string => m.length > 0);
 }
 
-export async function addTransaction(userId: string, tx: Omit<Transaction, 'id' | 'splits'>): Promise<Transaction> {
+export async function addTransaction(
+  userId: string,
+  tx: Omit<
+    Transaction,
+    'id' | 'splits' | 'sourceCategory' | 'sourceSubCategory' | 'sourceType' | 'sourceClassificationTrusted'
+  >
+    & Partial<Pick<Transaction, 'sourceCategory' | 'sourceSubCategory' | 'sourceType'>>,
+): Promise<Transaction> {
   const id = `tx-${Date.now()}-${nanoid(4)}`;
   const amountCents = dollarsToCents(tx.amount);
   if (amountCents < 0) throw new Error('transaction amount must not be negative');
   const account = await resolveTransactionAccount(userId, tx.account, tx.accountId);
+  const sourceCategory = tx.sourceCategory ?? tx.category;
+  const sourceSubCategory = tx.sourceSubCategory ?? tx.subCategory;
+  const sourceType = tx.sourceType ?? tx.type;
+  const ruleMatch = await findRuleForTransaction(userId, {
+    merchant: tx.merchant,
+    accountId: account.id,
+    sourceCategory,
+    sourceSubCategory,
+    sourceType,
+  });
+  const category = ruleMatch?.subCategory ? ruleMatch.category : tx.category;
+  const subCategory = ruleMatch?.subCategory ?? tx.subCategory;
+  const type = ruleMatch?.type ?? tx.type;
+  if (!subCategory || !await transactionAssignmentExists(userId, category, subCategory, type)) {
+    throw Object.assign(new Error('transaction must use a valid category, subCategory, and matching type'), {
+      status: 400,
+    });
+  }
   await db.insert(transactions).values({
     id,
     userId,
     date: tx.date,
     merchant: tx.merchant,
-    category: tx.category,
-    subCategory: tx.subCategory ?? null,
+    sourceCategory,
+    sourceSubCategory: sourceSubCategory ?? null,
+    sourceType,
+    sourceClassificationTrusted: true,
+    category,
+    subCategory: subCategory ?? null,
     accountId: account.id,
     account: account.name,
     amountCents,
-    type: tx.type,
+    type,
     notes: tx.notes ?? null,
     // Manual entry — the user already chose the category and merchant
     // themselves, so there's nothing to "review". Default per schema
@@ -1394,6 +1526,13 @@ export async function addTransaction(userId: string, tx: Omit<Transaction, 'id' 
   return {
     ...tx,
     id,
+    sourceCategory,
+    sourceSubCategory,
+    sourceType,
+    sourceClassificationTrusted: true,
+    category,
+    subCategory,
+    type,
     accountId: account.id,
     account: account.name,
     amount: centsToDollars(amountCents),
@@ -1405,13 +1544,13 @@ export async function editTransaction(
   userId: string,
   id: string,
   patch: Partial<Transaction>,
-): Promise<{ ruleCreated: boolean }> {
+): Promise<void> {
   const [existing] = await db
     .select()
     .from(transactions)
     .where(and(eq(transactions.userId, userId), eq(transactions.id, id)))
     .limit(1);
-  if (!existing) return { ruleCreated: false };
+  if (!existing) return;
   const nextAccount =
     patch.account !== undefined || patch.accountId !== undefined
       ? await resolveTransactionAccount(userId, patch.account ?? existing.account, patch.accountId)
@@ -1428,7 +1567,18 @@ export async function editTransaction(
   // endpoint is the only path that touches an existing row, and
   // it can only be reached by an authenticated user (per guard.ts).
   const implicitReview = existing.needsReview;
-  const typeChanged = patch.type !== undefined && patch.type !== existing.type;
+  const finalCategory = patch.category ?? existing.category;
+  const finalSubCategory = patch.subCategory !== undefined ? patch.subCategory : existing.subCategory;
+  const finalType = patch.type ?? existing.type;
+  const changesAssignment = patch.category !== undefined || patch.subCategory !== undefined || patch.type !== undefined;
+  if (
+    changesAssignment
+    && (!finalSubCategory || !await transactionAssignmentExists(userId, finalCategory, finalSubCategory, finalType))
+  ) {
+    throw Object.assign(new Error('transaction must use a valid category, subCategory, and matching type'), {
+      status: 400,
+    });
+  }
   await db.transaction(async (tx) => {
     await tx
       .update(transactions)
@@ -1453,28 +1603,8 @@ export async function editTransaction(
     }
   });
 
-  // Type corrections are remembered automatically: "this merchant is
-  // an expense, not a transfer" should stick for future imports. We
-  // upsert a rule (create if missing, else patch type + keep/refresh
-  // category). Category-only edits do NOT auto-train here — the
-  // Transactions page always offers the "Create rule?" popup so the
-  // user opts in; the review carousel still auto-trains via
-  // markTransactionReviewed.
-  let ruleCreated = false;
-  if (typeChanged && patch.type) {
-    const finalMerchant = patch.merchant ?? existing.merchant;
-    const finalCategory = patch.category ?? existing.category;
-    const finalSubCategory =
-      patch.subCategory !== undefined ? (patch.subCategory ?? undefined) : (existing.subCategory ?? undefined);
-    const result = await upsertRuleForMerchant(userId, {
-      matchValue: finalMerchant,
-      category: finalCategory,
-      subCategory: finalSubCategory,
-      type: patch.type,
-    });
-    ruleCreated = result.created;
-  }
-  return { ruleCreated };
+  // Rule changes are always explicit. A transaction correction must never
+  // mutate a shared rule as a side effect.
 }
 
 export async function deleteTransaction(userId: string, id: string): Promise<void> {
@@ -1557,13 +1687,17 @@ export async function updateFullTransaction(
         )
         .where(and(eq(categories.userId, userId), eq(subCategories.userId, userId)));
       const valid = new Set(assignments.map((row) => `${row.category}\u0000${row.subCategory}\u0000${row.type}`));
-      if (changesAssignment && !valid.has(`${nextCategory}\u0000${nextSubCategory}\u0000${nextType}`)) {
+      const assignmentIsValid = (category: string, subCategory: string, type: TransactionType) =>
+        valid.has(`${category}\u0000${subCategory}\u0000${type}`)
+        || (category === 'Pay down goals'
+          && assignments.some((row) => row.category === category && row.subCategory === subCategory));
+      if (changesAssignment && !assignmentIsValid(nextCategory, nextSubCategory!, nextType)) {
         throw Object.assign(new Error('transaction must use a valid category, subCategory, and matching type'), {
           status: 400,
         });
       }
       for (const split of input.splits) {
-        if (!valid.has(`${split.category}\u0000${split.subCategory}\u0000${split.type}`)) {
+        if (!assignmentIsValid(split.category, split.subCategory, split.type)) {
           throw Object.assign(new Error('each split must use a valid category, subCategory, and matching type'), {
             status: 400,
           });
@@ -1641,6 +1775,10 @@ export async function updateFullTransaction(
       id: transactionId,
       date,
       merchant: patch.merchant ?? parent.merchant,
+      sourceCategory: parent.sourceCategory,
+      sourceSubCategory: parent.sourceSubCategory ?? undefined,
+      sourceType: parent.sourceType,
+      sourceClassificationTrusted: parent.sourceClassificationTrusted,
       category: nextCategory,
       subCategory: nextSubCategory ?? undefined,
       account: account.alias || account.name,
@@ -1709,8 +1847,12 @@ export async function replaceTransactionSplits(
         )
         .where(and(eq(categories.userId, userId), eq(subCategories.userId, userId)));
       const valid = new Set(assignments.map((row) => `${row.category}\u0000${row.subCategory}\u0000${row.type}`));
+      const assignmentIsValid = (category: string, subCategory: string, type: TransactionType) =>
+        valid.has(`${category}\u0000${subCategory}\u0000${type}`)
+        || (category === 'Pay down goals'
+          && assignments.some((row) => row.category === category && row.subCategory === subCategory));
       for (const split of input) {
-        if (!valid.has(`${split.category}\u0000${split.subCategory}\u0000${split.type}`)) {
+        if (!assignmentIsValid(split.category, split.subCategory, split.type)) {
           throw Object.assign(new Error('each split must use a valid category, subCategory, and matching type'), {
             status: 400,
           });
@@ -1816,7 +1958,6 @@ export async function addTransactionWithExternalId(
         .from(transactionSplits)
         .where(and(eq(transactionSplits.userId, userId), eq(transactionSplits.transactionId, current.id)))
         .orderBy(asc(transactionSplits.sortOrder));
-      const ruleMatched = tx.needsReview === false && splitRows.length === 0;
       const effectiveDate = current.dateUserModified ? current.date : tx.date;
       const effectiveNotes = current.notes === 'Pending Transaction' ? (tx.notes ?? null) : current.notes;
       const amountChanged = current.amountCents !== tx.amountCents;
@@ -1825,21 +1966,17 @@ export async function addTransactionWithExternalId(
         .set({
           date: effectiveDate,
           sourceDate: tx.date,
-          merchant: tx.merchant,
-          accountId: account.id,
+           merchant: tx.merchant,
+           sourceCategory: tx.sourceCategory,
+           sourceSubCategory: tx.sourceSubCategory ?? null,
+           sourceType: tx.sourceType,
+           sourceClassificationTrusted: true,
+           accountId: account.id,
           account: account.name,
           amountCents: tx.amountCents,
           externalId: tx.externalId ?? current.externalId,
-          // A matching user rule is authoritative even when this external
-          // transaction was first seen before the rule existed.
-           ...(ruleMatched
-            ? {
-                category: tx.category,
-                subCategory: tx.subCategory ?? null,
-                type: tx.type,
-                needsReview: false,
-              }
-            : {}),
+           // Existing assignments are user-owned. Sync refreshes source
+           // metadata, but historical categorization changes require Run.
           // A changed source amount invalidates explicit allocations. Return
           // the parent to review instead of silently counting its old assignment.
           ...(amountChanged && splitRows.length > 0 ? { needsReview: true } : {}),
@@ -1856,15 +1993,19 @@ export async function addTransactionWithExternalId(
       return {
         action: 'updated' as const,
         transaction: {
-          id: current.id,
-          date: effectiveDate,
-          merchant: tx.merchant,
-          category: ruleMatched ? tx.category : current.category,
-          subCategory: ruleMatched ? tx.subCategory : (current.subCategory ?? undefined),
+           id: current.id,
+           date: effectiveDate,
+           merchant: tx.merchant,
+           sourceCategory: tx.sourceCategory,
+           sourceSubCategory: tx.sourceSubCategory,
+           sourceType: tx.sourceType,
+           sourceClassificationTrusted: true,
+           category: current.category,
+           subCategory: current.subCategory ?? undefined,
           accountId: account.id,
           account: account.name,
           amount: centsToDollars(tx.amountCents),
-          type: ruleMatched ? tx.type : current.type,
+           type: current.type,
           notes: effectiveNotes ?? undefined,
           splits: amountChanged
             ? []
@@ -1892,6 +2033,10 @@ export async function addTransactionWithExternalId(
       sourceDate: tx.date,
       dateUserModified: false,
       merchant: tx.merchant,
+      sourceCategory: tx.sourceCategory,
+      sourceSubCategory: tx.sourceSubCategory ?? null,
+      sourceType: tx.sourceType,
+      sourceClassificationTrusted: true,
       category: tx.category,
       subCategory: tx.subCategory ?? null,
       accountId: account.id,
@@ -1917,6 +2062,10 @@ export async function addTransactionWithExternalId(
       id,
       date: tx.date,
       merchant: tx.merchant,
+      sourceCategory: tx.sourceCategory,
+      sourceSubCategory: tx.sourceSubCategory,
+      sourceType: tx.sourceType,
+      sourceClassificationTrusted: true,
       category: tx.category,
       subCategory: tx.subCategory,
       accountId: account.id,
@@ -1981,6 +2130,10 @@ export async function listReviewQueue(userId: string, opts: { limit?: number } =
     id: r.id,
     date: r.date,
     merchant: r.merchant,
+    sourceCategory: r.sourceCategory,
+    sourceSubCategory: r.sourceSubCategory ?? undefined,
+    sourceType: r.sourceType,
+    sourceClassificationTrusted: r.sourceClassificationTrusted,
     category: r.category,
     subCategory: r.subCategory ?? undefined,
     account:
@@ -2020,23 +2173,15 @@ export async function markTransactionReviewed(
     .limit(1);
   if (!existing) return null;
 
-  // Auto-train the rule system on the user's review decision. When
-  // the user categorizes a previously-pending row, treat that
-  // pick as confirmation that this merchant belongs in this bucket
-  // — every future import of the same merchant will be auto-
-  // categorized (and typed) and skip the review queue. Skip the
-  // "skip" action (no category provided). If a rule already exists
-  // we still refresh type/category so a review correction sticks.
-  if (existing.needsReview && patch.category !== undefined) {
-    const finalCategory = patch.category;
-    const finalSubCategory =
-      patch.subCategory !== undefined ? (patch.subCategory ?? undefined) : (existing.subCategory ?? undefined);
-    const finalType = patch.type ?? existing.type;
-    await upsertRuleForMerchant(userId, {
-      matchValue: existing.merchant,
-      category: finalCategory,
-      subCategory: finalSubCategory,
-      type: finalType,
+  const finalCategory = patch.category ?? existing.category;
+  const finalSubCategory = patch.subCategory !== undefined ? patch.subCategory : existing.subCategory;
+  const finalType = patch.type ?? existing.type;
+  if (
+    patch.category !== undefined
+    && (!finalSubCategory || !await transactionAssignmentExists(userId, finalCategory, finalSubCategory, finalType))
+  ) {
+    throw Object.assign(new Error('transaction must use a valid category, subCategory, and matching type'), {
+      status: 400,
     });
   }
 
@@ -2063,6 +2208,10 @@ export async function markTransactionReviewed(
     id: existing.id,
     date: existing.date,
     merchant: existing.merchant,
+    sourceCategory: existing.sourceCategory,
+    sourceSubCategory: existing.sourceSubCategory ?? undefined,
+    sourceType: existing.sourceType,
+    sourceClassificationTrusted: existing.sourceClassificationTrusted,
     category: patch.category ?? existing.category,
     subCategory:
       patch.subCategory !== undefined ? (patch.subCategory ?? undefined) : (existing.subCategory ?? undefined),
@@ -2637,21 +2786,23 @@ export async function deleteGoal(userId: string, id: string): Promise<void> {
 
 // ---- Rules -------------------------------------------------------------
 //
-// User-defined "always set this merchant to this category/type" mappings.
-// Applied at import time (SimpleFIN + manual add) so the user only has
-// to categorise a merchant once. Matching is exact-or-prefix via
-// `src/lib/merchant-match.ts`. The Transactions page uses
-// `findRuleForMerchant` to decide whether to show the "Create rule?"
-// prompt after an inline category change.
+// User-defined source conditions and category/type assignments. Matching is
+// exact-or-prefix for merchant text plus optional account/type/category scope.
 
 export interface Rule {
   id: string;
   matchType: 'exact';
   matchValue: string;
+  accountId?: string;
+  sourceType?: TransactionType;
+  sourceCategory?: string;
+  sourceSubCategory?: string;
   category: string;
   subCategory?: string;
   type?: TransactionType;
   createdAt: Date;
+  updatedAt: Date;
+  version: number;
 }
 
 function rowToRule(r: typeof rules.$inferSelect): Rule {
@@ -2659,10 +2810,16 @@ function rowToRule(r: typeof rules.$inferSelect): Rule {
     id: r.id,
     matchType: 'exact',
     matchValue: r.matchValue,
+    accountId: r.accountId ?? undefined,
+    sourceType: (r.sourceType as TransactionType | null) ?? undefined,
+    sourceCategory: r.sourceCategory ?? undefined,
+    sourceSubCategory: r.sourceSubCategory ?? undefined,
     category: r.category,
     subCategory: r.subCategory ?? undefined,
     type: (r.type as TransactionType | null) ?? undefined,
     createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    version: r.version,
   };
 }
 
@@ -2675,38 +2832,87 @@ export async function listRules(userId: string): Promise<Rule[]> {
 /** Load every rule row for matching (import hot path). */
 export async function listRulesForMatching(
   userId: string,
-): Promise<Array<Pick<Rule, 'matchValue' | 'category' | 'subCategory' | 'type'>>> {
+): Promise<Rule[]> {
   const rows = await db
-    .select({
-      matchValue: rules.matchValue,
-      category: rules.category,
-      subCategory: rules.subCategory,
-      type: rules.type,
-    })
+    .select()
     .from(rules)
     .where(eq(rules.userId, userId));
-  return rows.map((r) => ({
-    matchValue: r.matchValue,
-    category: r.category,
-    subCategory: r.subCategory ?? undefined,
-    type: (r.type as TransactionType | null) ?? undefined,
-  }));
+  const assignments = await db
+    .select({ category: categories.name, subCategory: subCategories.name, type: categories.type })
+    .from(subCategories)
+    .innerJoin(
+      categories,
+      and(eq(categories.userId, subCategories.userId), eq(categories.id, subCategories.mainCategoryId)),
+    )
+    .where(eq(categories.userId, userId));
+  const valid = new Map(assignments.map((row) => [`${row.category}\u0000${row.subCategory}`, row.type]));
+  return rows
+    .filter((row) => {
+      if (row.subCategory == null) return false;
+      const categoryType = valid.get(`${row.category}\u0000${row.subCategory}`);
+      return categoryType != null
+        && ((row.type != null && (row.type === categoryType || row.category === 'Pay down goals'))
+          || (row.type == null && row.category === 'Pay down goals'));
+    })
+    .map(rowToRule);
+}
+
+interface RuleWriteInput {
+  matchType?: 'exact';
+  matchValue: string;
+  accountId?: string | null;
+  sourceType?: TransactionType | null;
+  sourceCategory?: string | null;
+  sourceSubCategory?: string | null;
+  category: string;
+  subCategory?: string;
+  type?: TransactionType | null;
+}
+
+interface RuleScope {
+  matchValue: string;
+  accountId?: string | null;
+  sourceType?: TransactionType | null;
+  sourceCategory?: string | null;
+  sourceSubCategory?: string | null;
+}
+
+function sameRuleScope(row: typeof rules.$inferSelect, scope: RuleScope): boolean {
+  return normalizeMerchant(row.matchValue) === normalizeMerchant(scope.matchValue)
+    && (row.accountId ?? null) === (scope.accountId ?? null)
+    && (row.sourceType ?? null) === (scope.sourceType ?? null)
+    && (row.sourceCategory ?? null) === (scope.sourceCategory ?? null)
+    && (row.sourceSubCategory ?? null) === (scope.sourceSubCategory ?? null);
+}
+
+function isBroadRule(row: typeof rules.$inferSelect): boolean {
+  return row.accountId == null
+    && row.sourceType == null
+    && row.sourceCategory == null
+    && row.sourceSubCategory == null;
+}
+
+async function findRuleByScope(userId: string, scope: RuleScope): Promise<typeof rules.$inferSelect | null> {
+  const rows = await db.select().from(rules).where(eq(rules.userId, userId));
+  return rows.find((row) => sameRuleScope(row, scope)) ?? null;
 }
 
 export async function createRule(
   userId: string,
-  input: {
-    matchType?: 'exact';
-    matchValue: string;
-    category: string;
-    subCategory?: string;
-    type?: TransactionType;
-  },
+  input: RuleWriteInput,
 ): Promise<Rule> {
   const id = `rule-${nanoid(10)}`;
   const matchType = input.matchType ?? 'exact';
   const trimmed = input.matchValue.trim();
   if (!trimmed) throw new Error('matchValue must not be empty');
+  if (!input.subCategory || !input.type || !await transactionAssignmentExists(
+    userId,
+    input.category,
+    input.subCategory,
+    input.type,
+  )) {
+    throw Object.assign(new Error('Rule must set a valid category, subCategory, and matching type'), { status: 400 });
+  }
   const inserted = await db
     .insert(rules)
     .values({
@@ -2714,26 +2920,21 @@ export async function createRule(
       userId,
       matchType,
       matchValue: trimmed,
+      accountId: input.accountId ?? null,
+      sourceType: input.sourceType ?? null,
+      sourceCategory: input.sourceCategory ?? null,
+      sourceSubCategory: input.sourceSubCategory ?? null,
       category: input.category,
       subCategory: input.subCategory ?? null,
       type: input.type ?? null,
+      updatedAt: new Date(),
     })
     .onConflictDoNothing()
     .returning();
   if (inserted.length === 0) {
-    const existing = await findExactRuleRow(userId, trimmed);
-    if (existing) return rowToRule(existing);
-    throw new Error('A normalized duplicate rule already exists');
+    throw Object.assign(new Error('A rule with the same match conditions already exists'), { status: 409 });
   }
-  return {
-    id,
-    matchType: 'exact',
-    matchValue: trimmed,
-    category: input.category,
-    subCategory: input.subCategory,
-    type: input.type,
-    createdAt: new Date(),
-  };
+  return rowToRule(inserted[0]!);
 }
 
 export async function editRule(
@@ -2741,33 +2942,79 @@ export async function editRule(
   id: string,
   patch: {
     matchValue?: string;
+    accountId?: string | null;
+    sourceType?: TransactionType | null;
+    sourceCategory?: string | null;
+    sourceSubCategory?: string | null;
     category?: string;
     subCategory?: string | null;
     type?: TransactionType | null;
   },
-): Promise<void> {
+  expectedVersion?: number,
+  ): Promise<Rule> {
   const [existing] = await db
     .select()
     .from(rules)
     .where(and(eq(rules.userId, userId), eq(rules.id, id)))
     .limit(1);
-  if (!existing) return;
+  if (!existing) throw Object.assign(new Error('Rule not found'), { status: 404 });
   const nextMatchValue = patch.matchValue?.trim() ?? existing.matchValue;
   if (!nextMatchValue) throw new Error('matchValue must not be empty');
-  const duplicate = await findExactRuleRow(userId, nextMatchValue);
-  if (duplicate && duplicate.id !== id) throw new Error('A normalized duplicate rule already exists');
-  await db
+  const nextSourceCategory = patch.sourceCategory === undefined ? existing.sourceCategory : patch.sourceCategory;
+  const nextScope: RuleScope = {
+    matchValue: nextMatchValue,
+    accountId: patch.accountId === undefined ? existing.accountId : patch.accountId,
+    sourceType: patch.sourceType === undefined ? existing.sourceType : patch.sourceType,
+    sourceCategory: nextSourceCategory,
+    sourceSubCategory: nextSourceCategory == null
+      ? null
+      : patch.sourceSubCategory === undefined ? existing.sourceSubCategory : patch.sourceSubCategory,
+  };
+  if ((nextScope.sourceCategory == null) !== (nextScope.sourceSubCategory == null)) {
+    throw Object.assign(new Error('sourceCategory and sourceSubCategory must be set together'), { status: 400 });
+  }
+  const duplicate = await findRuleByScope(userId, nextScope);
+  if (duplicate && duplicate.id !== id) {
+    throw Object.assign(new Error('A rule with the same match conditions already exists'), { status: 409 });
+  }
+  const nextCategory = patch.category ?? existing.category;
+  const nextSubCategory = patch.subCategory === undefined ? existing.subCategory : patch.subCategory;
+  const nextType = patch.type === undefined ? existing.type : patch.type;
+  const targetIsValid = nextSubCategory
+    && (nextType
+      ? await transactionAssignmentExists(userId, nextCategory, nextSubCategory, nextType)
+      : nextCategory === 'Pay down goals'
+        && await categoryAssignmentExists(userId, nextCategory, nextSubCategory));
+  if (!targetIsValid) {
+    throw Object.assign(new Error('Rule must set a valid category, subCategory, and matching type'), { status: 400 });
+  }
+  const updated = await db
     .update(rules)
     .set({
       matchValue: nextMatchValue,
+      accountId: nextScope.accountId ?? null,
+      sourceType: nextScope.sourceType ?? null,
+      sourceCategory: nextScope.sourceCategory ?? null,
+      sourceSubCategory: nextScope.sourceSubCategory ?? null,
       category: patch.category ?? existing.category,
       // `subCategory` / `type` use explicit `null` so the user can clear
       // them. `undefined` means "don't touch".
       subCategory:
         patch.subCategory === undefined ? existing.subCategory : patch.subCategory === null ? null : patch.subCategory,
       type: patch.type === undefined ? existing.type : patch.type === null ? null : patch.type,
+      updatedAt: new Date(),
+      version: sql`${rules.version} + 1`,
     })
-    .where(and(eq(rules.userId, userId), eq(rules.id, id)));
+    .where(and(
+      eq(rules.userId, userId),
+      eq(rules.id, id),
+      expectedVersion !== undefined ? eq(rules.version, expectedVersion) : undefined,
+    ))
+    .returning();
+  if (updated.length === 0) {
+    throw Object.assign(new Error('The rule changed before confirmation; review it and try again'), { status: 409 });
+  }
+  return rowToRule(updated[0]!);
 }
 
 export async function deleteRule(userId: string, id: string): Promise<void> {
@@ -2775,120 +3022,113 @@ export async function deleteRule(userId: string, id: string): Promise<void> {
 }
 
 /**
- * Find an existing rule whose matchValue equals the merchant under
- * normalized comparison (trim + case). Used when deciding whether to
- * insert a new rule vs update — we only update an exact-normalized
- * twin so a broad "Starbucks" rule is not overwritten by a one-off
- * "STARBUCKS #99" auto-train.
+ * Look up the scoped rule that applies to a transaction's source values.
  */
-async function findExactRuleRow(userId: string, merchant: string): Promise<typeof rules.$inferSelect | null> {
-  const target = normalizeMerchant(merchant);
-  if (!target) return null;
-  const rows = await db.select().from(rules).where(eq(rules.userId, userId));
-  for (const row of rows) {
-    if (normalizeMerchant(row.matchValue) === target) return row;
-  }
-  return null;
-}
-
-/**
- * Auto-train: insert a rule when none covers this merchant. Does not
- * overwrite an existing match (prefix or exact). Prefer
- * `upsertRuleForMerchant` when a user correction should stick.
- */
-export async function createRuleIfMissing(
+export async function findRuleForTransaction(
   userId: string,
-  matchValue: string,
-  category: string,
-  subCategory?: string,
-  type?: TransactionType,
-): Promise<{ created: boolean; rule: Rule | null }> {
-  const trimmed = matchValue.trim();
-  if (!trimmed || !category) return { created: false, rule: null };
-  const existing = await findRuleForMerchant(userId, trimmed);
-  if (existing) return { created: false, rule: null };
-  const rule = await createRule(userId, {
-    matchType: 'exact',
-    matchValue: trimmed,
-    category,
-    subCategory,
-    type,
-  });
-  return { created: true, rule };
-}
-
-/**
- * Create a rule for the merchant, or update the exact-normalized twin
- * if one already exists. Used when the user explicitly corrects type
- * or categorizes via the review carousel — those decisions should
- * stick even if a prior rule pointed somewhere else.
- *
- * Prefix-only matches (e.g. existing "Starbucks" while training
- * "STARBUCKS RESERVE #1") do not get overwritten; a new more-specific
- * rule is inserted instead so the longest-match picker can prefer it.
- */
-export async function upsertRuleForMerchant(
-  userId: string,
-  input: {
-    matchValue: string;
-    category: string;
-    subCategory?: string;
-    type?: TransactionType;
-  },
-): Promise<{ created: boolean; rule: Rule | null }> {
-  const trimmed = input.matchValue.trim();
-  if (!trimmed || !input.category) return { created: false, rule: null };
-  const exact = await findExactRuleRow(userId, trimmed);
-  if (exact) {
-    await db
-      .update(rules)
-      .set({
-        category: input.category,
-        subCategory: input.subCategory ?? null,
-        type: input.type ?? exact.type,
-      })
-      .where(and(eq(rules.userId, userId), eq(rules.id, exact.id)));
-    return {
-      created: false,
-      rule: {
-        ...rowToRule(exact),
-        category: input.category,
-        subCategory: input.subCategory,
-        type: input.type ?? rowToRule(exact).type,
-      },
-    };
-  }
-  const rule = await createRule(userId, {
-    matchType: 'exact',
-    matchValue: trimmed,
-    category: input.category,
-    subCategory: input.subCategory,
-    type: input.type,
-  });
-  return { created: true, rule };
-}
-
-/**
- * Look up the rule that applies to a given merchant (if any). Uses
- * exact-or-prefix matching (see `merchantMatchesRule`); longest match
- * wins when multiple rules hit.
- *
- * Used at import time (SimpleFIN + manual add) and by the Transactions
- * popup-trigger check ("does a rule already exist for this merchant?").
- */
-export async function findRuleForMerchant(
-  userId: string,
-  merchant: string,
+  context: RuleMatchContext,
 ): Promise<Pick<Rule, 'category' | 'subCategory' | 'type'> | null> {
-  if (!merchant?.trim()) return null;
+  if (!context.merchant?.trim()) return null;
   const rows = await listRulesForMatching(userId);
-  const best = pickBestRuleMatch(merchant, rows);
+  const best = pickBestRuleMatch(context, rows);
   if (!best) return null;
   return {
     category: best.category,
     subCategory: best.subCategory,
     type: best.type,
   };
+}
+
+export type RuleFromTransactionResult =
+  | { status: 'created' | 'narrowed' | 'updated' | 'unchanged'; rule: Rule }
+  | { status: 'confirmation_required'; rule: Rule };
+
+/** Build a fully-scoped rule from immutable source values and current assignment. */
+export async function createRuleFromTransaction(
+  userId: string,
+  transactionId: string,
+  replaceRuleId?: string,
+  expectedVersion?: number,
+): Promise<RuleFromTransactionResult> {
+  const [transaction] = await db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.id, transactionId)))
+    .limit(1);
+  if (!transaction) throw Object.assign(new Error('Transaction not found'), { status: 404 });
+  if (
+    !transaction.subCategory
+    || !(await transactionAssignmentExists(userId, transaction.category, transaction.subCategory, transaction.type))
+  ) {
+    throw Object.assign(new Error('Transaction must have a valid category assignment'), { status: 400 });
+  }
+  const account = transaction.accountId
+    ? { id: transaction.accountId }
+    : await resolveTransactionAccount(userId, transaction.account);
+  const input: RuleWriteInput = {
+    matchValue: transaction.merchant,
+    accountId: account.id,
+    sourceType: transaction.sourceClassificationTrusted ? transaction.sourceType : null,
+    sourceCategory: transaction.sourceClassificationTrusted && transaction.sourceSubCategory
+      ? transaction.sourceCategory
+      : null,
+    sourceSubCategory: transaction.sourceClassificationTrusted ? transaction.sourceSubCategory : null,
+    category: transaction.category,
+    subCategory: transaction.subCategory,
+    type: transaction.type,
+  };
+  const userRules = await db.select().from(rules).where(eq(rules.userId, userId));
+  const scoped = userRules.find((row) => sameRuleScope(row, input));
+  const broad = pickBestRuleMatch({
+    merchant: transaction.merchant,
+    accountId: account.id,
+    sourceType: transaction.sourceType,
+    sourceCategory: transaction.sourceCategory,
+    sourceSubCategory: transaction.sourceSubCategory ?? undefined,
+  }, userRules.filter(isBroadRule));
+  const conflict = scoped ?? broad;
+  if (conflict) {
+    const narrowingBroad = broad?.id === conflict.id;
+    const assignmentMatches = conflict.category === input.category
+      && (conflict.subCategory ?? null) === (input.subCategory ?? null)
+      && (conflict.type ?? null) === (input.type ?? null);
+    if (scoped && assignmentMatches) return { status: 'unchanged', rule: rowToRule(conflict) };
+    if (replaceRuleId !== conflict.id) {
+      return { status: 'confirmation_required', rule: rowToRule(conflict) };
+    }
+    if (expectedVersion === undefined || conflict.version !== expectedVersion) {
+      return { status: 'confirmation_required', rule: rowToRule(conflict) };
+    }
+    const updated = await editRule(userId, conflict.id, {
+      matchValue: narrowingBroad ? conflict.matchValue : input.matchValue,
+      accountId: input.accountId,
+      sourceType: input.sourceType,
+      sourceCategory: input.sourceCategory,
+      sourceSubCategory: input.sourceSubCategory,
+      category: input.category,
+      subCategory: input.subCategory,
+      type: input.type,
+    }, conflict.version);
+    return { status: narrowingBroad ? 'narrowed' : 'updated', rule: updated };
+  }
+  if (replaceRuleId) {
+    throw Object.assign(new Error('The rule changed before confirmation; review it and try again'), { status: 409 });
+  }
+  try {
+    return { status: 'created', rule: await createRule(userId, input) };
+  } catch (error) {
+    if ((error as { status?: number }).status !== 409) throw error;
+    const raced = await findRuleByScope(userId, input);
+    if (
+      raced
+      && raced.category === input.category
+      && (raced.subCategory ?? null) === (input.subCategory ?? null)
+      && (raced.type ?? null) === (input.type ?? null)
+    ) {
+      return { status: 'unchanged', rule: rowToRule(raced) };
+    }
+    throw error;
+  }
 }
 
 /**
@@ -2907,14 +3147,24 @@ export async function applyRuleToAllMatchingTransactions(userId: string, ruleId:
     .where(and(eq(rules.userId, userId), eq(rules.id, ruleId)))
     .limit(1);
   if (!rule) throw new Error('Rule not found');
-  if (!rule.subCategory || !(await categoryAssignmentExists(userId, rule.category, rule.subCategory))) {
-    throw new Error('Rule must assign a valid sub-category before it can run');
+  const validAssignment = rule.subCategory
+    && (rule.type
+      ? await transactionAssignmentExists(userId, rule.category, rule.subCategory, rule.type)
+      : rule.category === 'Pay down goals'
+        && await categoryAssignmentExists(userId, rule.category, rule.subCategory));
+  if (!validAssignment) {
+    throw new Error('Rule must assign a valid sub-category and matching type before it can run');
   }
 
   const candidates = await db
     .select({
       id: transactions.id,
       merchant: transactions.merchant,
+      accountId: transactions.accountId,
+      sourceCategory: transactions.sourceCategory,
+      sourceSubCategory: transactions.sourceSubCategory,
+      sourceType: transactions.sourceType,
+      sourceClassificationTrusted: transactions.sourceClassificationTrusted,
       category: transactions.category,
       subCategory: transactions.subCategory,
       type: transactions.type,
@@ -2923,9 +3173,18 @@ export async function applyRuleToAllMatchingTransactions(userId: string, ruleId:
     .from(transactions)
     .where(and(eq(transactions.userId, userId), sql`NOT (${hasSplitSql()})`));
 
+  const allRules = await listRulesForMatching(userId);
   const idsToUpdate: string[] = [];
   for (const row of candidates) {
-    if (!merchantMatchesRule(row.merchant, rule.matchValue)) continue;
+    const best = pickBestRuleMatch({
+      merchant: row.merchant,
+      accountId: row.accountId ?? undefined,
+      sourceCategory: row.sourceCategory,
+      sourceSubCategory: row.sourceSubCategory ?? undefined,
+      sourceType: row.sourceType,
+      sourceClassificationTrusted: row.sourceClassificationTrusted,
+    }, allRules);
+    if (best?.id !== rule.id) continue;
     const catDiff = row.category !== rule.category;
     const subDiff = (row.subCategory ?? null) !== (rule.subCategory ?? null);
     const typeDiff = rule.type != null && row.type !== rule.type;
@@ -2956,21 +3215,18 @@ export async function applyRuleToAllMatchingTransactions(userId: string, ruleId:
  * Used by the "Run all rules" button on the Rules page.
  */
 export async function applyAllRulesToMatchingTransactions(userId: string): Promise<{ updated: number }> {
-  const ruleRows = await db.select().from(rules).where(eq(rules.userId, userId));
+  const ruleRows = await listRulesForMatching(userId);
   if (ruleRows.length === 0) return { updated: 0 };
-  const assignmentsAreValid = await Promise.all(
-    ruleRows.map((rule) =>
-      rule.subCategory ? categoryAssignmentExists(userId, rule.category, rule.subCategory) : Promise.resolve(false),
-    ),
-  );
-  if (assignmentsAreValid.some((valid) => !valid)) {
-    throw new Error('Every rule must assign a valid sub-category before rules can run');
-  }
 
   const candidates = await db
     .select({
       id: transactions.id,
       merchant: transactions.merchant,
+      accountId: transactions.accountId,
+      sourceCategory: transactions.sourceCategory,
+      sourceSubCategory: transactions.sourceSubCategory,
+      sourceType: transactions.sourceType,
+      sourceClassificationTrusted: transactions.sourceClassificationTrusted,
       category: transactions.category,
       subCategory: transactions.subCategory,
       type: transactions.type,
@@ -2982,7 +3238,14 @@ export async function applyAllRulesToMatchingTransactions(userId: string): Promi
   // ruleId → transaction ids that need that rule's category applied
   const byRule = new Map<string, string[]>();
   for (const row of candidates) {
-    const best = pickBestRuleMatch(row.merchant, ruleRows);
+    const best = pickBestRuleMatch({
+      merchant: row.merchant,
+      accountId: row.accountId ?? undefined,
+      sourceCategory: row.sourceCategory,
+      sourceSubCategory: row.sourceSubCategory ?? undefined,
+      sourceType: row.sourceType,
+      sourceClassificationTrusted: row.sourceClassificationTrusted,
+    }, ruleRows);
     if (!best) continue;
     const catDiff = row.category !== best.category;
     const subDiff = (row.subCategory ?? null) !== (best.subCategory ?? null);

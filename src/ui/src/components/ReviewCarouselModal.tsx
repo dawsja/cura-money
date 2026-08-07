@@ -27,7 +27,7 @@
  *   - ←/→     → prev / next slide (without dispatching)
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
   ChevronLeft,
@@ -37,7 +37,14 @@ import {
 import clsx from 'clsx';
 import { api } from '../lib/api';
 import { formatMoney, formatDate } from '../lib/format';
-import { type ReviewTransaction } from '../lib/reviews';
+import {
+  confirmReviewedTransactionRule,
+  createReviewedTransactionRule,
+  type ReviewDecisionResult,
+  type ReviewRule,
+  type ReviewTransaction,
+} from '../lib/reviews';
+import { ConfirmDialog } from './ui/confirm-dialog';
 
 const INPUT_CLS =
   'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
@@ -88,8 +95,13 @@ export interface ReviewCarouselModalProps {
   onClose: () => void;
   onDecide: (
     id: string,
-    payload: { action: 'skip' | 'categorize'; category?: string; subCategory?: string | null; type?: TxType },
-  ) => Promise<void>;
+    payload: {
+      action: 'skip' | 'categorize';
+      category?: string;
+      subCategory?: string | null;
+      type?: TxType;
+    },
+  ) => Promise<ReviewDecisionResult>;
   onSkipAll: () => Promise<void>;
 }
 
@@ -101,11 +113,22 @@ export function ReviewCarouselModal({
   onDecide,
   onSkipAll,
 }: ReviewCarouselModalProps) {
+  const queryClient = useQueryClient();
   const [idx, setIdx] = useState(0);
   // Per-id edit cache. Cleared when the modal resets (queue empty +
   // remount).
   const [edits, setEdits] = useState<Record<string, EditState>>({});
   const [err, setErr] = useState<string | null>(null);
+  const [rememberRules, setRememberRules] = useState<Record<string, boolean>>({});
+  const [ruleConfirmation, setRuleConfirmation] = useState<{
+    transactionId: string;
+    rule: ReviewRule;
+  } | null>(null);
+  const [ruleOperation, setRuleOperation] = useState<{
+    transactionId: string;
+    status: 'pending' | 'error';
+    error?: string;
+  } | null>(null);
 
   // Categories are a sibling concern — same query as the Transactions
   // page, shared via React Query so the cache is hot as soon as the
@@ -174,8 +197,11 @@ export function ReviewCarouselModal({
   const handleSkip = useCallback(async () => {
     if (!slide || isMutating) return;
     setErr(null);
-    await onDecide(slide.id, { action: 'skip' });
-    setIdx((p) => p + 1);
+    try {
+      await onDecide(slide.id, { action: 'skip' });
+    } catch (caught) {
+      setErr(caught instanceof Error ? caught.message : 'Could not skip');
+    }
   }, [slide, isMutating, onDecide]);
 
   const handleSkipAll = useCallback(async () => {
@@ -188,6 +214,24 @@ export function ReviewCarouselModal({
     }
   }, [isMutating, queue.length, onSkipAll]);
 
+  const createScopedRule = useCallback(async (transactionId: string) => {
+    setRuleOperation({ transactionId, status: 'pending' });
+    try {
+      const ruleResult = await createReviewedTransactionRule(transactionId);
+      queryClient.invalidateQueries({ queryKey: ['rules'] });
+      setRuleOperation(null);
+      if (ruleResult.status === 'confirmation_required') {
+        setRuleConfirmation({ transactionId, rule: ruleResult.rule });
+      }
+    } catch (caught) {
+      setRuleOperation({
+        transactionId,
+        status: 'error',
+        error: caught instanceof Error ? caught.message : 'unknown error',
+      });
+    }
+  }, [queryClient]);
+
   const handleCategorize = useCallback(async () => {
     if (!slide || isMutating) return;
     if (!edit?.category || !edit.subCategory) return;
@@ -199,11 +243,14 @@ export function ReviewCarouselModal({
         subCategory: edit.subCategory || null,
         type: edit.type,
       });
-      setIdx((p) => p + 1);
     } catch (caught) {
       setErr(caught instanceof Error ? caught.message : 'Could not save');
+      return;
     }
-  }, [slide, edit, isMutating, onDecide]);
+    if (rememberRules[slide.id] === true) {
+      await createScopedRule(slide.id);
+    }
+  }, [slide, edit, isMutating, onDecide, rememberRules, createScopedRule]);
 
   const isLoadingFirst = isLoading && queue.length === 0;
   const isFinished = !isLoadingFirst && idx >= queue.length && queue.length > 0;
@@ -213,7 +260,7 @@ export function ReviewCarouselModal({
   // Transactions page renders the same filter (type-scoped groupings).
   const visibleCats = useMemo(() => {
     if (!edit || !cats.data) return [];
-    return cats.data.filter((c) => c.type === edit.type);
+    return cats.data.filter((c) => c.type === edit.type || c.name === 'Pay down goals');
   }, [cats.data, edit]);
 
   // A type change can invalidate the selected leaf, so clear the full
@@ -229,6 +276,64 @@ export function ReviewCarouselModal({
   }, [edit?.type, edit?.category, edit?.subCategory, edit, slide, updateEdit, visibleCats]);
 
   // ----- Render branches ---------------------------------------------------
+
+  if (ruleConfirmation) {
+    return (
+      <ConfirmDialog
+        title={ruleConfirmation.rule.accountId ? 'Update existing scoped rule?' : 'Narrow existing broad rule?'}
+        confirmLabel={ruleConfirmation.rule.accountId ? 'Update rule' : 'Narrow rule'}
+        onConfirm={async () => {
+          const result = await confirmReviewedTransactionRule(ruleConfirmation.transactionId, ruleConfirmation.rule);
+          if (result.status === 'confirmation_required') {
+            setRuleConfirmation({ transactionId: ruleConfirmation.transactionId, rule: result.rule });
+            throw new Error('The matching rule changed. Review the updated rule and confirm again.');
+          }
+          queryClient.invalidateQueries({ queryKey: ['rules'] });
+        }}
+        onClose={() => setRuleConfirmation(null)}
+      >
+        <p>
+          The existing rule for <span className="font-medium fg-primary">{ruleConfirmation.rule.matchValue}</span>{' '}
+          currently sets {ruleConfirmation.rule.category}
+          {ruleConfirmation.rule.subCategory ? ` › ${ruleConfirmation.rule.subCategory}` : ''}.
+        </p>
+        <p>Confirming replaces it with the reviewed transaction&apos;s scoped conditions and assignment.</p>
+      </ConfirmDialog>
+    );
+  }
+
+  if (ruleOperation) {
+    return (
+      <Overlay onClose={() => { if (ruleOperation.status === 'error') setRuleOperation(null); }}>
+        <div className="card w-full max-w-md space-y-3">
+          <h3 className="text-lg font-semibold fg-primary">
+            {ruleOperation.status === 'pending' ? 'Creating scoped rule' : 'Rule was not created'}
+          </h3>
+          {ruleOperation.status === 'pending' ? (
+            <p className="text-sm fg-secondary">The transaction is saved. Checking existing rules…</p>
+          ) : (
+            <>
+              <p className="text-sm fg-secondary">
+                The transaction was saved, but its rule failed: {ruleOperation.error}
+              </p>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setRuleOperation(null)} className="px-3 py-2 text-sm fg-tertiary">
+                  Continue without rule
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void createScopedRule(ruleOperation.transactionId)}
+                  className="btn-primary"
+                >
+                  Retry
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </Overlay>
+    );
+  }
 
   if (isLoadingFirst) {
     return (
@@ -252,6 +357,7 @@ export function ReviewCarouselModal({
             Nothing here right now. New SimpleFIN imports will land here for
             confirmation before they show up on your dashboard.
           </p>
+          {err && <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p>}
           <div className="flex justify-end">
             <button type="button" onClick={onClose} className="btn-primary">
               Got it
@@ -273,6 +379,7 @@ export function ReviewCarouselModal({
           <p className="text-sm fg-secondary">
             You've reviewed {total} transaction{total === 1 ? '' : 's'}.
           </p>
+          {err && <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p>}
           <div className="flex justify-end">
             <button
               type="button"
@@ -358,6 +465,24 @@ export function ReviewCarouselModal({
                     </button>
                   ))}
                 </div>
+              </label>
+
+              <label className="flex items-start gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm fg-secondary">
+                <input
+                  type="checkbox"
+                  checked={rememberRules[slide.id] === true}
+                  onChange={(event) => setRememberRules((current) => ({
+                    ...current,
+                    [slide.id]: event.target.checked,
+                  }))}
+                  disabled={isMutating}
+                  className="mt-0.5 h-4 w-4 accent-amber-500"
+                />
+                <span>
+                  {slide.sourceClassificationTrusted
+                    ? 'Create a scoped rule using this transaction\'s account, original type, and original category.'
+                    : 'Create an account-scoped rule. Original type/category was not retained for this older transaction.'}
+                </span>
               </label>
 
               <label className="block">
@@ -451,7 +576,7 @@ export function ReviewCarouselModal({
                   )}
                 >
                   <Check className="h-4 w-4" />
-                  {isMutating ? 'Saving…' : 'Categorize & next'}
+                  {isMutating ? 'Saving…' : rememberRules[slide.id] ? 'Categorize, create rule & next' : 'Categorize & next'}
                 </button>
               </div>
             </div>

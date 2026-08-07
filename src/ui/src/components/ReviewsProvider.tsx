@@ -6,9 +6,8 @@
  *     Drives the bell badge with low bandwidth — refreshes every 30s.
  *   - The full queue (`['reviews', 'queue']`) only fetches when the
  *     modal is open. Re-opens reuse the cached data.
- *   - `decision.mutate` is the only writer. Success drops the row
- *     optimistically from the cached queue + bumps a celebration key
- *     if the queue hit zero.
+ *   - Decisions drop rows optimistically, roll back on failure, and only
+ *     celebrate after the server confirms the final queued item.
  *   - The modal is mounted as a child so it renders inside the
  *     portal-free DOM tree. Internal state (slide index, edit copy)
  *     lives in the modal itself.
@@ -22,7 +21,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -130,28 +128,18 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
         qc.setQueryData(['reviews', 'count'], ctx.prevCount);
       }
     },
-    onSuccess: (_data, _vars) => {
+    onSuccess: (_data, _vars, context) => {
       qc.invalidateQueries({ queryKey: ['reviews', 'count'] });
       qc.invalidateQueries({ queryKey: ['reviews', 'queue'] });
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['notifications'] });
-      // The server auto-trains a rule on every review categorization
-      // (see markTransactionReviewed in src/db/queries.ts). Refresh
-      // the rules list so subsequent "Create rule?" popup checks and
-      // the Rules page see the new rule without a stale-cache race.
-      qc.invalidateQueries({ queryKey: ['rules'] });
+      if (context?.prevCount === 1) setCelebratedKey(Date.now());
     },
   });
 
   const onDecide = useCallback(
     async (id: string, payload: Parameters<typeof decideReview>[1]) => {
-      try {
-        await decision.mutateAsync({ id, payload });
-      } catch (err) {
-        // Surfacing on the modal is the modal's job; we swallow here
-        // so the optimistic flow doesn't crash the provider.
-        console.error('review decision failed', err);
-      }
+      return decision.mutateAsync({ id, payload });
     },
     [decision],
   );
@@ -179,47 +167,8 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
   });
 
   const onSkipAll = useCallback(async () => {
-    try {
-      await skipAll.mutateAsync();
-    } catch (err) {
-      console.error('skip all reviews failed', err);
-    }
+    await skipAll.mutateAsync();
   }, [skipAll]);
-
-  // Fire the celebration toast exactly once per modal session: when the
-  // user (optimistically) drops the cache count to zero. We track the
-  // last-seen optimistic count via a ref so the effect doesn't refire
-  // on every render — only on the transition from >0 to 0.
-  //
-  // Reset on every modal open (including re-opens after a Close) so a
-  // session that didn't finish last time doesn't trip a false-positive.
-  // `prev` starts as the snapshot of the count at open time.
-  const lastCountRef = useRef<number>(count);
-  const sessionStartRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (!isOpen) return;
-    const cached = qc.getQueryData<number>(['reviews', 'count']);
-    const optimistic = typeof cached === 'number' ? cached : count;
-    if (sessionStartRef.current === null) {
-      sessionStartRef.current = optimistic;
-      lastCountRef.current = optimistic;
-      return;
-    }
-    const prev = lastCountRef.current;
-    lastCountRef.current = optimistic;
-    if (prev > 0 && optimistic === 0) {
-      setCelebratedKey(Date.now());
-    }
-  }, [isOpen, qc, count, queueQ.data]);
-
-  // Reset the session marker whenever the modal closes so a future
-  // open starts a new session.
-  useEffect(() => {
-    if (!isOpen) {
-      sessionStartRef.current = null;
-      lastCountRef.current = count;
-    }
-  }, [isOpen, count]);
 
   // Auto-dismiss the celebration toast after 4s.
   useEffect(() => {

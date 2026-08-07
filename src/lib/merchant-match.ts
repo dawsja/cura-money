@@ -31,21 +31,78 @@ export function merchantMatchesRule(merchant: string, matchValue: string): boole
   return !next || !/[a-z]/.test(next);
 }
 
+export type RuleTransactionType = 'income' | 'expense' | 'transfer';
+
+export interface RuleMatchContext {
+  merchant: string;
+  accountId?: string;
+  sourceType: RuleTransactionType;
+  sourceCategory: string;
+  sourceSubCategory?: string;
+  sourceClassificationTrusted?: boolean;
+}
+
+export interface ScopedRuleConditions {
+  id?: string;
+  matchValue: string;
+  accountId?: string | null;
+  sourceType?: RuleTransactionType | null;
+  sourceCategory?: string | null;
+  sourceSubCategory?: string | null;
+}
+
+/** True when every populated rule condition matches the transaction source. */
+export function transactionMatchesRule(
+  context: RuleMatchContext,
+  rule: ScopedRuleConditions,
+): boolean {
+  if (!merchantMatchesRule(context.merchant, rule.matchValue)) return false;
+  if (rule.accountId != null && rule.accountId !== context.accountId) return false;
+  if (
+    context.sourceClassificationTrusted === false
+    && (rule.sourceType != null || rule.sourceCategory != null || rule.sourceSubCategory != null)
+  ) {
+    return false;
+  }
+  if (rule.sourceType != null && rule.sourceType !== context.sourceType) return false;
+  if (rule.sourceCategory != null && rule.sourceCategory !== context.sourceCategory) return false;
+  if (rule.sourceSubCategory != null && rule.sourceSubCategory !== (context.sourceSubCategory ?? null)) {
+    return false;
+  }
+  return true;
+}
+
+function conditionScore(rule: ScopedRuleConditions): number {
+  // Powers of two define a total precedence for different condition sets.
+  // Account is strongest because it identifies which ledger side posted.
+  return Number(rule.accountId != null) * 8
+    + Number(rule.sourceSubCategory != null) * 4
+    + Number(rule.sourceCategory != null) * 2
+    + Number(rule.sourceType != null);
+}
+
 /**
- * Pick the best matching rule for a merchant. Prefers the longest
- * matchValue among hits. Returns null when nothing matches.
+ * Pick one deterministic winner. Account, category, and type conditions have
+ * an explicit precedence; merchant length then preserves prefix precedence.
  */
-export function pickBestRuleMatch<T extends { matchValue: string }>(
-  merchant: string,
+export function pickBestRuleMatch<T extends ScopedRuleConditions>(
+  context: RuleMatchContext,
   ruleList: T[],
 ): T | null {
   let best: T | null = null;
+  let bestConditions = -1;
   let bestLen = -1;
   for (const rule of ruleList) {
-    if (!merchantMatchesRule(merchant, rule.matchValue)) continue;
+    if (!transactionMatchesRule(context, rule)) continue;
+    const conditions = conditionScore(rule);
     const len = normalizeMerchant(rule.matchValue).length;
-    if (len > bestLen) {
+    const stableTieBreak = best != null
+      && conditions === bestConditions
+      && len === bestLen
+      && (rule.id ?? '').localeCompare(best.id ?? '') < 0;
+    if (conditions > bestConditions || (conditions === bestConditions && len > bestLen) || stableTieBreak) {
       best = rule;
+      bestConditions = conditions;
       bestLen = len;
     }
   }

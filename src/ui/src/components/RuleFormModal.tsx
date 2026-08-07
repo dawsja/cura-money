@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Check, X } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -16,14 +16,25 @@ import clsx from 'clsx';
  */
 
 export interface RuleFormCategory {
+  id: string;
   name: string;
-  subCategories: { name: string }[];
+  type: RuleFormTxType;
+  subCategories: { id: string; name: string }[];
+}
+
+export interface RuleFormAccount {
+  id: string;
+  name: string;
 }
 
 export type RuleFormTxType = 'income' | 'expense' | 'transfer';
 
 export interface RuleFormInitial {
   merchant: string;
+  accountId?: string;
+  sourceType?: RuleFormTxType;
+  sourceCategory?: string;
+  sourceSubCategory?: string;
   category: string;
   subCategory?: string;
   type?: RuleFormTxType;
@@ -31,6 +42,10 @@ export interface RuleFormInitial {
 
 export interface RuleFormSubmit {
   matchValue: string;
+  accountId?: string;
+  sourceType?: RuleFormTxType;
+  sourceCategory?: string;
+  sourceSubCategory?: string;
   category: string;
   subCategory: string;
   type?: RuleFormTxType;
@@ -43,37 +58,60 @@ export function RuleFormModal({
   mode,
   initial,
   categories,
+  accounts,
   onSave,
   onClose,
 }: {
   mode: 'create' | 'edit';
   initial?: RuleFormInitial;
   categories: RuleFormCategory[];
+  accounts: RuleFormAccount[];
   onSave: (input: RuleFormSubmit) => Promise<unknown> | unknown;
   onClose: () => void;
 }) {
   const [merchant, setMerchant] = useState(initial?.merchant ?? '');
+  const [accountId, setAccountId] = useState(initial?.accountId ?? '');
+  const [sourceType, setSourceType] = useState<RuleFormTxType | ''>(initial?.sourceType ?? '');
+  const [sourceCategory, setSourceCategory] = useState(initial?.sourceCategory ?? '');
+  const [sourceSubCategory, setSourceSubCategory] = useState(initial?.sourceSubCategory ?? '');
   const [category, setCategory] = useState(initial?.category ?? '');
   const [subCategory, setSubCategory] = useState(initial?.subCategory ?? '');
   const [type, setType] = useState<RuleFormTxType | ''>(initial?.type ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Keep fields in sync if the parent resets `initial` between opens
-  // (e.g. user opens the modal twice with different transactions).
-  useEffect(() => {
-    if (!initial) return;
-    setMerchant(initial.merchant);
-    setCategory(initial.category);
-    setSubCategory(initial.subCategory ?? '');
-    setType(initial.type ?? '');
-  }, [initial]);
-
   const trimmed = merchant.trim();
+  const sourceCategoryPick = sourceCategory && sourceSubCategory
+    ? JSON.stringify({ category: sourceCategory, subCategory: sourceSubCategory })
+    : '';
   const categoryPick = category && subCategory
     ? JSON.stringify({ category, subCategory })
     : '';
-  const canSave = trimmed.length > 0 && category.length > 0 && subCategory.length > 0 && !submitting;
+  const targetExists = categories.some((candidate) =>
+    candidate.name === category
+    && candidate.subCategories.some((sub) => sub.name === subCategory)
+    && (!type || candidate.type === type || candidate.name === 'Pay down goals'),
+  );
+  const sourceExistsInTree = categories.some((candidate) =>
+      candidate.name === sourceCategory
+      && candidate.subCategories.some((sub) => sub.name === sourceSubCategory)
+      && (!sourceType || candidate.type === sourceType || candidate.name === 'Pay down goals'));
+  const unchangedHistoricalSource = initial?.sourceCategory === sourceCategory
+    && initial?.sourceSubCategory === sourceSubCategory
+    && initial?.sourceType === (sourceType || undefined);
+  const sourceExists = !sourceCategory || sourceExistsInTree || unchangedHistoricalSource;
+  const accountExists = !accountId || accounts.some((account) => account.id === accountId);
+  const preservesLegacyPaydownType = mode === 'edit'
+    && initial?.category === 'Pay down goals'
+    && initial.type === undefined
+    && category === 'Pay down goals'
+    && !type;
+  const canSave = trimmed.length > 0
+    && (!!type || preservesLegacyPaydownType)
+    && targetExists
+    && sourceExists
+    && accountExists
+    && !submitting;
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,6 +121,10 @@ export function RuleFormModal({
     try {
       await onSave({
         matchValue: trimmed,
+        accountId: accountId || undefined,
+        sourceType: sourceType || undefined,
+        sourceCategory: sourceCategory || undefined,
+        sourceSubCategory: sourceSubCategory || undefined,
         category,
         subCategory,
         type: type || undefined,
@@ -100,7 +142,7 @@ export function RuleFormModal({
       onClick={() => !submitting && onClose()}
     >
       <div
-        className="card w-full max-w-md"
+        className="card max-h-[90vh] w-full max-w-md overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-3">
@@ -117,6 +159,7 @@ export function RuleFormModal({
           </button>
         </div>
         <form onSubmit={onSubmit} className="space-y-3">
+          <div className="text-xs font-semibold uppercase tracking-wide fg-muted">When</div>
           <label className="block">
             <span className="text-sm fg-secondary">Merchant</span>
             <input
@@ -136,14 +179,107 @@ export function RuleFormModal({
 
           <label className="block">
             <span className="text-sm fg-secondary">
-              Type <span className="fg-muted font-normal">(optional)</span>
+              Account <span className="fg-muted font-normal">(optional)</span>
+            </span>
+            <select
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
+              className={`mt-1 w-full ${INPUT_CLS}`}
+            >
+              <option value="">Any account</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>{account.name}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-sm fg-secondary">
+              Original type <span className="fg-muted font-normal">(optional)</span>
+            </span>
+            <select
+              value={sourceType}
+              onChange={(e) => {
+                const next = e.target.value as RuleFormTxType | '';
+                setSourceType(next);
+                const selectedCategory = categories.find((candidate) => candidate.name === sourceCategory);
+                if (next && selectedCategory && selectedCategory.type !== next && selectedCategory.name !== 'Pay down goals') {
+                  setSourceCategory('');
+                  setSourceSubCategory('');
+                }
+              }}
+              className={`mt-1 w-full ${INPUT_CLS}`}
+            >
+              <option value="">Any type</option>
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+              <option value="transfer">Transfer</option>
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-sm fg-secondary">
+              Original category <span className="fg-muted font-normal">(optional)</span>
+            </span>
+            <select
+              value={sourceCategoryPick}
+              onChange={(e) => {
+                if (!e.target.value) {
+                  setSourceCategory('');
+                  setSourceSubCategory('');
+                  return;
+                }
+                const selected = JSON.parse(e.target.value) as { category: string; subCategory: string };
+                setSourceCategory(selected.category);
+                setSourceSubCategory(selected.subCategory);
+              }}
+              className={`mt-1 w-full ${INPUT_CLS}`}
+            >
+              <option value="">Any category</option>
+              {sourceCategoryPick && !sourceExistsInTree && (
+                <option value={sourceCategoryPick}>
+                  Historical: {sourceCategory} › {sourceSubCategory}
+                </option>
+              )}
+              {categories
+                .filter((candidate) => !sourceType || candidate.type === sourceType || candidate.name === 'Pay down goals')
+                .map((c) => (
+                <optgroup key={c.id} label={c.name}>
+                  {c.subCategories.map((s) => (
+                    <option
+                      key={s.id}
+                      value={JSON.stringify({ category: c.name, subCategory: s.name })}
+                    >
+                      {s.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+
+          <div className="border-t border-default pt-3 text-xs font-semibold uppercase tracking-wide fg-muted">Then set</div>
+
+          <label className="block">
+            <span className="text-sm fg-secondary">
+              Type
             </span>
             <select
               value={type}
-              onChange={(e) => setType(e.target.value as RuleFormTxType | '')}
+              onChange={(e) => {
+                const next = e.target.value as RuleFormTxType | '';
+                setType(next);
+                const selectedCategory = categories.find((candidate) => candidate.name === category);
+                if (next && selectedCategory && selectedCategory.type !== next && selectedCategory.name !== 'Pay down goals') {
+                  setCategory('');
+                  setSubCategory('');
+                }
+              }}
               className={`mt-1 w-full ${INPUT_CLS}`}
             >
-              <option value="">No type override</option>
+              <option value="">
+                {preservesLegacyPaydownType ? 'Leave type unchanged (legacy rule)' : 'Pick a type'}
+              </option>
               <option value="expense">Expense</option>
               <option value="income">Income</option>
               <option value="transfer">Transfer</option>
@@ -167,11 +303,13 @@ export function RuleFormModal({
               className={`mt-1 w-full ${INPUT_CLS}`}
             >
               <option value="">Pick a category…</option>
-              {categories.map((c) => (
-                <optgroup key={c.name} label={c.name}>
+              {categories
+                .filter((candidate) => !type || candidate.type === type || candidate.name === 'Pay down goals')
+                .map((c) => (
+                <optgroup key={c.id} label={c.name}>
                   {c.subCategories.map((s) => (
                     <option
-                      key={s.name}
+                      key={s.id}
                       value={JSON.stringify({ category: c.name, subCategory: s.name })}
                     >
                       {s.name}

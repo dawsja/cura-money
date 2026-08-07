@@ -25,6 +25,13 @@ export const transactions = pgTable(
     sourceDate: date('source_date'),
     dateUserModified: boolean('date_user_modified').notNull().default(false),
     merchant: text('merchant').notNull(),
+    // Classification before a user rule or manual correction is applied.
+    // Scoped rules match these immutable source values so applying a rule
+    // does not change the fields that determine whether it matches.
+    sourceCategory: text('source_category').notNull(),
+    sourceSubCategory: text('source_sub_category'),
+    sourceType: transactionTypeEnum('source_type').notNull(),
+    sourceClassificationTrusted: boolean('source_classification_trusted').notNull().default(true),
     category: text('category').notNull(),
     subCategory: text('sub_category'),
     // Stable ledger identity. `account` remains a display snapshot for

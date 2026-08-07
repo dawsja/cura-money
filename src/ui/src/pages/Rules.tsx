@@ -3,19 +3,18 @@
  * mappings. Applied at import time (SimpleFIN + manual add) and via
  * the ▶ Run button on each row, or "Run all rules" for the full set.
  *
- * Rules are auto-trained the first time the user categorizes a
- * previously-pending transaction (the review flow — see
- * markTransactionReviewed + editTransaction in src/db/queries.ts).
- * You can also create one directly from this page ("Add rule" button)
- * or by clicking "Create rule" on the popup that appears after an
- * inline category change on a non-pending row. They show up here in
- * all three cases.
+ * Rules are created explicitly here or from a corrected transaction.
+ * Transaction-derived rules include source account/type/category scope.
  */
 import { useDeferredValue, useEffect, useState } from 'react';
 import { useQuery, useQueryClient, useMutation, type QueryClient } from '@tanstack/react-query';
 import { ArrowRight, Plus, Play, Trash2, Pencil, AlertTriangle, Check, X, Search } from 'lucide-react';
 import { api } from '../lib/api';
-import { RuleFormModal, type RuleFormCategory } from '../components/RuleFormModal';
+import {
+  RuleFormModal,
+  type RuleFormAccount,
+  type RuleFormCategory,
+} from '../components/RuleFormModal';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '../components/ui/input-group';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import {
@@ -36,10 +35,16 @@ interface Rule {
   id: string;
   matchType: 'exact';
   matchValue: string;
+  accountId?: string;
+  sourceType?: RuleTxType;
+  sourceCategory?: string;
+  sourceSubCategory?: string;
   category: string;
   subCategory?: string;
   type?: RuleTxType;
   createdAt: string;
+  updatedAt: string;
+  version: number;
 }
 
 const RULE_TYPE_LABEL: Record<RuleTxType, string> = {
@@ -61,12 +66,16 @@ function fuzzyTokenIn(value: string | undefined, token: string): boolean {
   return compactToken.length > 0 && compactValue.includes(compactToken);
 }
 
-function ruleMatchesSearch(rule: Rule, search: string): boolean {
+function ruleMatchesSearch(rule: Rule, search: string, accountName?: string): boolean {
   const tokens = search.trim().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return true;
 
   const fields = [
     rule.matchValue,
+    accountName,
+    rule.sourceCategory,
+    rule.sourceSubCategory,
+    rule.sourceType ? RULE_TYPE_LABEL[rule.sourceType] : undefined,
     rule.category,
     rule.subCategory,
     rule.type ? RULE_TYPE_LABEL[rule.type] : undefined,
@@ -77,7 +86,14 @@ function ruleMatchesSearch(rule: Rule, search: string): boolean {
 interface MainCategory {
   id: string;
   name: string;
+  type: RuleTxType;
   subCategories: { id: string; name: string }[];
+}
+
+interface Account {
+  id: string;
+  name: string;
+  alias?: string;
 }
 
 export function Rules() {
@@ -102,13 +118,22 @@ export function Rules() {
     queryFn: () => api.get<MainCategory[]>('/api/categories'),
   });
 
-  // Flatten the category tree into the shape the modal expects. Only
-  // the names matter; ids are dropped because rules store the category
-  // name as a string.
+  const accounts = useQuery({
+    queryKey: ['accounts', 'includeHidden'],
+    queryFn: () => api.get<Account[]>('/api/accounts?includeHidden=true'),
+  });
+
   const ruleFormCategories: RuleFormCategory[] = (cats.data ?? []).map((c) => ({
+    id: c.id,
     name: c.name,
-    subCategories: c.subCategories.map((s) => ({ name: s.name })),
+    type: c.type,
+    subCategories: c.subCategories.map((s) => ({ id: s.id, name: s.name })),
   }));
+  const ruleFormAccounts: RuleFormAccount[] = (accounts.data ?? []).map((account) => ({
+    id: account.id,
+    name: account.alias || account.name,
+  }));
+  const accountNames = new Map(ruleFormAccounts.map((account) => [account.id, account.name]));
 
   // ---- Modal state ----------------------------------------------------
   // `null` = closed. Otherwise the modal is open in either 'create' or
@@ -116,7 +141,16 @@ export function Rules() {
   const [modal, setModal] = useState<
     | {
         mode: 'create';
-        initial?: { merchant: string; category: string; subCategory?: string; type?: RuleTxType };
+        initial?: {
+          merchant: string;
+          accountId?: string;
+          sourceType?: RuleTxType;
+          sourceCategory?: string;
+          sourceSubCategory?: string;
+          category: string;
+          subCategory?: string;
+          type?: RuleTxType;
+        };
       }
     | { mode: 'edit'; rule: Rule }
     | null
@@ -127,11 +161,16 @@ export function Rules() {
   const createRule = useMutation({
     mutationFn: (input: {
       matchValue: string;
+      accountId?: string;
+      sourceType?: RuleTxType;
+      sourceCategory?: string;
+      sourceSubCategory?: string;
       category: string;
       subCategory: string;
       type?: RuleTxType;
     }) => api.post<Rule>('/api/rules', input),
-    onSuccess: () => {
+    onSuccess: (created) => {
+      qc.setQueryData<Rule[]>(['rules'], (current) => current ? [...current, created] : [created]);
       qc.invalidateQueries({ queryKey: ['rules'] });
       setModal(null);
     },
@@ -141,13 +180,21 @@ export function Rules() {
     mutationFn: (input: {
       id: string;
       patch: {
+        expectedVersion: number;
         matchValue: string;
+        accountId?: string | null;
+        sourceType?: RuleTxType | null;
+        sourceCategory?: string | null;
+        sourceSubCategory?: string | null;
         category: string;
         subCategory: string;
         type?: RuleTxType | null;
       };
-    }) => api.patch(`/api/rules/${input.id}`, input.patch),
-    onSuccess: () => {
+    }) => api.patch<Rule>(`/api/rules/${input.id}`, input.patch),
+    onSuccess: (updated) => {
+      qc.setQueryData<Rule[]>(['rules'], (current) =>
+        current?.map((rule) => rule.id === updated.id ? updated : rule) ?? [updated],
+      );
       qc.invalidateQueries({ queryKey: ['rules'] });
       setModal(null);
     },
@@ -176,7 +223,9 @@ export function Rules() {
 
   const anyRunPending = runRule.isPending || runAllRules.isPending;
   const hasRules = (rules.data?.length ?? 0) > 0;
-  const filteredRules = (rules.data ?? []).filter((rule) => ruleMatchesSearch(rule, deferredSearch));
+  const filteredRules = (rules.data ?? []).filter((rule) =>
+    ruleMatchesSearch(rule, deferredSearch, rule.accountId ? accountNames.get(rule.accountId) : undefined),
+  );
   const totalPages = Math.max(1, Math.ceil(filteredRules.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pagedRules = filteredRules.slice(
@@ -206,10 +255,9 @@ export function Rules() {
         <div data-onboarding-target="rules-intro">
           <h1 className="text-2xl font-bold fg-primary">Rules</h1>
           <p className="text-sm fg-tertiary max-w-xl mt-1">
-            Automatically categorize and type future transactions from the same
-            merchant. Rules match the merchant exactly or as a prefix (e.g. &quot;Starbucks&quot;
-            catches &quot;STARBUCKS #1234&quot;), apply at import, and can be re-run against
-            existing transactions.
+            Automatically categorize future transactions when their merchant and optional
+            account, original type, and original category conditions match. Merchant text
+            matches exactly or as a prefix.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -232,13 +280,27 @@ export function Rules() {
           <button
             type="button"
             onClick={() => setModal({ mode: 'create' })}
-            className="btn-primary inline-flex items-center gap-2 min-h-[44px]"
+            disabled={cats.isLoading || accounts.isLoading || cats.isError || accounts.isError}
+            className="btn-primary inline-flex items-center gap-2 min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="h-4 w-4" />
             Add rule
           </button>
         </div>
       </div>
+
+      {(cats.isError || accounts.isError) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300" role="alert">
+          <span>Categories or accounts could not be loaded. Rule editing is unavailable.</span>
+          <button
+            type="button"
+            onClick={() => { void cats.refetch(); void accounts.refetch(); }}
+            className="font-semibold hover:underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* List */}
       <section className="card">
@@ -247,9 +309,8 @@ export function Rules() {
         ) : rules.data?.length === 0 ? (
           <div className="py-10 text-center text-sm fg-muted">
             <AlertTriangle className="h-5 w-5 inline mr-1 fg-muted" />
-            No rules yet. Rules are created automatically when you categorize a
-            transaction that was awaiting review. You can also click{' '}
-             <span className="font-semibold fg-secondary">Add rule</span> to create one by hand.
+            No rules yet. Correct a transaction and choose Create scoped rule, or click{' '}
+            <span className="font-semibold fg-secondary">Add rule</span> to create one by hand.
            </div>
          ) : (
           <>
@@ -288,6 +349,18 @@ export function Rules() {
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm fg-primary truncate">{r.matchValue}</div>
                     <div className="text-xs fg-muted mt-0.5 flex items-center gap-1 flex-wrap">
+                      <span className="font-medium fg-tertiary">When</span>
+                      <span>{r.accountId ? accountNames.get(r.accountId) ?? 'Unknown account' : 'Any account'}</span>
+                      <span>·</span>
+                      <span>{r.sourceType ? RULE_TYPE_LABEL[r.sourceType] : 'Any type'}</span>
+                      <span>·</span>
+                      <span>
+                        {r.sourceCategory
+                          ? `${r.sourceCategory}${r.sourceSubCategory ? ` › ${r.sourceSubCategory}` : ''}`
+                          : 'Any category'}
+                      </span>
+                    </div>
+                    <div className="text-xs fg-muted mt-0.5 flex items-center gap-1 flex-wrap">
                       <ArrowRight className="h-3 w-3 shrink-0" />
                       <span className="fg-secondary">
                         {r.type ? (
@@ -322,8 +395,9 @@ export function Rules() {
                   <button
                     type="button"
                     onClick={() => setModal({ mode: 'edit', rule: r })}
+                    disabled={cats.isLoading || accounts.isLoading || cats.isError || accounts.isError}
                     title="Edit rule"
-                    className="fg-muted hover:text-amber-700 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded p-1.5"
+                    className="fg-muted hover:text-amber-700 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded p-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
@@ -388,28 +462,41 @@ export function Rules() {
       {/* Modal */}
       {modal && modal.mode === 'create' && (
         <RuleFormModal
+          key="create-rule"
           mode="create"
           initial={modal.initial}
           categories={ruleFormCategories}
+          accounts={ruleFormAccounts}
           onSave={(input) => createRule.mutateAsync(input)}
           onClose={() => setModal(null)}
         />
       )}
       {modal && modal.mode === 'edit' && (
         <RuleFormModal
+          key={`edit-${modal.rule.id}`}
           mode="edit"
           initial={{
             merchant: modal.rule.matchValue,
+            accountId: modal.rule.accountId,
+            sourceType: modal.rule.sourceType,
+            sourceCategory: modal.rule.sourceCategory,
+            sourceSubCategory: modal.rule.sourceSubCategory,
             category: modal.rule.category,
             subCategory: modal.rule.subCategory,
             type: modal.rule.type,
           }}
           categories={ruleFormCategories}
+          accounts={ruleFormAccounts}
           onSave={(input) =>
             updateRule.mutateAsync({
               id: modal.rule.id,
               patch: {
+                expectedVersion: modal.rule.version,
                 matchValue: input.matchValue,
+                accountId: input.accountId ?? null,
+                sourceType: input.sourceType ?? null,
+                sourceCategory: input.sourceCategory ?? null,
+                sourceSubCategory: input.sourceSubCategory ?? null,
                 category: input.category,
                 subCategory: input.subCategory,
                 // null clears a previously-set type when the user picks
@@ -442,12 +529,19 @@ export function Rules() {
           onClose={() => setConfirmation(null)}
         >
           <p>
-            Every existing transaction matching this merchant will be changed to{' '}
+            Every existing transaction for which this is the most-specific matching rule will be changed to{' '}
             <span className="font-medium fg-primary">
               {confirmation.rule.category}
               {confirmation.rule.subCategory ? ` › ${confirmation.rule.subCategory}` : ''}
               {confirmation.rule.type ? ` (${RULE_TYPE_LABEL[confirmation.rule.type]})` : ''}
             </span>.
+          </p>
+          <p>
+            Match scope: {confirmation.rule.accountId ? accountNames.get(confirmation.rule.accountId) ?? 'Unknown account' : 'any account'}
+            {' · '}{confirmation.rule.sourceType ? RULE_TYPE_LABEL[confirmation.rule.sourceType] : 'any type'}
+            {' · '}{confirmation.rule.sourceCategory
+              ? `${confirmation.rule.sourceCategory}${confirmation.rule.sourceSubCategory ? ` › ${confirmation.rule.sourceSubCategory}` : ''}`
+              : 'any category'}.
           </p>
           <p>This can overwrite categories or transaction types you set previously.</p>
         </ConfirmDialog>

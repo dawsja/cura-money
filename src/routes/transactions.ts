@@ -39,7 +39,6 @@ import {
   updateFullTransaction,
   deleteTransaction,
   replaceTransactionSplits,
-  findRuleForMerchant,
   categoryAssignmentExists,
 } from '@/db/queries';
 import { userId, routeParam } from '@/lib/tenant';
@@ -302,22 +301,10 @@ transactionRoutes.post(
     const body = await c.req.json().catch(() => null);
     const parsed = AddSchema.safeParse(body);
     if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
-    // Apply any matching user rule to category/subCategory/type — rules
-    // win over what the user typed so a trained merchant stays trained.
-    // The user can edit the transaction after creation for a one-off.
-    const ruleMatch = await findRuleForMerchant(userId(c), parsed.data.merchant);
-    const txInput = ruleMatch
-      ? {
-          ...parsed.data,
-          category: ruleMatch.subCategory ? ruleMatch.category : parsed.data.category,
-          subCategory: ruleMatch.subCategory ?? parsed.data.subCategory,
-          ...(ruleMatch.type ? { type: ruleMatch.type } : {}),
-        }
-      : parsed.data;
-    if (!(await categoryAssignmentExists(userId(c), txInput.category, txInput.subCategory))) {
+    if (!(await categoryAssignmentExists(userId(c), parsed.data.category, parsed.data.subCategory))) {
       return badRequest(c, 'subCategory must belong to category');
     }
-    const tx = await addTransaction(userId(c), txInput);
+    const tx = await addTransaction(userId(c), parsed.data);
     return c.json(tx, 201);
   }),
 );
@@ -338,12 +325,9 @@ transactionRoutes.patch(
         return badRequest(c, 'subCategory must belong to category');
       }
     }
-    const { ruleCreated } = await editTransaction(userId(c), routeParam(c, 'id'), parsed.data);
-    // `ruleCreated` is true when a type change auto-trained a new rule.
-    // Category changes never auto-create on this path — the client
-    // always offers the "Create rule?" popup unless a rule already
-    // exists for the merchant.
-    return c.json({ ok: true, ruleCreated });
+    await editTransaction(userId(c), routeParam(c, 'id'), parsed.data);
+    // Rule creation is explicit and handled by /api/rules/from-transaction.
+    return c.json({ ok: true });
   }),
 );
 
