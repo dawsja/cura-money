@@ -10,7 +10,7 @@ type EditableAccountType = 'checking' | 'savings' | 'credit' | 'investment' | 'l
 type AccountType = EditableAccountType | 'uncategorized';
 
 interface Account { id: string; name: string; type: AccountType; balance: number; institution?: string; interestRate?: number; minPayment?: number; plannedPayment?: number; includeInPaydown?: boolean; hidden?: boolean; alias?: string; }
-interface SfStatus { connected: boolean; lastSync?: string | null; lastAttempt?: string | null; lastError?: string | null; }
+interface SfStatus { demoMode: boolean; connected: boolean; lastSync?: string | null; lastAttempt?: string | null; lastError?: string | null; }
 interface SfClaim { setupToken: string; }
 
 const INPUT_CLS = 'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
@@ -247,14 +247,16 @@ export function Accounts() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold fg-primary">Accounts</h1>
-        <button
-          onClick={() => sync.mutate()}
-          disabled={sync.isPending || !sf.data?.connected}
-          className="rounded-lg border border-default px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 fg-secondary flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <RefreshCw className={'h-4 w-4' + (sync.isPending ? ' animate-spin' : '')} />
-          {sync.isPending ? 'Syncing…' : 'Sync'}
-        </button>
+        {!sf.data?.demoMode && (
+          <button
+            onClick={() => sync.mutate()}
+            disabled={sync.isPending || !sf.data?.connected}
+            className="rounded-lg border border-default px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 fg-secondary flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw className={'h-4 w-4' + (sync.isPending ? ' animate-spin' : '')} />
+            {sync.isPending ? 'Syncing…' : 'Sync'}
+          </button>
+        )}
       </div>
 
       <div className="space-y-6">
@@ -273,6 +275,10 @@ export function Accounts() {
               {sf.isFetching ? 'Retrying…' : 'Retry'}
             </button>
           </div>
+        ) : sf.data.demoMode ? (
+          <p className="text-sm fg-secondary">
+            Bank connections are disabled in the public demo. The accounts below use sample data.
+          </p>
         ) : sf.data.connected ? (
           <div className="text-sm fg-tertiary space-y-1">
             <p>Connected. Last sync: {sf.data.lastSync ?? 'never'}.</p>

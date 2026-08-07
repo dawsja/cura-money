@@ -64,6 +64,7 @@ const transactionTemplates: DemoTransaction[] = [
   { id: 'transfer-save', dayOffset: -8, merchant: 'Transfer to Travel Fund', category: 'Transfer', subCategory: 'Account Transfer', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 30000, type: 'transfer' },
   { id: 'gym-1', dayOffset: -9, merchant: 'City Fitness', category: 'Health & Wellness', subCategory: 'Fitness', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 4500, type: 'expense' },
   { id: 'streaming-1', dayOffset: -10, merchant: 'Streambox', category: 'Travel & Lifestyle', subCategory: 'Entertainment & Recreation', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 1599, type: 'expense' },
+  { id: 'password-safe-1', dayOffset: -30, merchant: 'Password Safe', category: 'Bills & Utilities', subCategory: 'Internet & Cable', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 3599, type: 'expense' },
   { id: 'rent-1', dayOffset: -12, merchant: 'Oak Street Apartments', category: 'Housing', subCategory: 'Rent', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 165000, type: 'expense' },
   { id: 'electric-1', dayOffset: -14, merchant: 'City Electric', category: 'Bills & Utilities', subCategory: 'Gas & Electric', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 11843, type: 'expense' },
   { id: 'card-payment-1', dayOffset: -15, merchant: 'Credit Card Payment', category: 'Transfer', subCategory: 'Credit Card Payment', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 65000, type: 'transfer' },
@@ -82,6 +83,10 @@ const transactionTemplates: DemoTransaction[] = [
   { id: 'rent-3', dayOffset: -72, merchant: 'Oak Street Apartments', category: 'Housing', subCategory: 'Rent', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 165000, type: 'expense' },
   { id: 'paycheck-5', dayOffset: -63, merchant: 'Acme Design Studio', category: 'Income', subCategory: 'Paychecks', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 325000, type: 'income' },
   { id: 'groceries-4', dayOffset: -66, merchant: 'Fresh Market', category: 'Food & Dining', subCategory: 'Groceries', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 10891, type: 'expense' },
+  { id: 'streaming-2', dayOffset: -40, merchant: 'Streambox', category: 'Travel & Lifestyle', subCategory: 'Entertainment & Recreation', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 1599, type: 'expense' },
+  { id: 'streaming-3', dayOffset: -70, merchant: 'Streambox', category: 'Travel & Lifestyle', subCategory: 'Entertainment & Recreation', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 1599, type: 'expense' },
+  { id: 'password-safe-2', dayOffset: -395, merchant: 'Password Safe', category: 'Bills & Utilities', subCategory: 'Internet & Cable', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 3599, type: 'expense' },
+  { id: 'password-safe-3', dayOffset: -760, merchant: 'Password Safe', category: 'Bills & Utilities', subCategory: 'Internet & Cable', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 3599, type: 'expense' },
 ];
 
 export async function resetDemoDatabase(): Promise<{ users: number; transactions: number }> {

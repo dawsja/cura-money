@@ -47,6 +47,7 @@ simplefinRoutes.get(
     const lastAttempt = await getSetting(uid, 'simplefin_last_attempt');
     const lastError = await getSetting(uid, 'simplefin_last_error');
     return c.json({
+      demoMode: env.DEMO_MODE,
       connected: !!accessUrl,
       lastSync,
       lastAttempt,

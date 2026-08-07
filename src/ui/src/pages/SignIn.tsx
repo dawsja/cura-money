@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Check, Copy } from 'lucide-react';
 import { signInEmail, fetchMe, SIGNOUT_FLAG_KEY } from '../lib/auth';
 import { api } from '../lib/api';
 
@@ -124,15 +125,9 @@ export function SignIn() {
             <p className="mt-1 fg-secondary">
               This shared database resets every 15 minutes and signs everyone out.
             </p>
-            <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-              <dt className="fg-muted">Email</dt>
-              <dd className="font-mono font-medium fg-primary">
-                {authOptions.data.demoCredentials.email}
-              </dd>
-              <dt className="fg-muted">Password</dt>
-              <dd className="font-mono font-medium fg-primary">
-                {authOptions.data.demoCredentials.password}
-              </dd>
+            <dl className="mt-3 space-y-2">
+              <DemoCredential label="Username" value={authOptions.data.demoCredentials.email} />
+              <DemoCredential label="Password" value={authOptions.data.demoCredentials.password} />
             </dl>
           </div>
         )}
@@ -210,6 +205,49 @@ export function SignIn() {
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+function DemoCredential({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = value;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div>
+      <dt className="mb-1 text-xs fg-muted">{label}</dt>
+      <dd className="flex overflow-hidden rounded-lg border border-default bg-surface">
+        <code className="min-w-0 flex-1 overflow-x-auto px-3 py-2 font-mono font-medium fg-primary">
+          {value}
+        </code>
+        <button
+          type="button"
+          onClick={copy}
+          className="flex w-11 shrink-0 items-center justify-center border-l border-default fg-tertiary hover:bg-slate-100 hover:fg-primary dark:hover:bg-slate-700"
+          title={copied ? 'Copied!' : `Copy ${label.toLowerCase()}`}
+          aria-label={`Copy ${label.toLowerCase()} to clipboard`}
+        >
+          {copied
+            ? <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            : <Copy className="h-4 w-4" />}
+        </button>
+      </dd>
     </div>
   );
 }
