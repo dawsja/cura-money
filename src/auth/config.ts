@@ -101,7 +101,7 @@ export function createAuth(providers: AuthOidcProvider[]) {
     emailAndPassword: {
       enabled: true,
       autoSignIn: true,
-      minPasswordLength: 12,
+      minPasswordLength: env.DEMO_MODE ? 4 : 12,
       maxPasswordLength: 256,
     },
 
@@ -176,7 +176,7 @@ export function createAuth(providers: AuthOidcProvider[]) {
     }),
   ];
 
-  if (providers.length > 0) {
+  if (!env.DEMO_MODE && providers.length > 0) {
     plugins.push(
       genericOAuth({
         config: providers.map((p) => ({

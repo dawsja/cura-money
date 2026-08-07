@@ -26,8 +26,14 @@ import { assertSecureOidcConfiguration } from '@/lib/oidc-url';
 import { db } from '@/db/client';
 import { user } from '@/db/schema/auth';
 import { checkSetupRateLimit } from '@/lib/setup-rate-limit';
+import { env } from '@/lib/env';
 
 export const setupRoutes = new Hono();
+
+setupRoutes.use('*', async (c, next) => {
+  if (!env.DEMO_MODE || c.req.method === 'GET') return next();
+  return c.json({ error: 'Setup changes are disabled for demo purposes.', code: 'demo_mode' }, 403);
+});
 
 const BootstrapAdminSchema = z.object({
   token: z.string().min(8),
@@ -64,7 +70,7 @@ async function authorizeSetupMutation(request: Request, token?: string): Promise
 
 setupRoutes.get(
   '/status',
-  safe(async (c) => c.json(await setupStatus())),
+  safe(async (c) => c.json({ ...await setupStatus(), demoMode: env.DEMO_MODE })),
 );
 
 setupRoutes.post(

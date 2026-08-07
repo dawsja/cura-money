@@ -21,12 +21,15 @@ import { logger } from '@/lib/logger';
 import { runSimpleFinPollForAllUsers } from './simplefin-poll';
 import { runBudgetRollforward } from './budget-rollforward';
 import { runRetention } from './retention';
+import { resetDemoDatabase } from '@/db/demo-reset';
+import { env } from '@/lib/env';
 import { runExclusiveJob, waitForActiveJobs, type JobName } from './lifecycle';
 
 // Hardcoded cron expressions — see file header for rationale.
 const SIMPLEFIN_POLL_CRON = '17 */2 * * *'; // every 2 hours = 12 requests/day; avoid top-of-hour load
 const BUDGET_ROLLFORWARD_CRON = '0 0 1 * *'; // 1st of month, 00:00 UTC
 const RETENTION_CRON = '0 4 * * *'; // daily, 04:00 UTC
+const DEMO_RESET_CRON = '*/15 * * * *'; // UTC quarter-hours
 
 export interface CronHandle {
   stop(): Promise<void>;
@@ -48,6 +51,25 @@ async function runCronJob<T>(name: JobName, work: () => Promise<T>): Promise<voi
 }
 
 export function startCron(): CronHandle {
+  if (env.DEMO_MODE) {
+    if (!cron.validate(DEMO_RESET_CRON)) {
+      throw new Error(`invalid DEMO_RESET_CRON: ${DEMO_RESET_CRON}`);
+    }
+    logger.warn({ reset: DEMO_RESET_CRON }, 'cron: demo mode enabled; database resets are scheduled');
+    const task = cron.schedule(
+      DEMO_RESET_CRON,
+      () => void runCronJob('demo-reset', resetDemoDatabase),
+      { timezone: 'UTC' },
+    );
+    return {
+      async stop() {
+        await task.stop();
+        logger.info('cron: stopped');
+      },
+      waitForIdle: waitForActiveJobs,
+    };
+  }
+
   logger.info(
     { simplefin: SIMPLEFIN_POLL_CRON, rollforward: BUDGET_ROLLFORWARD_CRON, retention: RETENTION_CRON },
     'cron: starting',

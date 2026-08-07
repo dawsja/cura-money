@@ -24,6 +24,7 @@ interface SetupStatus {
   bootstrapCompleted: boolean;
   oidcConfigured: boolean;
   bootstrapTokenRequired: boolean;
+  demoMode: boolean;
 }
 
 // Admin-only routes. Users without the `admin` role get a 403 from the API
@@ -38,7 +39,11 @@ async function fetchSetupStatus(): Promise<SetupStatus> {
 
 export default function App() {
   const setupQ = useQuery({ queryKey: ['setup'], queryFn: fetchSetupStatus });
-  const meQ = useQuery({ queryKey: ['me'], queryFn: fetchMe });
+  const meQ = useQuery({
+    queryKey: ['me'],
+    queryFn: fetchMe,
+    refetchInterval: setupQ.data?.demoMode ? 5_000 : false,
+  });
 
   // Block everything until we know the setup state.
   if (setupQ.isLoading) {

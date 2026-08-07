@@ -14,8 +14,14 @@ import { deleteSetting, setSetting, getSetting } from '@/db/queries';
 import { userId } from '@/lib/tenant';
 import { badRequest, conflict, safe } from '@/lib/errors';
 import { logger } from '@/lib/logger';
+import { env } from '@/lib/env';
 
 export const simplefinRoutes = new Hono();
+
+simplefinRoutes.use('*', async (c, next) => {
+  if (!env.DEMO_MODE || c.req.method === 'GET') return next();
+  return c.json({ error: 'Bank connections are disabled for demo purposes.', code: 'demo_mode' }, 403);
+});
 
 const ClaimSchema = z.object({ setupToken: z.string().min(8) });
 const SyncSchema = z.object({

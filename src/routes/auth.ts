@@ -13,6 +13,7 @@ import { safe, unauthorized } from '@/lib/errors';
 import { invalidateSetupCache } from '@/lib/guard';
 import { userHasCredential } from '@/db/queries';
 import { env } from '@/lib/env';
+import { DEMO_EMAIL, DEMO_PASSWORD } from '@/db/demo-reset';
 
 export const authRoutes = new Hono();
 
@@ -113,12 +114,21 @@ function prettifyProviderId(id: string): string {
 authRoutes.get(
   '/auth-options',
   safe(async (c) => {
+    if (env.DEMO_MODE) {
+      return c.json({
+        localAuthDisabled: false,
+        providers: [],
+        demoMode: true,
+        demoCredentials: { email: DEMO_EMAIL, password: DEMO_PASSWORD },
+      });
+    }
     const [providers, localAuthDisabled] = await Promise.all([
       listActiveProviders(),
       isLocalAuthDisabled(),
     ]);
     return c.json({
       localAuthDisabled,
+      demoMode: false,
       providers: providers.map((p) => ({
         providerId: p.providerId,
         displayName: prettifyProviderId(p.providerId),

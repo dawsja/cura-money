@@ -1,6 +1,6 @@
 import { withAdvisoryLock } from '@/db/client';
 
-export type JobName = 'simplefin-poll' | 'budget-rollforward' | 'retention';
+export type JobName = 'simplefin-poll' | 'budget-rollforward' | 'retention' | 'demo-reset';
 
 export type JobRunResult<T> =
   | { status: 'completed'; value: T }

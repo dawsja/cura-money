@@ -38,6 +38,7 @@ services:
 
       PORT: ${PORT:-3000}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      DEMO_MODE: ${DEMO_MODE:-false}
 
       DATABASE_URL: postgresql://${POSTGRES_USER:-cura}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-cura}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}

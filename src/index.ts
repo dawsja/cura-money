@@ -23,6 +23,7 @@ import { runMigrations } from '@/db/migrate';
 import { startCron, type CronHandle } from '@/jobs/cron';
 import { runExclusiveJob } from '@/jobs/lifecycle';
 import { runRetention } from '@/jobs/retention';
+import { resetDemoDatabase } from '@/db/demo-reset';
 import { authRoutes } from '@/routes/auth';
 import { setupRoutes } from '@/routes/setup';
 import { accountRoutes } from '@/routes/accounts';
@@ -128,6 +129,14 @@ const LOCAL_AUTH_GATED_POSTS = new Set([
 ]);
 
 app.use('/api/auth/*', async (c, next) => {
+  if (env.DEMO_MODE) {
+    const path = c.req.path.replace(/\/+$/, '');
+    if (c.req.method === 'POST' && path === '/api/auth/sign-in/email') return next();
+    return c.json(
+      { error: 'This authentication operation is disabled for demo purposes.', code: 'demo_mode' },
+      403,
+    );
+  }
   if (c.req.method !== 'POST') return next();
   if (c.req.path.replace(/\/+$/, '') === '/api/auth/sign-up/email') {
     return c.json(
@@ -159,6 +168,11 @@ app.route('/api/auth-app', authRoutes);
 
 // ---- Guard everything below --------------------------------------------
 app.use('*', guard);
+
+app.use('/api/admin/*', async (c, next) => {
+  if (!env.DEMO_MODE) return next();
+  return c.json({ error: 'Administration is disabled for demo purposes.', code: 'demo_mode' }, 403);
+});
 
 // ---- Resource routes (all require auth) ---------------------------------
 app.route('/api/accounts', accountRoutes);
@@ -258,8 +272,27 @@ app.get('*', async (c) => {
 let server: ServerType | undefined;
 let cronHandle: CronHandle | undefined;
 
+async function runStartupDemoReset(): Promise<void> {
+  for (let attempt = 1; attempt <= 120; attempt += 1) {
+    const reset = await runExclusiveJob('demo-reset', resetDemoDatabase);
+    if (reset.status === 'completed') {
+      logger.info({ result: reset.value }, 'demo: startup database reset complete');
+      return;
+    }
+    if (attempt === 1) {
+      logger.info({ reason: reset.reason }, 'demo: waiting for another replica to release the reset lock');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error('timed out waiting to acquire the demo reset lock during startup');
+}
+
 async function main(): Promise<void> {
   await runMigrations();
+  if (env.DEMO_MODE) {
+    logger.warn('DEMO MODE IS ACTIVE: all application data will be replaced every 15 minutes');
+    await runStartupDemoReset();
+  }
   await ensureSetupState();
   // Initialise Better Auth with whatever OIDC providers are currently in
   // the DB. Providers are hot-registered via `refreshAuth()` from the
@@ -269,16 +302,18 @@ async function main(): Promise<void> {
   // Retention sweep on boot — a fresh deploy needs to clean up old
   // data immediately, not wait for the next 04:00 UTC cron tick. The
   // job is idempotent (no-op when there's nothing to delete).
-  try {
-    const retention = await runExclusiveJob('retention', runRetention);
-    if (retention.status === 'skipped') {
-      logger.info({ reason: retention.reason }, 'retention: boot sweep skipped because another run owns the lock');
+  if (!env.DEMO_MODE) {
+    try {
+      const retention = await runExclusiveJob('retention', runRetention);
+      if (retention.status === 'skipped') {
+        logger.info({ reason: retention.reason }, 'retention: boot sweep skipped because another run owns the lock');
+      }
+    } catch (err) {
+      logger.error({ err }, 'retention: boot sweep failed');
     }
-  } catch (err) {
-    logger.error({ err }, 'retention: boot sweep failed');
   }
 
-  if (env.RUN_CRON) {
+  if (env.DEMO_MODE || env.RUN_CRON) {
     cronHandle = startCron();
   } else {
     logger.warn('cron: disabled by RUN_CRON=false');
@@ -286,7 +321,10 @@ async function main(): Promise<void> {
 
   server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
     ready = true;
-    logger.info({ port: info.port, env: env.NODE_ENV, cron: env.RUN_CRON }, 'cura-money v2 listening');
+    logger.info(
+      { port: info.port, env: env.NODE_ENV, cron: env.DEMO_MODE || env.RUN_CRON, demoMode: env.DEMO_MODE },
+      'cura-money v2 listening',
+    );
   });
 }
 

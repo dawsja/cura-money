@@ -40,6 +40,24 @@ advisory locks and may remain enabled on every replica.
 
 ## Configuration
 
+### Public demo mode
+
+The same image can run as a disposable public showcase by setting:
+
+```env
+DEMO_MODE=true
+```
+
+This single switch is intentionally destructive. On startup and at `:00`,
+`:15`, `:30`, and `:45` UTC, the app deletes every application user, session,
+OIDC provider, setting, and financial record, then recreates the example data.
+Visitors sign in with `demo@curamoney.com` / `demo` and are signed out by each
+reset. Setup changes, OIDC, administration, password changes, registration,
+and SimpleFIN mutations are disabled while demo mode is active. Database
+migration history is preserved so normal startup migrations remain safe.
+
+Leave `DEMO_MODE` unset or set it to `false` for normal installations.
+
 All via `.env`. Required:
 
 - `BETTER_AUTH_SECRET` — random base64, at least 32 bytes

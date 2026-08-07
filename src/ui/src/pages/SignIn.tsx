@@ -12,6 +12,11 @@ interface OidcProvider {
 interface AuthOptions {
   localAuthDisabled: boolean;
   providers: OidcProvider[];
+  demoMode: boolean;
+  demoCredentials?: {
+    email: string;
+    password: string;
+  };
 }
 
 export function SignIn() {
@@ -113,6 +118,25 @@ export function SignIn() {
           <p className="mt-1 text-sm fg-secondary">Sign in to Cura Money</p>
         </div>
 
+        {authOptions.data?.demoMode && authOptions.data.demoCredentials && (
+          <div className="mb-4 rounded-lg border border-default bg-canvas-subtle p-3 text-sm">
+            <p className="font-semibold fg-primary">Public demo</p>
+            <p className="mt-1 fg-secondary">
+              This shared database resets every 15 minutes and signs everyone out.
+            </p>
+            <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+              <dt className="fg-muted">Email</dt>
+              <dd className="font-mono font-medium fg-primary">
+                {authOptions.data.demoCredentials.email}
+              </dd>
+              <dt className="fg-muted">Password</dt>
+              <dd className="font-mono font-medium fg-primary">
+                {authOptions.data.demoCredentials.password}
+              </dd>
+            </dl>
+          </div>
+        )}
+
         {showLocalForm && (
           <form onSubmit={onSubmit} className="space-y-3">
             <label className="block">
@@ -179,7 +203,7 @@ export function SignIn() {
           </>
         )}
 
-        {showLocalForm && oidcList.length === 0 && (
+        {showLocalForm && oidcList.length === 0 && !authOptions.data?.demoMode && (
           <p className="mt-3 text-xs fg-muted text-center">
             OIDC sign-in is configured? It will appear here once an admin
             enables it from the IdP link.

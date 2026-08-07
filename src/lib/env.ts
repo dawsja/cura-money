@@ -71,6 +71,14 @@ const Env = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
+  // Public showcase mode. This is intentionally a single switch: when enabled,
+  // startup and scheduled jobs replace the entire application database with
+  // the built-in demo fixture.
+  DEMO_MODE: z
+    .union([z.literal('true'), z.literal('false'), z.literal('1'), z.literal('0'), z.literal('')])
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
+
   // Injected by the release image build. Empty in host development, where
   // there is no meaningful running container revision to compare.
   APP_REVISION: z.string().max(128).default(''),
