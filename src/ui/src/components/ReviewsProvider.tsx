@@ -230,7 +230,7 @@ function CelebrationToast({ onDismiss }: { onDismiss: () => void }) {
       <button
         type="button"
         onClick={onDismiss}
-        className="fg-muted hover:fg-secondary"
+        className="close-button rounded-md p-1"
         aria-label="Dismiss"
       >
         <X className="h-3.5 w-3.5" />

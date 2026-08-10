@@ -184,7 +184,7 @@ export function Accounts() {
                 type="button"
                 onClick={() => setEditing(a)}
                 data-onboarding-target={a.type === 'uncategorized' ? 'unclassified-account-edit' : undefined}
-               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg fg-muted hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-amber-600 dark:hover:text-amber-400 sm:h-7 sm:w-7"
+               className="edit-icon-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg sm:h-7 sm:w-7"
               title="Edit account"
               aria-label={`Edit ${displayName}`}
             >
@@ -548,7 +548,7 @@ function EditAccountModal({
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            className="fg-muted hover:fg-secondary disabled:opacity-50"
+            className="close-button rounded-lg p-2 disabled:opacity-50"
             aria-label="Close"
           >
             <X className="h-4 w-4" />

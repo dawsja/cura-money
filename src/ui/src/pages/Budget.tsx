@@ -581,9 +581,11 @@ function BudgetSection({
                     <button
                       type="button"
                       onClick={() => onOpenDrilldown({ category: categoryName, subCategory: sub.name, type: isIncome ? 'income' : 'expense' })}
-                      className="truncate text-left text-sm font-medium fg-primary hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
+                      title={`View transactions for ${sub.name}`}
+                      className="group inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-left text-sm font-medium fg-primary hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
                     >
-                      {sub.name}
+                      <span className="truncate">{sub.name}</span>
+                      <ReceiptText className="h-3.5 w-3.5 shrink-0 text-slate-500 group-hover:text-amber-700 dark:text-slate-400 dark:group-hover:text-amber-300" aria-hidden="true" />
                     </button>
                     <span className={clsx(
                       'text-sm font-semibold tabular-nums shrink-0',
@@ -686,9 +688,11 @@ function BudgetSection({
                       <button
                         type="button"
                         onClick={() => onOpenDrilldown({ category: categoryName, subCategory: sub.name, type: isIncome ? 'income' : 'expense' })}
-                        className="text-left hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
+                        title={`View transactions for ${sub.name}`}
+                        className="group inline-flex cursor-pointer items-center gap-1.5 text-left hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
                       >
-                        {sub.name}
+                        <span>{sub.name}</span>
+                        <ReceiptText className="h-3.5 w-3.5 shrink-0 text-slate-500 group-hover:text-amber-700 dark:text-slate-400 dark:group-hover:text-amber-300" aria-hidden="true" />
                       </button>
                     </td>
                     <td className="py-2 pr-2">
@@ -835,7 +839,7 @@ function BudgetTransactionsModal({
             ref={closeRef}
             type="button"
             onClick={onClose}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg fg-muted hover:bg-slate-100 hover:fg-secondary dark:hover:bg-slate-700"
+            className="close-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
             aria-label="Close transaction details"
           >
             <X className="h-4 w-4" />

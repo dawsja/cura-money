@@ -260,7 +260,7 @@ export function Dashboard() {
         <div className="flex items-center">
           <h1 className="text-2xl font-bold fg-primary">Dashboard</h1>
           {!editing && (
-            <button type="button" onClick={startEditing} disabled={layout.isLoading} className="inline-flex h-11 w-11 items-center justify-center rounded-lg fg-secondary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-wait disabled:opacity-50" aria-label="Edit dashboard layout" title="Edit dashboard layout">
+            <button type="button" onClick={startEditing} disabled={layout.isLoading} className="edit-icon-button inline-flex h-11 w-11 items-center justify-center rounded-lg disabled:cursor-wait disabled:opacity-50" aria-label="Edit dashboard layout" title="Edit dashboard layout">
               <Pencil className="h-4 w-4" />
             </button>
           )}

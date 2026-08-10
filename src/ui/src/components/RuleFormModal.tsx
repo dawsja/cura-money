@@ -152,7 +152,7 @@ export function RuleFormModal({
           <button
             type="button"
             onClick={() => !submitting && onClose()}
-            className="fg-muted hover:fg-secondary"
+            className="close-button rounded-lg p-2"
             aria-label="Close"
           >
             <X className="h-4 w-4" />

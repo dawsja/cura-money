@@ -313,7 +313,7 @@ function OidcSection() {
               <div className="flex items-center gap-1 shrink-0">
                 <button
                   onClick={() => setEditing(p)}
-                  className="p-2 rounded fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700"
+                  className="edit-icon-button rounded p-2"
                   title="Edit"
                 >
                   <Edit3 className="h-4 w-4" />
@@ -1167,7 +1167,7 @@ function ProviderForm({
           <h2 className="text-lg font-semibold fg-primary">
             {isEdit ? `Edit ${initial?.providerId}` : 'Add OIDC provider'}
           </h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 fg-tertiary">
+          <button onClick={onClose} className="close-button rounded p-1" aria-label="Close provider dialog">
             <X className="h-4 w-4" />
           </button>
         </div>

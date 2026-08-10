@@ -424,6 +424,42 @@ input[type='number'] {
 .bg-canvas-subtle { background-color: var(--bg-canvas-subtle); }
 .border-default { border-color: var(--border-default); }
 
+.close-button {
+  color: var(--fg-secondary);
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.close-button:hover {
+  color: var(--fg-primary);
+  background-color: var(--bg-canvas-subtle);
+}
+.close-button:focus-visible {
+  color: var(--fg-primary);
+  background-color: var(--bg-canvas-subtle);
+  outline: 2px solid var(--mp-amber-500);
+  outline-offset: 2px;
+}
+
+.save-icon-button,
+.edit-icon-button {
+  color: var(--fg-secondary);
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.save-icon-button:hover {
+  color: var(--mp-emerald-700);
+  background-color: var(--mp-emerald-50);
+}
+.edit-icon-button:hover {
+  color: var(--mp-amber-700);
+  background-color: var(--mp-amber-50);
+}
+.dark .save-icon-button:hover { color: var(--mp-emerald-300); }
+.dark .edit-icon-button:hover { color: var(--mp-amber-300); }
+.save-icon-button:focus-visible,
+.edit-icon-button:focus-visible {
+  outline: 2px solid var(--mp-amber-500);
+  outline-offset: 2px;
+}
+
 @media (min-width: 640px) {
   .card { padding: 1.25rem; }
 

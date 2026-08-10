@@ -397,7 +397,7 @@ export function Rules() {
                     onClick={() => setModal({ mode: 'edit', rule: r })}
                     disabled={cats.isLoading || accounts.isLoading || cats.isError || accounts.isError}
                     title="Edit rule"
-                    className="fg-muted hover:text-amber-700 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded p-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="edit-icon-button rounded p-1.5 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
@@ -566,7 +566,7 @@ export function Rules() {
           <button
             type="button"
             onClick={() => setToast(null)}
-            className="fg-muted hover:fg-secondary"
+            className="close-button rounded-md p-1"
             aria-label="Dismiss"
           >
             <X className="h-3.5 w-3.5" />

@@ -1097,7 +1097,7 @@ export function Transactions() {
                 rulePromptIdRef.current = null;
                 setRulePrompt(null);
               }}
-            className="fg-muted hover:fg-secondary"
+            className="close-button rounded-md p-1"
             aria-label="Dismiss"
           >
             <X className="h-3.5 w-3.5" />
@@ -1113,7 +1113,7 @@ export function Transactions() {
           <button
             type="button"
             onClick={() => updateAssignmentInline.reset()}
-            className="fg-muted hover:fg-secondary"
+            className="close-button rounded-md p-1"
             aria-label="Dismiss assignment error"
           >
             <X className="h-3.5 w-3.5" />
@@ -1335,7 +1335,7 @@ function TransactionDetailModal({
         <div className="mx-auto -mt-1 mb-4 h-1.5 w-10 rounded-full bg-slate-600" aria-hidden="true" />
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold fg-primary">Transaction Details</h3>
-          <button type="button" onClick={onClose} className="flex h-11 w-11 items-center justify-center rounded-full fg-muted hover:bg-slate-100 dark:hover:bg-slate-700 hover:fg-secondary" aria-label="Close">
+          <button type="button" onClick={onClose} className="close-button flex h-11 w-11 items-center justify-center rounded-full" aria-label="Close">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -1499,7 +1499,7 @@ function DateRangePopover({
           type="button"
           onClick={onClose}
           aria-label="Close date range"
-          className="flex h-11 w-11 items-center justify-center rounded-lg fg-muted hover:fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors md:h-8 md:w-8"
+          className="close-button flex h-11 w-11 items-center justify-center rounded-lg md:h-8 md:w-8"
         >
           <X className="h-4 w-4" />
         </button>
@@ -1653,7 +1653,7 @@ function FilterPopover({
           type="button"
           onClick={onClose}
           aria-label="Close filters"
-          className="flex h-11 w-11 items-center justify-center rounded-lg fg-muted hover:fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors md:h-8 md:w-8"
+          className="close-button flex h-11 w-11 items-center justify-center rounded-lg md:h-8 md:w-8"
         >
           <X className="h-4 w-4" />
         </button>
@@ -1945,7 +1945,7 @@ function AddTransactionModal({
           <button
             type="button"
             onClick={onClose}
-            className="fg-muted hover:fg-secondary"
+            className="close-button rounded-lg p-2"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -2270,7 +2270,7 @@ function EditTransactionModal({
       >
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 id={titleId} className="text-lg font-semibold fg-primary">Edit transaction</h2>
-          <button type="button" onClick={onClose} disabled={isPending} className="rounded-lg p-2 fg-muted hover:bg-slate-100 dark:hover:bg-slate-700 hover:fg-secondary disabled:opacity-50" aria-label="Close edit transaction">
+          <button type="button" onClick={onClose} disabled={isPending} className="close-button rounded-lg p-2 disabled:opacity-50" aria-label="Close edit transaction">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -2478,7 +2478,7 @@ function TransactionActionModal({
       <div className="card w-full max-w-md flex flex-col">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold fg-primary">Transaction Actions</h3>
-          <button type="button" onClick={onClose} className="fg-muted hover:fg-secondary" aria-label="Close">
+          <button type="button" onClick={onClose} className="close-button rounded-lg p-2" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>

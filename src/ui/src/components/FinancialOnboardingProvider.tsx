@@ -566,7 +566,7 @@ function Coachmark({
       >
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Getting started · {progressIndex} of {STEP_IDS.length - 2}</span>
-          <button type="button" onClick={onSkipAll} className="rounded-md p-1 fg-muted hover:fg-primary" aria-label="Skip entire tutorial">
+          <button type="button" onClick={onSkipAll} className="close-button rounded-md p-1" aria-label="Skip entire tutorial">
             <X className="h-4 w-4" />
           </button>
         </div>

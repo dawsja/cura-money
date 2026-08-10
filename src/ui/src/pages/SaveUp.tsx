@@ -298,7 +298,7 @@ function GoalCard({
         scale: { duration: 0.55, ease: 'easeOut' },
       }}
       className={clsx(
-        'card w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900',
+        'group card w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900',
         reached ? 'card-goal-reached' : 'card-goal-active',
       )}
     >
@@ -335,7 +335,7 @@ function GoalCard({
             )}
           </div>
         </div>
-        <Pencil className="h-3.5 w-3.5 fg-muted shrink-0" />
+        <Pencil className="h-3.5 w-3.5 shrink-0 text-slate-500 transition-colors group-hover:text-amber-700 dark:text-slate-400 dark:group-hover:text-amber-300" />
       </div>
 
       <div className="mt-4 flex items-end justify-between gap-3 tabular-nums">
@@ -529,7 +529,7 @@ function GoalModal({
           </h3>
           <button
             onClick={onClose}
-            className="fg-muted hover:fg-secondary"
+            className="close-button rounded-lg p-2"
             aria-label="Close"
           >
             <X className="h-4 w-4" />

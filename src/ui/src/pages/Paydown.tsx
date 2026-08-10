@@ -503,7 +503,7 @@ export function Paydown() {
           <button
             type="button"
             onClick={() => setToast(null)}
-            className="fg-muted hover:fg-secondary"
+            className="close-button rounded-md p-1"
             aria-label="Dismiss"
           >
             <X className="h-3.5 w-3.5" />
@@ -518,7 +518,7 @@ export function Paydown() {
           <button
             type="button"
             onClick={() => setSyncError(null)}
-            className="fg-muted hover:fg-secondary"
+            className="close-button rounded-md p-1"
             aria-label="Dismiss"
           >
             <X className="h-3.5 w-3.5" />
@@ -969,7 +969,7 @@ function AccountEditModal({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="rounded-lg p-1.5 fg-muted hover:bg-slate-100 dark:hover:bg-slate-700 hover:fg-secondary"
+        className="edit-icon-button rounded-lg p-1.5"
         title="Edit account details"
       >
         <Pencil className="h-3.5 w-3.5" />
@@ -982,7 +982,7 @@ function AccountEditModal({
       <div className="card w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold fg-primary">Edit {account.name}</h3>
-          <button onClick={() => setOpen(false)} className="fg-muted hover:fg-secondary">
+          <button onClick={() => setOpen(false)} className="close-button rounded-lg p-2" aria-label="Close account details">
             <X className="h-4 w-4" />
           </button>
         </div>

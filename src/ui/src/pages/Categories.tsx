@@ -725,8 +725,9 @@ function EditableSubCategory({
           <button
             type="submit"
             disabled={saving || !name.trim()}
-            className="flex h-9 w-9 items-center justify-center rounded fg-muted hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-300 disabled:opacity-50"
+            className="save-icon-button flex h-9 w-9 items-center justify-center rounded disabled:opacity-50"
             title="Save name"
+            aria-label="Save name"
           >
             <Check className="h-4 w-4" />
           </button>
@@ -734,7 +735,7 @@ function EditableSubCategory({
             type="button"
             disabled={saving}
             onClick={cancel}
-            className="flex h-9 w-9 items-center justify-center rounded fg-muted hover:bg-surface hover:fg-primary disabled:opacity-50"
+            className="close-button flex h-9 w-9 items-center justify-center rounded disabled:opacity-50"
             title="Cancel"
           >
             <X className="h-4 w-4" />
@@ -751,8 +752,9 @@ function EditableSubCategory({
       <div className="flex shrink-0 items-center">
         <button
           onClick={() => setEditing(true)}
-          className="flex h-9 w-9 items-center justify-center rounded fg-muted hover:bg-surface hover:fg-primary"
+          className="edit-icon-button flex h-9 w-9 items-center justify-center rounded"
           title={`Rename ${sub.name}`}
+          aria-label={`Rename ${sub.name}`}
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>

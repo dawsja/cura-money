@@ -316,7 +316,7 @@ export function Reports() {
           <div className="flex items-center">
             <h1 className="text-2xl font-bold fg-primary">Reports</h1>
             {!editing && (
-              <button type="button" onClick={startEditing} disabled={!layout.data} className="inline-flex h-11 w-11 items-center justify-center rounded-lg fg-secondary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-wait disabled:opacity-50" aria-label="Edit reports layout" title="Edit reports layout">
+              <button type="button" onClick={startEditing} disabled={!layout.data} className="edit-icon-button inline-flex h-11 w-11 items-center justify-center rounded-lg disabled:cursor-wait disabled:opacity-50" aria-label="Edit reports layout" title="Edit reports layout">
                 <Pencil className="h-4 w-4" />
               </button>
             )}
@@ -446,7 +446,7 @@ function ExportModal({
             <h2 id={titleId} className="text-lg font-semibold fg-primary">Export your data</h2>
             <p className="mt-1 text-sm fg-muted">Choose what you want to download.</p>
           </div>
-          <button type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg fg-muted hover:bg-slate-100 dark:hover:bg-slate-700 hover:fg-secondary" aria-label="Close export dialog">
+          <button type="button" onClick={onClose} className="close-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg" aria-label="Close export dialog">
             <X className="h-4 w-4" />
           </button>
         </div>
