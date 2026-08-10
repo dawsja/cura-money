@@ -37,9 +37,14 @@ export async function runSimpleFinPollForAllUsers(): Promise<PollReport> {
     report.usersAttempted++;
     try {
       const result = await syncSimpleFinToDatabase(r.userId);
-      report.usersSucceeded++;
       report.accountsSynced += result.accountsSynced;
       report.transactionsSynced += result.transactionsSynced;
+      if (result.errors.length > 0) {
+        report.usersFailed++;
+        logger.warn({ errorCount: result.errors.length }, 'simplefin-poll: provider reported sync errors');
+      } else {
+        report.usersSucceeded++;
+      }
     } catch (err) {
       const failure = publicSimpleFinError(err);
       await setSetting(r.userId, 'simplefin_last_error', failure.message);

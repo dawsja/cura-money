@@ -229,7 +229,8 @@ export async function fetchSimpleFinData(
     timeoutMs: 15_000,
     totalDeadlineMs: 45_000,
     maxBodyBytes: 10 * 1024 * 1024,
-    retry: true,
+    // Each attempt consumes quota. The next scheduled sync is our retry.
+    retry: false,
     allowRedirects: true,
   });
   if (!res.ok) {
@@ -238,6 +239,9 @@ export async function fetchSimpleFinData(
     }
     if (res.status === 403) {
       throw new SimpleFinError('SimpleFIN access was rejected (HTTP 403). Reconnect with a new setup token.', 'access_rejected');
+    }
+    if (res.status === 429) {
+      throw new SimpleFinError('SimpleFIN rate limit reached (HTTP 429). Please wait before syncing again.', 'rate_limited');
     }
     throw new SimpleFinError(`SimpleFIN request failed (HTTP ${res.status}).`, 'api_rejected');
   }
@@ -252,11 +256,29 @@ export async function fetchSimpleFinData(
     throw new SimpleFinError('SimpleFIN returned invalid data.', 'invalid_response');
   }
   const data = parsed.data;
-  const structuredErrors = (data.errlist ?? []).map((error) => `SimpleFIN reported error ${error.code.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 100)}.`);
+  const sanitizeErrorText = (value: string, maxLength: number) => value
+    .split('')
+    .map((character) => {
+      const codePoint = character.charCodeAt(0);
+      return codePoint <= 31 || (codePoint >= 127 && codePoint <= 159) ? ' ' : character;
+    })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+  const structuredErrors = (data.errlist ?? []).map((error) => {
+    const code = error.code.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 100) || 'unknown';
+    const message = sanitizeErrorText(error.msg, 1000) || 'No additional details were provided.';
+    return `SimpleFIN (${code}): ${message}`;
+  });
+  const legacyErrors = (data.errors ?? []).map((error) => {
+    const message = sanitizeErrorText(error, 1000) || 'No additional details were provided.';
+    return `SimpleFIN: ${message}`;
+  });
   return {
     accounts: data.accounts ?? [],
     connections: data.connections ?? [],
-    errors: [...(data.errors ?? []).map(() => 'SimpleFIN reported an account data error.'), ...structuredErrors],
+    errors: [...new Set([...legacyErrors, ...structuredErrors])],
   };
 }
 
@@ -368,7 +390,7 @@ async function performSimpleFinSync(
   // the earlier ones (which left users with only ~60 days of history).
   const rawAccountsById = new Map<string, SimpleFinAccount>();
   const connectionsById = new Map<string, SimpleFinConnection>();
-  const errors: string[] = [];
+  const errors = new Set<string>();
   for (const [startSec, endSec] of windows) {
     const { accounts, connections, errors: chunkErrors } = await fetchSimpleFinData(accessUrl, startSec, endSec);
     for (const connection of connections) connectionsById.set(connection.conn_id, connection);
@@ -392,7 +414,10 @@ async function performSimpleFinSync(
         transactions: [...mergedTxs.values()],
       });
     }
-    errors.push(...chunkErrors);
+    for (const error of chunkErrors) errors.add(error);
+    // Error responses are generally repeated for every date window. Preserve
+    // any partial data but do not spend more quota repeating the same failure.
+    if (chunkErrors.length > 0) break;
   }
   const rawAccounts = [...rawAccountsById.values()];
   // Cura currently stores and reports one currency. Validate the complete
@@ -613,9 +638,10 @@ async function performSimpleFinSync(
     }
   }
 
-  await setSetting(userId, 'simplefin_last_error', errors.join('\n'));
+  const errorList = [...errors];
+  await setSetting(userId, 'simplefin_last_error', errorList.join('\n'));
   await setSetting(userId, 'simplefin_legacy_account_migration_complete', 'true');
-  if (errors.length === 0) {
+  if (errorList.length === 0) {
     await setSetting(userId, 'simplefin_last_sync', new Date().toISOString());
     await setSetting(userId, SIMPLEFIN_DATE_TIME_ZONE_SETTING, env.TZ);
   }
@@ -624,7 +650,7 @@ async function performSimpleFinSync(
     transactionsSynced,
     transactionsInserted,
     transactionsUpdated,
-    errors,
+    errors: errorList,
     imported,
   };
 }

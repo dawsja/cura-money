@@ -31,6 +31,7 @@ const SyncSchema = z.object({
 });
 
 function simpleFinFailureResponse(c: import('hono').Context, message: string, code: string): Response {
+  if (code === 'rate_limited') return c.json({ error: message, code }, 429);
   if (code === 'timeout') return c.json({ error: message, code }, 504);
   if (['network_error', 'dns_failed', 'api_rejected', 'invalid_response', 'response_too_large'].includes(code)) {
     return c.json({ error: message, code }, 502);

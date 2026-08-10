@@ -1,8 +1,8 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useId, useRef } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { formatMoney, currentYearMonth } from '../lib/format';
-import { BarChart3, ChevronDown, ChevronRight } from 'lucide-react';
+import { formatDate, formatMoney, currentYearMonth } from '../lib/format';
+import { BarChart3, ChevronDown, ChevronRight, ReceiptText, X } from 'lucide-react';
 import { MonthPicker } from '../components/MonthPicker';
 import { Progress } from '../components/ui/progress';
 import { BudgetSummaryBox } from '../components/BudgetSummaryBox';
@@ -20,6 +20,8 @@ interface BudgetRow { subCategoryId: string; planned: number; }
 interface Transaction {
   id: string;
   date: string;
+  merchant: string;
+  account: string;
   category: string;
   subCategory?: string;
   amount: number;
@@ -31,6 +33,18 @@ interface TransactionSplit {
   category: string;
   subCategory: string;
   type: Transaction['type'];
+}
+interface BudgetDrilldown {
+  category: string;
+  subCategory: string;
+  type: 'income' | 'expense';
+}
+interface BudgetDrilldownRow {
+  id: string;
+  date: string;
+  merchant: string;
+  account: string;
+  amount: number;
 }
 interface Account {
   id: string;
@@ -60,6 +74,7 @@ export function Budget() {
   const [budgetStatuses, setBudgetStatuses] = useState<Map<string, PlannedCellStatus>>(new Map());
   const [paydownStatuses, setPaydownStatuses] = useState<Map<string, PlannedCellStatus>>(new Map());
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [drilldown, setDrilldown] = useState<BudgetDrilldown | null>(null);
   const liveOverridesRef = useRef(liveOverrides);
   const paydownLiveRef = useRef(paydownLive);
   const budgetInFlight = useRef(new Set<string>());
@@ -139,6 +154,32 @@ export function Budget() {
     }
     return m;
   }, [txns.data, ym]);
+
+  const drilldownRows = useMemo(() => {
+    if (!drilldown) return [];
+    const rows: BudgetDrilldownRow[] = [];
+    const selectedKey = actualKey(drilldown.category, drilldown.subCategory);
+    for (const transaction of txns.data ?? []) {
+      if (!transaction.date.startsWith(ym)) continue;
+      let amount = 0;
+      let matched = false;
+      for (const allocation of transaction.splits?.length ? transaction.splits : [transaction]) {
+        if (allocation.type !== drilldown.type) continue;
+        if (actualKey(allocation.category, allocation.subCategory) !== selectedKey) continue;
+        matched = true;
+        amount += allocation.amount;
+      }
+      if (!matched) continue;
+      rows.push({
+        id: transaction.id,
+        date: transaction.date,
+        merchant: transaction.merchant,
+        account: transaction.account,
+        amount,
+      });
+    }
+    return rows.sort((a, b) => b.date.localeCompare(a.date) || a.merchant.localeCompare(b.merchant));
+  }, [drilldown, txns.data, ym]);
 
   const totals = useMemo(() => {
     let plannedIncome = 0;
@@ -320,6 +361,7 @@ export function Budget() {
   const jumpToPaydown = useCallback(() => {
     document.getElementById(PAYDOWN_SECTION_ID)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
+  const closeDrilldown = useCallback(() => setDrilldown(null), []);
 
   const incomeCats = (cats.data ?? []).filter((c) => c.type === 'income');
   const expenseCats = (cats.data ?? []).filter((c) => c.type === 'expense');
@@ -377,6 +419,7 @@ export function Budget() {
                   onLiveReset={clearLiveOverride}
                   statuses={budgetStatuses}
                   yearMonth={ym}
+                  onOpenDrilldown={setDrilldown}
                 />
               ) : (
                 <div className="card text-sm fg-muted text-center">
@@ -404,6 +447,7 @@ export function Budget() {
                     onLiveReset={clearLiveOverride}
                     statuses={budgetStatuses}
                     yearMonth={ym}
+                    onOpenDrilldown={setDrilldown}
                   />
                 ))
               )}
@@ -424,6 +468,14 @@ export function Budget() {
         </div>
         </div>
       )}
+      {drilldown && (
+        <BudgetTransactionsModal
+          selection={drilldown}
+          rows={drilldownRows}
+          yearMonth={ym}
+          onClose={closeDrilldown}
+        />
+      )}
     </div>
   );
 }
@@ -441,6 +493,7 @@ interface BudgetSectionProps {
   onLiveReset: (id: string) => void;
   statuses: Map<string, PlannedCellStatus>;
   yearMonth: string;
+  onOpenDrilldown: (selection: BudgetDrilldown) => void;
 }
 
 function BudgetSection({
@@ -456,6 +509,7 @@ function BudgetSection({
   onLiveReset,
   statuses,
   yearMonth,
+  onOpenDrilldown,
 }: BudgetSectionProps) {
   const isCollapsed = collapsed.has(title);
   const allSubs = cats.flatMap((c) => c.subCategories.map((sub) => ({ sub, categoryName: c.name })));
@@ -524,7 +578,13 @@ function BudgetSection({
               return (
                 <div key={sub.id} className="py-2.5 space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm fg-primary font-medium truncate">{sub.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => onOpenDrilldown({ category: categoryName, subCategory: sub.name, type: isIncome ? 'income' : 'expense' })}
+                      className="truncate text-left text-sm font-medium fg-primary hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
+                    >
+                      {sub.name}
+                    </button>
                     <span className={clsx(
                       'text-sm font-semibold tabular-nums shrink-0',
                       remaining < 0
@@ -622,7 +682,15 @@ function BudgetSection({
                       : 'emerald';
                 return (
                   <tr key={sub.id}>
-                    <td className="py-2 fg-primary">{sub.name}</td>
+                    <td className="py-2 fg-primary">
+                      <button
+                        type="button"
+                        onClick={() => onOpenDrilldown({ category: categoryName, subCategory: sub.name, type: isIncome ? 'income' : 'expense' })}
+                        className="text-left hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
+                      >
+                        {sub.name}
+                      </button>
+                    </td>
                     <td className="py-2 pr-2">
                       {showProgress && (
                         <Progress
@@ -686,6 +754,129 @@ function BudgetSection({
         </div>
       )}
     </section>
+  );
+}
+
+function BudgetTransactionsModal({
+  selection,
+  rows,
+  yearMonth,
+  onClose,
+}: {
+  selection: BudgetDrilldown;
+  rows: BudgetDrilldownRow[];
+  yearMonth: string;
+  onClose: () => void;
+}) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const [year, month] = yearMonth.split('-').map(Number);
+  const monthLabel = new Date(year ?? 0, (month ?? 1) - 1, 1).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
+  const total = rows.reduce((sum, row) => sum + row.amount, 0);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-default bg-surface shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-default p-4 sm:p-5">
+          <div className="min-w-0">
+            <h2 id={titleId} className="truncate text-lg font-semibold fg-primary">{selection.subCategory}</h2>
+            <p className="mt-1 text-sm fg-muted">{selection.category} · {monthLabel}</p>
+          </div>
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={onClose}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg fg-muted hover:bg-slate-100 hover:fg-secondary dark:hover:bg-slate-700"
+            aria-label="Close transaction details"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-b border-default bg-canvas-subtle px-4 py-3 text-sm sm:px-5">
+          <span className="fg-secondary">{rows.length} transaction{rows.length === 1 ? '' : 's'}</span>
+          <span className="font-semibold tabular-nums fg-primary">{formatMoney(total)} {selection.type === 'income' ? 'earned' : 'spent'}</span>
+        </div>
+
+        <div className="min-h-0 overflow-y-auto">
+          {rows.length === 0 ? (
+            <div className="flex flex-col items-center px-5 py-12 text-center">
+              <ReceiptText className="h-8 w-8 fg-muted" aria-hidden="true" />
+              <p className="mt-3 text-sm font-medium fg-primary">No transactions</p>
+              <p className="mt-1 text-xs fg-muted">Nothing currently contributes to this subcategory for {monthLabel}.</p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-100 dark:divide-slate-700">
+              {rows.map((row) => (
+                <li key={row.id} className="flex items-start justify-between gap-4 px-4 py-3 sm:px-5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium fg-primary">{row.merchant || 'Unknown merchant'}</p>
+                    <p className="mt-0.5 text-xs fg-muted">{formatDate(row.date)} · {row.account || 'Unknown account'}</p>
+                  </div>
+                  <span className={clsx(
+                    'shrink-0 text-sm font-semibold tabular-nums',
+                    selection.type === 'income'
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-rose-600 dark:text-rose-400',
+                  )}>
+                    {selection.type === 'income' ? '+' : '−'}{formatMoney(row.amount)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
