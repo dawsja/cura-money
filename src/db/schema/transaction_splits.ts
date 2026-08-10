@@ -2,6 +2,8 @@ import { sql } from 'drizzle-orm';
 import { bigint, check, foreignKey, index, integer, pgTable, text, timestamp, unique } from 'drizzle-orm/pg-core';
 import { user } from './auth';
 import { transactionTypeEnum } from './categories';
+import { categories } from './categories';
+import { subCategories } from './sub_categories';
 import { transactions } from './transactions';
 
 /** Effective ledger allocations for a transaction; the parent remains the source record. */
@@ -16,6 +18,8 @@ export const transactionSplits = pgTable(
     amountCents: bigint('amount_cents', { mode: 'number' }).notNull(),
     category: text('category').notNull(),
     subCategory: text('sub_category').notNull(),
+    categoryId: text('category_id'),
+    subCategoryId: text('sub_category_id'),
     type: transactionTypeEnum('type').notNull(),
     sortOrder: integer('sort_order').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -23,6 +27,7 @@ export const transactionSplits = pgTable(
   (t) => ({
     userIdx: index('idx_transaction_splits_user').on(t.userId),
     transactionIdx: index('idx_transaction_splits_transaction').on(t.userId, t.transactionId),
+    categoryAssignmentIdx: index('idx_transaction_splits_user_category_assignment').on(t.userId, t.categoryId, t.subCategoryId),
     transactionOrderUnique: unique('transaction_splits_transaction_order_unique').on(
       t.userId,
       t.transactionId,
@@ -33,6 +38,16 @@ export const transactionSplits = pgTable(
       foreignColumns: [transactions.userId, transactions.id],
       name: 'transaction_splits_user_transaction_fk',
     }).onDelete('cascade'),
+    tenantCategoryFk: foreignKey({
+      columns: [t.userId, t.categoryId],
+      foreignColumns: [categories.userId, categories.id],
+      name: 'transaction_splits_user_category_fk',
+    }),
+    tenantSubCategoryFk: foreignKey({
+      columns: [t.userId, t.subCategoryId],
+      foreignColumns: [subCategories.userId, subCategories.id],
+      name: 'transaction_splits_user_sub_category_fk',
+    }),
     positiveSafeAmount: check(
       'transaction_splits_amount_cents_positive_safe_integer',
       sql`${t.amountCents} BETWEEN 1 AND 9007199254740991`,

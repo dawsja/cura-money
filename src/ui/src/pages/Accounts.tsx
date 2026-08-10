@@ -163,6 +163,7 @@ export function Accounts() {
     (acc[a.type] ??= []).push(a);
     return acc;
   }, {} as Record<AccountType, Account[]>);
+  const accountOperationError = del.error ?? hide.error ?? unhide.error;
 
   const renderRow = (a: Account, opts?: { dimmed?: boolean; extraMeta?: React.ReactNode }) => {
     const { text: balanceText, colorClass: balanceColor } = formatAccountBalance(a, (n) => formatMoney(n));
@@ -258,6 +259,11 @@ export function Accounts() {
           </button>
         )}
       </div>
+      {accountOperationError && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300" role="alert">
+          Account operation failed: {accountOperationError.message}
+        </div>
+      )}
 
       <div className="space-y-6">
       <section data-onboarding-target="simplefin-connect" className="card">

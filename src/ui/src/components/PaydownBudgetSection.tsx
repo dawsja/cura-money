@@ -145,6 +145,9 @@ export function PaydownBudgetSection({
                                 step="0.01"
                                 value={r.planned}
                                 disabled={statuses?.get(r.accountId) === 'saving'}
+                                onFocus={(event) => {
+                                  if (event.currentTarget.value === '0') event.currentTarget.select();
+                                }}
                                 onChange={(e) => {
                                   const v = Number(e.target.value);
                                   if (Number.isFinite(v)) onLiveChange!(r.accountId, v);
@@ -237,6 +240,9 @@ export function PaydownBudgetSection({
                               step="0.01"
                               value={r.planned}
                               disabled={statuses?.get(r.accountId) === 'saving'}
+                              onFocus={(event) => {
+                                if (event.currentTarget.value === '0') event.currentTarget.select();
+                              }}
                               onChange={(e) => {
                                 const v = Number(e.target.value);
                                 if (Number.isFinite(v)) onLiveChange!(r.accountId, v);
@@ -294,16 +300,13 @@ export function PaydownBudgetSection({
 }
 
 function CellFeedback({ status, onRetry }: { status?: PlannedCellStatus; onRetry: () => void }) {
-  if (!status) return null;
-  if (status === 'error') {
-    return (
-      <span className="block text-xs text-rose-600 dark:text-rose-400 mt-0.5">
-        Error{' '}
-        <button type="button" className="underline" onMouseDown={(e) => e.preventDefault()} onClick={onRetry}>Retry</button>
-      </span>
-    );
-  }
-  return <span aria-live="polite" className={clsx('block text-xs mt-0.5', status === 'saved' ? 'text-emerald-600 dark:text-emerald-400' : 'fg-muted')}>{status === 'saving' ? 'Saving…' : 'Saved'}</span>;
+  if (status !== 'error') return null;
+  return (
+    <span className="block text-xs text-rose-600 dark:text-rose-400 mt-0.5">
+      Error{' '}
+      <button type="button" className="underline" onMouseDown={(e) => e.preventDefault()} onClick={onRetry}>Retry</button>
+    </span>
+  );
 }
 
 function EmptyState({ onSyncClick, synced }: { onSyncClick: () => void; synced: boolean }) {

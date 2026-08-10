@@ -80,6 +80,10 @@ const Env = z.object({
   // when your reverse proxy rewrites the host.
   OIDC_REDIRECT_BASE: httpOrigin,
 
+  // `auto` preserves existing production behavior when no public URL is set,
+  // while explicit false supports the documented direct-HTTP Compose setup.
+  AUTH_SECURE_COOKIES: z.enum(['auto', 'true', 'false']).default('auto'),
+
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
@@ -127,6 +131,19 @@ function loadEnv(): Env {
 }
 
 export const env = loadEnv();
+
+/** Canonical browser-facing origin, when the deployment configured one. */
+export function configuredExternalOrigin(): string | undefined {
+  return env.OIDC_REDIRECT_BASE || env.BETTER_AUTH_URL || env.APP_URL || undefined;
+}
+
+/** Better Auth cookie names and attributes must use one deployment-wide scheme. */
+export function useSecureAuthCookies(): boolean {
+  if (env.AUTH_SECURE_COOKIES === 'true') return true;
+  if (env.AUTH_SECURE_COOKIES === 'false') return false;
+  const origin = configuredExternalOrigin();
+  return origin ? new URL(origin).protocol === 'https:' : env.NODE_ENV === 'production';
+}
 
 /**
  * Resolve the effective external origin for a given request.

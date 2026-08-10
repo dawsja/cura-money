@@ -88,6 +88,8 @@ export interface Transaction {
   sourceClassificationTrusted: boolean;
   category: string;
   subCategory?: string;
+  categoryId?: string;
+  subCategoryId?: string;
   account: string;
   accountId?: string;
   amount: number;
@@ -101,8 +103,25 @@ export interface TransactionSplit {
   amountCents: number;
   category: string;
   subCategory: string;
+  categoryId?: string;
+  subCategoryId?: string;
   type: TransactionType;
   sortOrder: number;
+}
+
+export interface DashboardActivity {
+  income: number;
+  expense: number;
+  transferCount: number;
+  recent: Array<Pick<Transaction, 'id' | 'date' | 'merchant' | 'category' | 'subCategory' | 'account' | 'amount' | 'type'>>;
+}
+
+export interface BudgetActivityRow {
+  category: string;
+  subCategory: string;
+  type: 'income' | 'expense';
+  actual: number;
+  transactions: Array<{ id: string; date: string; merchant: string; account: string; amount: number }>;
 }
 
 // ---- First-time user seeding ---------------------------------------------
@@ -303,32 +322,34 @@ export async function editAccount(userId: string, id: string, patch: Partial<Acc
         .where(and(eq(categories.userId, userId), eq(categories.name, 'Pay down goals')))
         .limit(1);
       if (paydownCategory) {
-        await tx
-          .update(subCategories)
-          .set({ name: nextName })
-          .where(
-            and(
-              eq(subCategories.userId, userId),
-              eq(subCategories.mainCategoryId, paydownCategory.id),
-              eq(subCategories.name, existing.name),
-            ),
-          );
-        await tx
-          .update(transactions)
-          .set({ subCategory: nextName })
-          .where(
-            and(
-              eq(transactions.userId, userId),
-              eq(transactions.category, 'Pay down goals'),
-              eq(transactions.subCategory, existing.name),
-            ),
-          );
-        await tx
-          .update(rules)
-          .set({ subCategory: nextName, updatedAt: new Date(), version: sql`${rules.version} + 1` })
-          .where(
-            and(eq(rules.userId, userId), eq(rules.category, 'Pay down goals'), eq(rules.subCategory, existing.name)),
-          );
+        const paydownSubs = await tx
+          .select({ id: subCategories.id })
+          .from(subCategories)
+          .where(and(
+            eq(subCategories.userId, userId),
+            eq(subCategories.mainCategoryId, paydownCategory.id),
+            eq(subCategories.name, existing.name),
+          ))
+          .limit(2);
+        const paydownSubId = paydownSubs.length === 1 ? paydownSubs[0]!.id : null;
+        if (paydownSubId) {
+          await tx
+            .update(subCategories)
+            .set({ name: nextName })
+            .where(and(eq(subCategories.userId, userId), eq(subCategories.id, paydownSubId)));
+          await tx
+            .update(transactions)
+            .set({ subCategory: nextName })
+            .where(and(eq(transactions.userId, userId), eq(transactions.subCategoryId, paydownSubId)));
+          await tx
+            .update(transactionSplits)
+            .set({ subCategory: nextName })
+            .where(and(eq(transactionSplits.userId, userId), eq(transactionSplits.subCategoryId, paydownSubId)));
+          await tx
+            .update(rules)
+            .set({ subCategory: nextName, updatedAt: new Date(), version: sql`${rules.version} + 1` })
+            .where(and(eq(rules.userId, userId), eq(rules.subCategoryId, paydownSubId)));
+        }
       }
     }
     if (nextType === 'investment') {
@@ -436,23 +457,22 @@ export async function deleteAccount(userId: string, id: string): Promise<void> {
       .where(and(eq(categories.userId, userId), eq(categories.name, 'Pay down goals')))
       .limit(1);
     if (paydownCategory) {
-      await tx
-        .delete(rules)
-        .where(
-          and(
-            eq(rules.userId, userId),
-            and(eq(rules.category, 'Pay down goals'), eq(rules.subCategory, account.name)),
-          ),
-        );
-      await tx
-        .delete(subCategories)
-        .where(
-          and(
-            eq(subCategories.userId, userId),
-            eq(subCategories.mainCategoryId, paydownCategory.id),
-            eq(subCategories.name, account.name),
-          ),
-        );
+      const paydownSubs = await tx
+        .select({ id: subCategories.id })
+        .from(subCategories)
+        .where(and(
+          eq(subCategories.userId, userId),
+          eq(subCategories.mainCategoryId, paydownCategory.id),
+          eq(subCategories.name, account.name),
+        ))
+        .limit(2);
+      if (paydownSubs.length === 1) {
+        const subCategoryId = paydownSubs[0]!.id;
+        await tx.update(transactions).set({ subCategoryId: null }).where(and(eq(transactions.userId, userId), eq(transactions.subCategoryId, subCategoryId)));
+        await tx.update(transactionSplits).set({ subCategoryId: null }).where(and(eq(transactionSplits.userId, userId), eq(transactionSplits.subCategoryId, subCategoryId)));
+        await tx.delete(rules).where(and(eq(rules.userId, userId), eq(rules.subCategoryId, subCategoryId)));
+        await tx.delete(subCategories).where(and(eq(subCategories.userId, userId), eq(subCategories.id, subCategoryId)));
+      }
     }
     await tx
       .update(goals)
@@ -574,29 +594,62 @@ export async function getAllCategories(userId: string): Promise<MainCategory[]> 
   }));
 }
 
+interface ResolvedCategoryAssignment {
+  categoryId: string;
+  subCategoryId: string;
+  category: string;
+  subCategory: string;
+  type: TransactionType;
+}
+
+function uniqueAssignmentsByName<T extends { category: string; subCategory: string }>(rows: T[]): Map<string, T> {
+  const unique = new Map<string, T>();
+  const duplicates = new Set<string>();
+  for (const row of rows) {
+    const key = `${row.category}\0${row.subCategory}`;
+    if (duplicates.has(key)) continue;
+    if (unique.has(key)) {
+      unique.delete(key);
+      duplicates.add(key);
+    } else {
+      unique.set(key, row);
+    }
+  }
+  return unique;
+}
+
+async function resolveCategoryAssignment(
+  userId: string,
+  category: string,
+  subCategory: string,
+): Promise<ResolvedCategoryAssignment | null> {
+  const rows = await db
+    .select({
+      categoryId: categories.id,
+      subCategoryId: subCategories.id,
+      category: categories.name,
+      subCategory: subCategories.name,
+      type: categories.type,
+    })
+    .from(subCategories)
+    .innerJoin(categories, and(eq(categories.id, subCategories.mainCategoryId), eq(categories.userId, subCategories.userId)))
+    .where(and(
+      eq(categories.userId, userId),
+      eq(categories.name, category),
+      eq(subCategories.userId, userId),
+      eq(subCategories.name, subCategory),
+    ))
+    .limit(2);
+  return rows.length === 1 ? rows[0]! : null;
+}
+
 /** True when a leaf sub-category belongs to the named main category. */
 export async function categoryAssignmentExists(
   userId: string,
   category: string,
   subCategory: string,
 ): Promise<boolean> {
-  const rows = await db
-    .select({ id: subCategories.id })
-    .from(subCategories)
-    .innerJoin(
-      categories,
-      and(eq(categories.id, subCategories.mainCategoryId), eq(categories.userId, subCategories.userId)),
-    )
-    .where(
-      and(
-        eq(categories.userId, userId),
-        eq(categories.name, category),
-        eq(subCategories.userId, userId),
-        eq(subCategories.name, subCategory),
-      ),
-    )
-    .limit(1);
-  return rows.length > 0;
+  return await resolveCategoryAssignment(userId, category, subCategory) !== null;
 }
 
 /** Validate a leaf plus transaction type, with Pay down goals intentionally type-agnostic. */
@@ -606,23 +659,8 @@ export async function transactionAssignmentExists(
   subCategory: string,
   type: TransactionType,
 ): Promise<boolean> {
-  const rows = await db
-    .select({ type: categories.type })
-    .from(subCategories)
-    .innerJoin(
-      categories,
-      and(eq(categories.id, subCategories.mainCategoryId), eq(categories.userId, subCategories.userId)),
-    )
-    .where(
-      and(
-        eq(categories.userId, userId),
-        eq(categories.name, category),
-        eq(subCategories.userId, userId),
-        eq(subCategories.name, subCategory),
-      ),
-    )
-    .limit(1);
-  return rows.length === 1 && (rows[0]!.type === type || category === 'Pay down goals');
+  const assignment = await resolveCategoryAssignment(userId, category, subCategory);
+  return assignment !== null && (assignment.type === type || category === 'Pay down goals');
 }
 
 export async function mainCategoryExists(userId: string, id: string): Promise<boolean> {
@@ -649,25 +687,33 @@ export async function addMainCategory(
   type: TransactionType,
   icon = 'Folder',
 ): Promise<MainCategory> {
-  const id = `cat-${nanoid(10)}`;
-  // New categories go to the end of the list. We pick max(sortOrder)+1
-  // scoped to this user so the order stays compact and we don't have
-  // to renumber anything else. A race here is harmless — the loser
-  // of the SELECT-then-INSERT just gets the same number, and the next
-  // reorder call evens things out.
-  const [top] = await db
-    .select({ sortOrder: categories.sortOrder })
-    .from(categories)
-    .where(eq(categories.userId, userId))
-    .orderBy(sql`${categories.sortOrder} DESC`)
-    .limit(1);
-  const nextOrder = (top?.sortOrder ?? -1) + 1;
-  await db.insert(categories).values({ id, userId, name, type, icon, sortOrder: nextOrder });
-  return { id, name, type, icon, sortOrder: nextOrder, subCategories: [] };
+  if (name.trim().toLowerCase() === 'pay down goals') {
+    throw Object.assign(new Error('Pay down goals is managed from the Pay down page'), { status: 400 });
+  }
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`cura-categories:${userId}`}))`);
+    const duplicate = await tx.select({ id: categories.id }).from(categories)
+      .where(and(eq(categories.userId, userId), sql`lower(btrim(${categories.name})) = lower(btrim(${name}))`)).limit(1);
+    if (duplicate.length > 0) throw Object.assign(new Error('A category with this name already exists'), { status: 409 });
+    const id = `cat-${nanoid(10)}`;
+    const [top] = await tx
+      .select({ sortOrder: categories.sortOrder })
+      .from(categories)
+      .where(eq(categories.userId, userId))
+      .orderBy(sql`${categories.sortOrder} DESC`)
+      .limit(1);
+    const nextOrder = (top?.sortOrder ?? -1) + 1;
+    await tx.insert(categories).values({ id, userId, name, type, icon, sortOrder: nextOrder });
+    return { id, name, type, icon, sortOrder: nextOrder, subCategories: [] };
+  });
 }
 
 export async function editMainCategory(userId: string, id: string, name: string): Promise<void> {
+  if (name.trim().toLowerCase() === 'pay down goals') {
+    throw Object.assign(new Error('Pay down goals is managed from the Pay down page'), { status: 400 });
+  }
   await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`cura-categories:${userId}`}))`);
     const [existing] = await tx
       .select({ name: categories.name })
       .from(categories)
@@ -677,6 +723,12 @@ export async function editMainCategory(userId: string, id: string, name: string)
     if (existing.name === 'Pay down goals') {
       throw Object.assign(new Error('Pay down goals is managed from the Pay down page'), { status: 400 });
     }
+    const duplicate = await tx.select({ id: categories.id }).from(categories).where(and(
+      eq(categories.userId, userId),
+      sql`lower(btrim(${categories.name})) = lower(btrim(${name}))`,
+      sql`${categories.id} <> ${id}`,
+    )).limit(1);
+    if (duplicate.length > 0) throw Object.assign(new Error('A category with this name already exists'), { status: 409 });
 
     await tx
       .update(categories)
@@ -685,15 +737,15 @@ export async function editMainCategory(userId: string, id: string, name: string)
     await tx
       .update(transactions)
       .set({ category: name })
-      .where(and(eq(transactions.userId, userId), eq(transactions.category, existing.name)));
+      .where(and(eq(transactions.userId, userId), eq(transactions.categoryId, id)));
     await tx
       .update(transactionSplits)
       .set({ category: name })
-      .where(and(eq(transactionSplits.userId, userId), eq(transactionSplits.category, existing.name)));
+      .where(and(eq(transactionSplits.userId, userId), eq(transactionSplits.categoryId, id)));
     await tx
       .update(rules)
       .set({ category: name, updatedAt: new Date(), version: sql`${rules.version} + 1` })
-      .where(and(eq(rules.userId, userId), eq(rules.category, existing.name)));
+      .where(and(eq(rules.userId, userId), eq(rules.categoryId, id)));
   });
 }
 
@@ -708,12 +760,14 @@ export async function deleteMainCategory(userId: string, id: string): Promise<vo
     if (category.name === 'Pay down goals') {
       throw Object.assign(new Error('Pay down goals is managed from the Pay down page'), { status: 400 });
     }
+    await tx.update(transactions).set({ categoryId: null, subCategoryId: null }).where(and(eq(transactions.userId, userId), eq(transactions.categoryId, id)));
+    await tx.update(transactionSplits).set({ categoryId: null, subCategoryId: null }).where(and(eq(transactionSplits.userId, userId), eq(transactionSplits.categoryId, id)));
     await tx
       .delete(rules)
       .where(
         and(
           eq(rules.userId, userId),
-          eq(rules.category, category.name),
+          eq(rules.categoryId, id),
         ),
       );
     await tx.delete(categories).where(and(eq(categories.userId, userId), eq(categories.id, id)));
@@ -747,10 +801,26 @@ export async function addSubCategory(
   name: string,
   planned: number,
 ): Promise<SubCategory> {
-  if (!(await mainCategoryExists(userId, mainCategoryId))) throw new Error('Main category not found');
-  const id = `sub-${nanoid(10)}`;
-  await db.insert(subCategories).values({ id, userId, mainCategoryId, name, planned });
-  return { id, name, planned };
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`cura-subcategories:${userId}:${mainCategoryId}`}))`);
+    const parent = await tx.select({ id: categories.id, name: categories.name }).from(categories).where(and(
+      eq(categories.userId, userId),
+      eq(categories.id, mainCategoryId),
+    )).limit(1);
+    if (parent.length !== 1) throw new Error('Main category not found');
+    if (parent[0]!.name === 'Pay down goals') {
+      throw Object.assign(new Error('Pay down goal categories follow their account names'), { status: 400 });
+    }
+    const duplicate = await tx.select({ id: subCategories.id }).from(subCategories).where(and(
+      eq(subCategories.userId, userId),
+      eq(subCategories.mainCategoryId, mainCategoryId),
+      sql`lower(btrim(${subCategories.name})) = lower(btrim(${name}))`,
+    )).limit(1);
+    if (duplicate.length > 0) throw Object.assign(new Error('A sub-category with this name already exists'), { status: 409 });
+    const id = `sub-${nanoid(10)}`;
+    await tx.insert(subCategories).values({ id, userId, mainCategoryId, name, planned });
+    return { id, name, planned };
+  });
 }
 
 /**
@@ -774,11 +844,16 @@ export async function syncPaydownCategories(
 
   await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`cura-paydown-categories:${userId}`}))`);
-    const [paydownCategory] = await tx
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`cura-categories:${userId}`}))`);
+    const paydownCategories = await tx
       .select({ id: categories.id })
       .from(categories)
-      .where(and(eq(categories.userId, userId), eq(categories.name, 'Pay down goals')))
-      .limit(1);
+      .where(and(eq(categories.userId, userId), sql`lower(btrim(${categories.name})) = 'pay down goals'`))
+      .limit(2);
+    if (paydownCategories.length > 1) {
+      throw Object.assign(new Error('Multiple Pay down goals categories must be resolved before saving a plan'), { status: 409 });
+    }
+    const paydownCategory = paydownCategories[0];
     let mainCategoryId = paydownCategory?.id;
     if (!mainCategoryId) {
       const [top] = await tx
@@ -797,12 +872,19 @@ export async function syncPaydownCategories(
         sortOrder: (top?.sortOrder ?? -1) + 1,
       });
     }
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`cura-subcategories:${userId}:${mainCategoryId}`}))`);
 
     const existing = await tx
       .select({ id: subCategories.id, name: subCategories.name })
       .from(subCategories)
       .where(and(eq(subCategories.userId, userId), eq(subCategories.mainCategoryId, mainCategoryId)));
-    const existingByName = new Map(existing.map((s) => [s.name, s.id]));
+    const existingByName = new Map<string, string>();
+    for (const row of existing) {
+      if (existingByName.has(row.name)) {
+        throw Object.assign(new Error(`Duplicate paydown category for account: ${row.name}`), { status: 409 });
+      }
+      existingByName.set(row.name, row.id);
+    }
 
     const missing = accountNames.filter((name) => !existingByName.has(name));
     if (missing.length > 0) {
@@ -867,6 +949,7 @@ export async function editSubCategory(
   planned?: number,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`cura-subcategories:${userId}:${mainCategoryId}`}))`);
     const [existing] = await tx
       .select({ name: subCategories.name, mainName: categories.name })
       .from(subCategories)
@@ -886,6 +969,13 @@ export async function editSubCategory(
     if (existing.mainName === 'Pay down goals') {
       throw Object.assign(new Error('Pay down goal categories follow their account names'), { status: 400 });
     }
+    const duplicate = await tx.select({ id: subCategories.id }).from(subCategories).where(and(
+      eq(subCategories.userId, userId),
+      eq(subCategories.mainCategoryId, mainCategoryId),
+      sql`lower(btrim(${subCategories.name})) = lower(btrim(${name}))`,
+      sql`${subCategories.id} <> ${subCategoryId}`,
+    )).limit(1);
+    if (duplicate.length > 0) throw Object.assign(new Error('A sub-category with this name already exists'), { status: 409 });
 
     await tx
       .update(subCategories)
@@ -901,8 +991,7 @@ export async function editSubCategory(
 
     const oldAssignment = and(
       eq(transactions.userId, userId),
-      eq(transactions.category, existing.mainName),
-      eq(transactions.subCategory, existing.name),
+      eq(transactions.subCategoryId, subCategoryId),
     );
     await tx.update(transactions).set({ subCategory: name }).where(oldAssignment);
     await tx
@@ -911,15 +1000,14 @@ export async function editSubCategory(
       .where(
         and(
           eq(transactionSplits.userId, userId),
-          eq(transactionSplits.category, existing.mainName),
-          eq(transactionSplits.subCategory, existing.name),
+          eq(transactionSplits.subCategoryId, subCategoryId),
         ),
       );
     await tx
       .update(rules)
       .set({ subCategory: name, updatedAt: new Date(), version: sql`${rules.version} + 1` })
       .where(
-        and(eq(rules.userId, userId), eq(rules.category, existing.mainName), eq(rules.subCategory, existing.name)),
+        and(eq(rules.userId, userId), eq(rules.subCategoryId, subCategoryId)),
       );
   });
 }
@@ -945,12 +1033,14 @@ export async function deleteSubCategory(userId: string, mainCategoryId: string, 
     if (assignment.category === 'Pay down goals') {
       throw Object.assign(new Error('Pay down goal categories are removed with their accounts'), { status: 400 });
     }
+    await tx.update(transactions).set({ subCategoryId: null }).where(and(eq(transactions.userId, userId), eq(transactions.subCategoryId, subCategoryId)));
+    await tx.update(transactionSplits).set({ subCategoryId: null }).where(and(eq(transactionSplits.userId, userId), eq(transactionSplits.subCategoryId, subCategoryId)));
     await tx
       .delete(rules)
       .where(
         and(
           eq(rules.userId, userId),
-          and(eq(rules.category, assignment.category), eq(rules.subCategory, assignment.subCategory)),
+          eq(rules.subCategoryId, subCategoryId),
         ),
       );
     await tx
@@ -1090,6 +1180,8 @@ async function loadTransactionSplits(userId: string, transactionIds: string[]): 
       amountCents: row.amountCents,
       category: row.category,
       subCategory: row.subCategory,
+      categoryId: row.categoryId ?? undefined,
+      subCategoryId: row.subCategoryId ?? undefined,
       type: row.type,
       sortOrder: row.sortOrder,
     });
@@ -1149,6 +1241,8 @@ export async function getAllTransactions(userId: string): Promise<Transaction[]>
         sourceClassificationTrusted: r.sourceClassificationTrusted,
         category: r.category,
         subCategory: r.subCategory ?? undefined,
+        categoryId: r.categoryId ?? undefined,
+        subCategoryId: r.subCategoryId ?? undefined,
         // Resolve alias on read so renaming flows through to every
         // historical transaction. Falls back to the raw account name
         // when no alias is set or the account no longer exists.
@@ -1161,6 +1255,103 @@ export async function getAllTransactions(userId: string): Promise<Transaction[]>
         splits: splitsByTransaction.get(r.id) ?? [],
       }))
   );
+}
+
+export async function getDashboardActivity(userId: string, now = new Date()): Promise<DashboardActivity> {
+  const { meta, byName, excludedIds, excludedNames } = await loadAccountLedgerMeta(userId);
+  const visible = ledgerVisibilityCondition(excludedIds, excludedNames);
+  const cutoff = new Date(now.getTime() - 30 * 86_400_000).toISOString().slice(0, 10);
+  const [periodRows, recentRows] = await Promise.all([
+    db.select().from(transactions).where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.needsReview, false),
+      gt(transactions.date, cutoff),
+      visible,
+    )),
+    db.select().from(transactions).where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.needsReview, false),
+      visible,
+    )).orderBy(desc(transactions.date), desc(transactions.id)).limit(4),
+  ]);
+  const splits = await loadTransactionSplits(userId, periodRows.map((row) => row.id));
+  let incomeCents = 0;
+  let expenseCents = 0;
+  for (const row of periodRows) {
+    const allocations = splits.get(row.id);
+    if (allocations?.length) {
+      for (const allocation of allocations) {
+        if (allocation.type === 'income') incomeCents += allocation.amountCents;
+        if (allocation.type === 'expense') expenseCents += allocation.amountCents;
+      }
+    } else {
+      if (row.type === 'income') incomeCents += row.amountCents;
+      if (row.type === 'expense') expenseCents += row.amountCents;
+    }
+  }
+  return {
+    income: centsToDollars(incomeCents),
+    expense: centsToDollars(expenseCents),
+    transferCount: periodRows.filter((row) => row.type === 'transfer').length,
+    recent: recentRows.map((row) => ({
+      id: row.id,
+      date: row.date,
+      merchant: row.merchant,
+      category: row.category,
+      subCategory: row.subCategory ?? undefined,
+      account: transactionAccountMeta(row, meta, byName)?.alias || transactionAccountMeta(row, meta, byName)?.name || row.account,
+      amount: centsToDollars(row.amountCents),
+      type: row.type,
+    })),
+  };
+}
+
+export async function getBudgetActivity(userId: string, yearMonth: string): Promise<{ yearMonth: string; rows: BudgetActivityRow[] }> {
+  const { meta, byName, excludedIds, excludedNames } = await loadAccountLedgerMeta(userId);
+  const [year, month] = yearMonth.split('-').map(Number);
+  const toDate = new Date(Date.UTC(year!, month!, 0)).toISOString().slice(0, 10);
+  const parentRows = await db.select().from(transactions).where(and(
+    eq(transactions.userId, userId),
+    eq(transactions.needsReview, false),
+    gte(transactions.date, `${yearMonth}-01`),
+    lte(transactions.date, toDate),
+    ledgerVisibilityCondition(excludedIds, excludedNames),
+  )).orderBy(desc(transactions.date), asc(transactions.merchant), desc(transactions.id));
+  const splits = await loadTransactionSplits(userId, parentRows.map((row) => row.id));
+  const grouped = new Map<string, { row: BudgetActivityRow; cents: number }>();
+  for (const parent of parentRows) {
+    const allocations = splits.get(parent.id)?.length
+      ? splits.get(parent.id)!
+      : [{ amountCents: parent.amountCents, category: parent.category, subCategory: parent.subCategory ?? parent.category, type: parent.type }];
+    const transactionAmounts = new Map<string, { category: string; subCategory: string; type: 'income' | 'expense'; cents: number }>();
+    for (const allocation of allocations) {
+      if (allocation.type !== 'income' && allocation.type !== 'expense') continue;
+      const subCategory = allocation.subCategory ?? allocation.category;
+      const key = `${allocation.type}\0${allocation.category}\0${subCategory}`;
+      const current = transactionAmounts.get(key);
+      if (current) current.cents += allocation.amountCents;
+      else transactionAmounts.set(key, { category: allocation.category, subCategory, type: allocation.type, cents: allocation.amountCents });
+    }
+    for (const [key, allocation] of transactionAmounts) {
+      let group = grouped.get(key);
+      if (!group) {
+        group = { row: { category: allocation.category, subCategory: allocation.subCategory, type: allocation.type, actual: 0, transactions: [] }, cents: 0 };
+        grouped.set(key, group);
+      }
+      group.cents += allocation.cents;
+      group.row.transactions.push({
+        id: parent.id,
+        date: parent.date,
+        merchant: parent.merchant,
+        account: transactionAccountMeta(parent, meta, byName)?.alias || transactionAccountMeta(parent, meta, byName)?.name || parent.account,
+        amount: centsToDollars(allocation.cents),
+      });
+    }
+  }
+  return {
+    yearMonth,
+    rows: Array.from(grouped.values(), (group) => ({ ...group.row, actual: centsToDollars(group.cents) })),
+  };
 }
 
 /**
@@ -1439,6 +1630,8 @@ export async function listTransactions(
     sourceClassificationTrusted: r.sourceClassificationTrusted,
     category: r.category,
     subCategory: r.subCategory ?? undefined,
+    categoryId: r.categoryId ?? undefined,
+    subCategoryId: r.subCategoryId ?? undefined,
     account:
       transactionAccountMeta(r, meta, byName)?.alias || transactionAccountMeta(r, meta, byName)?.name || r.account,
     accountId: r.accountId ?? undefined,
@@ -1497,7 +1690,8 @@ export async function addTransaction(
   const category = ruleMatch?.subCategory ? ruleMatch.category : tx.category;
   const subCategory = ruleMatch?.subCategory ?? tx.subCategory;
   const type = ruleMatch?.type ?? tx.type;
-  if (!subCategory || !await transactionAssignmentExists(userId, category, subCategory, type)) {
+  const assignment = subCategory ? await resolveCategoryAssignment(userId, category, subCategory) : null;
+  if (!assignment || (assignment.type !== type && category !== 'Pay down goals')) {
     throw Object.assign(new Error('transaction must use a valid category, subCategory, and matching type'), {
       status: 400,
     });
@@ -1513,6 +1707,8 @@ export async function addTransaction(
     sourceClassificationTrusted: true,
     category,
     subCategory: subCategory ?? null,
+    categoryId: assignment.categoryId,
+    subCategoryId: assignment.subCategoryId,
     accountId: account.id,
     account: account.name,
     amountCents,
@@ -1532,6 +1728,8 @@ export async function addTransaction(
     sourceClassificationTrusted: true,
     category,
     subCategory,
+    categoryId: assignment.categoryId,
+    subCategoryId: assignment.subCategoryId,
     type,
     accountId: account.id,
     account: account.name,
@@ -1571,9 +1769,12 @@ export async function editTransaction(
   const finalSubCategory = patch.subCategory !== undefined ? patch.subCategory : existing.subCategory;
   const finalType = patch.type ?? existing.type;
   const changesAssignment = patch.category !== undefined || patch.subCategory !== undefined || patch.type !== undefined;
+  const assignment = changesAssignment && finalSubCategory
+    ? await resolveCategoryAssignment(userId, finalCategory, finalSubCategory)
+    : null;
   if (
     changesAssignment
-    && (!finalSubCategory || !await transactionAssignmentExists(userId, finalCategory, finalSubCategory, finalType))
+    && (!assignment || (assignment.type !== finalType && finalCategory !== 'Pay down goals'))
   ) {
     throw Object.assign(new Error('transaction must use a valid category, subCategory, and matching type'), {
       status: 400,
@@ -1588,6 +1789,8 @@ export async function editTransaction(
         merchant: patch.merchant ?? existing.merchant,
         category: patch.category ?? existing.category,
         subCategory: patch.subCategory !== undefined ? (patch.subCategory ?? null) : existing.subCategory,
+        categoryId: changesAssignment ? assignment!.categoryId : existing.categoryId,
+        subCategoryId: changesAssignment ? assignment!.subCategoryId : existing.subCategoryId,
         accountId: nextAccount?.id ?? existing.accountId,
         account: nextAccount?.name ?? existing.account,
         amountCents: nextAmountCents,
@@ -1679,18 +1882,18 @@ export async function updateFullTransaction(
     }
     if (changesAssignment || input.splits.length > 0) {
       const assignments = await tx
-        .select({ category: categories.name, subCategory: subCategories.name, type: categories.type })
+        .select({ categoryId: categories.id, subCategoryId: subCategories.id, category: categories.name, subCategory: subCategories.name, type: categories.type })
         .from(subCategories)
         .innerJoin(
           categories,
           and(eq(categories.userId, subCategories.userId), eq(categories.id, subCategories.mainCategoryId)),
         )
         .where(and(eq(categories.userId, userId), eq(subCategories.userId, userId)));
-      const valid = new Set(assignments.map((row) => `${row.category}\u0000${row.subCategory}\u0000${row.type}`));
-      const assignmentIsValid = (category: string, subCategory: string, type: TransactionType) =>
-        valid.has(`${category}\u0000${subCategory}\u0000${type}`)
-        || (category === 'Pay down goals'
-          && assignments.some((row) => row.category === category && row.subCategory === subCategory));
+      const uniqueAssignments = uniqueAssignmentsByName(assignments);
+      const assignmentIsValid = (category: string, subCategory: string, type: TransactionType) => {
+        const assignment = uniqueAssignments.get(`${category}\0${subCategory}`);
+        return assignment !== undefined && (assignment.type === type || category === 'Pay down goals');
+      };
       if (changesAssignment && !assignmentIsValid(nextCategory, nextSubCategory!, nextType)) {
         throw Object.assign(new Error('transaction must use a valid category, subCategory, and matching type'), {
           status: 400,
@@ -1704,6 +1907,14 @@ export async function updateFullTransaction(
         }
       }
     }
+
+    const assignmentRows = await tx
+      .select({ categoryId: categories.id, subCategoryId: subCategories.id, category: categories.name, subCategory: subCategories.name })
+      .from(subCategories)
+      .innerJoin(categories, and(eq(categories.userId, subCategories.userId), eq(categories.id, subCategories.mainCategoryId)))
+      .where(and(eq(categories.userId, userId), eq(subCategories.userId, userId)));
+    const assignmentByName = uniqueAssignmentsByName(assignmentRows);
+    const parentAssignment = assignmentByName.get(`${nextCategory}\0${nextSubCategory}`);
 
     let account = { id: parent.accountId, name: parent.account, alias: null as string | null };
     if (patch.account !== undefined || patch.accountId !== undefined) {
@@ -1747,6 +1958,8 @@ export async function updateFullTransaction(
         merchant: patch.merchant ?? parent.merchant,
         category: nextCategory,
         subCategory: nextSubCategory,
+        categoryId: parentAssignment?.categoryId ?? parent.categoryId,
+        subCategoryId: parentAssignment?.subCategoryId ?? parent.subCategoryId,
         accountId: account.id,
         account: account.name,
         amountCents,
@@ -1759,16 +1972,21 @@ export async function updateFullTransaction(
       .delete(transactionSplits)
       .where(and(eq(transactionSplits.userId, userId), eq(transactionSplits.transactionId, transactionId)));
 
-    const splitRows = input.splits.map((split, sortOrder) => ({
+    const splitRows = input.splits.map((split, sortOrder) => {
+      const assignment = assignmentByName.get(`${split.category}\0${split.subCategory}`)!;
+      return ({
       id: `split-${nanoid(12)}`,
       userId,
       transactionId,
       amountCents: split.amountCents,
       category: split.category,
       subCategory: split.subCategory,
+      categoryId: assignment.categoryId,
+      subCategoryId: assignment.subCategoryId,
       type: split.type,
       sortOrder,
-    }));
+    });
+    });
     if (splitRows.length > 0) await tx.insert(transactionSplits).values(splitRows);
 
     return {
@@ -1792,6 +2010,8 @@ export async function updateFullTransaction(
         amountCents: split.amountCents,
         category: split.category,
         subCategory: split.subCategory,
+        categoryId: split.categoryId,
+        subCategoryId: split.subCategoryId,
         type: split.type,
         sortOrder: split.sortOrder,
       })),
@@ -1833,9 +2053,12 @@ export async function replaceTransactionSplits(
       });
     }
 
+    let assignmentByName = new Map<string, { categoryId: string; subCategoryId: string; type: TransactionType }>();
     if (input.length > 0) {
       const assignments = await tx
         .select({
+          categoryId: categories.id,
+          subCategoryId: subCategories.id,
           category: categories.name,
           subCategory: subCategories.name,
           type: categories.type,
@@ -1846,11 +2069,11 @@ export async function replaceTransactionSplits(
           and(eq(categories.userId, subCategories.userId), eq(categories.id, subCategories.mainCategoryId)),
         )
         .where(and(eq(categories.userId, userId), eq(subCategories.userId, userId)));
-      const valid = new Set(assignments.map((row) => `${row.category}\u0000${row.subCategory}\u0000${row.type}`));
-      const assignmentIsValid = (category: string, subCategory: string, type: TransactionType) =>
-        valid.has(`${category}\u0000${subCategory}\u0000${type}`)
-        || (category === 'Pay down goals'
-          && assignments.some((row) => row.category === category && row.subCategory === subCategory));
+      assignmentByName = uniqueAssignmentsByName(assignments);
+      const assignmentIsValid = (category: string, subCategory: string, type: TransactionType) => {
+        const assignment = assignmentByName.get(`${category}\0${subCategory}`);
+        return assignment !== undefined && (assignment.type === type || category === 'Pay down goals');
+      };
       for (const split of input) {
         if (!assignmentIsValid(split.category, split.subCategory, split.type)) {
           throw Object.assign(new Error('each split must use a valid category, subCategory, and matching type'), {
@@ -1878,6 +2101,8 @@ export async function replaceTransactionSplits(
       amountCents: split.amountCents,
       category: split.category,
       subCategory: split.subCategory,
+      categoryId: assignmentByName.get(`${split.category}\0${split.subCategory}`)!.categoryId,
+      subCategoryId: assignmentByName.get(`${split.category}\0${split.subCategory}`)!.subCategoryId,
       type: split.type,
       sortOrder,
     }));
@@ -1892,6 +2117,8 @@ export async function replaceTransactionSplits(
       amountCents: row.amountCents,
       category: row.category,
       subCategory: row.subCategory,
+      categoryId: row.categoryId,
+      subCategoryId: row.subCategoryId,
       type: row.type,
       sortOrder: row.sortOrder,
     }));
@@ -1915,6 +2142,12 @@ export async function addTransactionWithExternalId(
     tx.account,
     tx.accountId,
   );
+  const assignment = tx.subCategory
+    ? await resolveCategoryAssignment(userId, tx.category, tx.subCategory)
+    : null;
+  if (!assignment || (assignment.type !== tx.type && tx.category !== 'Pay down goals')) {
+    throw Object.assign(new Error('transaction must use a valid category, subCategory, and matching type'), { status: 400 });
+  }
 
   // SimpleFIN transaction IDs are only unique within an account. New imports
   // use an account-scoped ID; migrate a matching legacy ID in place so an
@@ -2000,8 +2233,10 @@ export async function addTransactionWithExternalId(
            sourceSubCategory: tx.sourceSubCategory,
            sourceType: tx.sourceType,
            sourceClassificationTrusted: true,
-           category: current.category,
-           subCategory: current.subCategory ?? undefined,
+            category: current.category,
+            subCategory: current.subCategory ?? undefined,
+            categoryId: current.categoryId ?? undefined,
+            subCategoryId: current.subCategoryId ?? undefined,
           accountId: account.id,
           account: account.name,
           amount: centsToDollars(tx.amountCents),
@@ -2015,6 +2250,8 @@ export async function addTransactionWithExternalId(
                 amountCents: split.amountCents,
                 category: split.category,
                 subCategory: split.subCategory,
+                categoryId: split.categoryId ?? undefined,
+                subCategoryId: split.subCategoryId ?? undefined,
                 type: split.type,
                 sortOrder: split.sortOrder,
               })),
@@ -2039,6 +2276,8 @@ export async function addTransactionWithExternalId(
       sourceClassificationTrusted: true,
       category: tx.category,
       subCategory: tx.subCategory ?? null,
+      categoryId: assignment.categoryId,
+      subCategoryId: assignment.subCategoryId,
       accountId: account.id,
       account: account.name,
       amountCents: tx.amountCents,
@@ -2068,6 +2307,8 @@ export async function addTransactionWithExternalId(
       sourceClassificationTrusted: true,
       category: tx.category,
       subCategory: tx.subCategory,
+      categoryId: assignment.categoryId,
+      subCategoryId: assignment.subCategoryId,
       accountId: account.id,
       account: account.name,
       amount: centsToDollars(tx.amountCents),
@@ -2136,6 +2377,8 @@ export async function listReviewQueue(userId: string, opts: { limit?: number } =
     sourceClassificationTrusted: r.sourceClassificationTrusted,
     category: r.category,
     subCategory: r.subCategory ?? undefined,
+    categoryId: r.categoryId ?? undefined,
+    subCategoryId: r.subCategoryId ?? undefined,
     account:
       transactionAccountMeta(r, meta, byName)?.alias || transactionAccountMeta(r, meta, byName)?.name || r.account,
     accountId: r.accountId ?? undefined,
@@ -2176,9 +2419,13 @@ export async function markTransactionReviewed(
   const finalCategory = patch.category ?? existing.category;
   const finalSubCategory = patch.subCategory !== undefined ? patch.subCategory : existing.subCategory;
   const finalType = patch.type ?? existing.type;
+  const changesAssignment = patch.category !== undefined || patch.subCategory !== undefined || patch.type !== undefined;
+  const assignment = changesAssignment && finalSubCategory
+    ? await resolveCategoryAssignment(userId, finalCategory, finalSubCategory)
+    : null;
   if (
-    patch.category !== undefined
-    && (!finalSubCategory || !await transactionAssignmentExists(userId, finalCategory, finalSubCategory, finalType))
+    changesAssignment
+    && (!assignment || (assignment.type !== finalType && finalCategory !== 'Pay down goals'))
   ) {
     throw Object.assign(new Error('transaction must use a valid category, subCategory, and matching type'), {
       status: 400,
@@ -2201,6 +2448,8 @@ export async function markTransactionReviewed(
       needsReview: false,
       category: patch.category ?? existing.category,
       subCategory: patch.subCategory !== undefined ? (patch.subCategory ?? null) : existing.subCategory,
+      categoryId: changesAssignment ? assignment!.categoryId : existing.categoryId,
+      subCategoryId: changesAssignment ? assignment!.subCategoryId : existing.subCategoryId,
       type: patch.type ?? existing.type,
     })
     .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
@@ -2215,6 +2464,8 @@ export async function markTransactionReviewed(
     category: patch.category ?? existing.category,
     subCategory:
       patch.subCategory !== undefined ? (patch.subCategory ?? undefined) : (existing.subCategory ?? undefined),
+    categoryId: changesAssignment ? assignment!.categoryId : (existing.categoryId ?? undefined),
+    subCategoryId: changesAssignment ? assignment!.subCategoryId : (existing.subCategoryId ?? undefined),
     account: accountMeta[0]?.alias || accountMeta[0]?.name || existing.account,
     accountId: existing.accountId ?? undefined,
     amount: centsToDollars(existing.amountCents),
@@ -2799,6 +3050,8 @@ export interface Rule {
   sourceSubCategory?: string;
   category: string;
   subCategory?: string;
+  categoryId?: string;
+  subCategoryId?: string;
   type?: TransactionType;
   createdAt: Date;
   updatedAt: Date;
@@ -2816,6 +3069,8 @@ function rowToRule(r: typeof rules.$inferSelect): Rule {
     sourceSubCategory: r.sourceSubCategory ?? undefined,
     category: r.category,
     subCategory: r.subCategory ?? undefined,
+    categoryId: r.categoryId ?? undefined,
+    subCategoryId: r.subCategoryId ?? undefined,
     type: (r.type as TransactionType | null) ?? undefined,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
@@ -2838,23 +3093,27 @@ export async function listRulesForMatching(
     .from(rules)
     .where(eq(rules.userId, userId));
   const assignments = await db
-    .select({ category: categories.name, subCategory: subCategories.name, type: categories.type })
+    .select({ categoryId: categories.id, subCategoryId: subCategories.id, category: categories.name, subCategory: subCategories.name, type: categories.type })
     .from(subCategories)
     .innerJoin(
       categories,
       and(eq(categories.userId, subCategories.userId), eq(categories.id, subCategories.mainCategoryId)),
     )
     .where(eq(categories.userId, userId));
-  const valid = new Map(assignments.map((row) => [`${row.category}\u0000${row.subCategory}`, row.type]));
-  return rows
-    .filter((row) => {
-      if (row.subCategory == null) return false;
-      const categoryType = valid.get(`${row.category}\u0000${row.subCategory}`);
-      return categoryType != null
-        && ((row.type != null && (row.type === categoryType || row.category === 'Pay down goals'))
-          || (row.type == null && row.category === 'Pay down goals'));
-    })
-    .map(rowToRule);
+  const valid = uniqueAssignmentsByName(assignments);
+  return rows.flatMap((row) => {
+    if (row.subCategory == null) return [];
+    const assignment = valid.get(`${row.category}\0${row.subCategory}`);
+    const validType = assignment
+      && ((row.type != null && (row.type === assignment.type || row.category === 'Pay down goals'))
+        || (row.type == null && row.category === 'Pay down goals'));
+    if (!assignment || !validType) return [];
+    return [{
+      ...rowToRule(row),
+      categoryId: assignment.categoryId,
+      subCategoryId: assignment.subCategoryId,
+    }];
+  });
 }
 
 interface RuleWriteInput {
@@ -2905,12 +3164,8 @@ export async function createRule(
   const matchType = input.matchType ?? 'exact';
   const trimmed = input.matchValue.trim();
   if (!trimmed) throw new Error('matchValue must not be empty');
-  if (!input.subCategory || !input.type || !await transactionAssignmentExists(
-    userId,
-    input.category,
-    input.subCategory,
-    input.type,
-  )) {
+  const assignment = input.subCategory ? await resolveCategoryAssignment(userId, input.category, input.subCategory) : null;
+  if (!assignment || !input.type || (assignment.type !== input.type && input.category !== 'Pay down goals')) {
     throw Object.assign(new Error('Rule must set a valid category, subCategory, and matching type'), { status: 400 });
   }
   const inserted = await db
@@ -2926,6 +3181,8 @@ export async function createRule(
       sourceSubCategory: input.sourceSubCategory ?? null,
       category: input.category,
       subCategory: input.subCategory ?? null,
+      categoryId: assignment.categoryId,
+      subCategoryId: assignment.subCategoryId,
       type: input.type ?? null,
       updatedAt: new Date(),
     })
@@ -2988,6 +3245,8 @@ export async function editRule(
   if (!targetIsValid) {
     throw Object.assign(new Error('Rule must set a valid category, subCategory, and matching type'), { status: 400 });
   }
+  const assignment = await resolveCategoryAssignment(userId, nextCategory, nextSubCategory!);
+  if (!assignment) throw Object.assign(new Error('Rule target is ambiguous or no longer exists'), { status: 400 });
   const updated = await db
     .update(rules)
     .set({
@@ -3001,6 +3260,8 @@ export async function editRule(
       // them. `undefined` means "don't touch".
       subCategory:
         patch.subCategory === undefined ? existing.subCategory : patch.subCategory === null ? null : patch.subCategory,
+      categoryId: assignment.categoryId,
+      subCategoryId: assignment.subCategoryId,
       type: patch.type === undefined ? existing.type : patch.type === null ? null : patch.type,
       updatedAt: new Date(),
       version: sql`${rules.version} + 1`,
@@ -3027,7 +3288,7 @@ export async function deleteRule(userId: string, id: string): Promise<void> {
 export async function findRuleForTransaction(
   userId: string,
   context: RuleMatchContext,
-): Promise<Pick<Rule, 'category' | 'subCategory' | 'type'> | null> {
+): Promise<Pick<Rule, 'category' | 'subCategory' | 'categoryId' | 'subCategoryId' | 'type'> | null> {
   if (!context.merchant?.trim()) return null;
   const rows = await listRulesForMatching(userId);
   const best = pickBestRuleMatch(context, rows);
@@ -3035,6 +3296,8 @@ export async function findRuleForTransaction(
   return {
     category: best.category,
     subCategory: best.subCategory,
+    categoryId: best.categoryId,
+    subCategoryId: best.subCategoryId,
     type: best.type,
   };
 }
@@ -3147,12 +3410,9 @@ export async function applyRuleToAllMatchingTransactions(userId: string, ruleId:
     .where(and(eq(rules.userId, userId), eq(rules.id, ruleId)))
     .limit(1);
   if (!rule) throw new Error('Rule not found');
-  const validAssignment = rule.subCategory
-    && (rule.type
-      ? await transactionAssignmentExists(userId, rule.category, rule.subCategory, rule.type)
-      : rule.category === 'Pay down goals'
-        && await categoryAssignmentExists(userId, rule.category, rule.subCategory));
-  if (!validAssignment) {
+  const allRules = await listRulesForMatching(userId);
+  const resolvedRule = allRules.find((candidate) => candidate.id === rule.id);
+  if (!resolvedRule) {
     throw new Error('Rule must assign a valid sub-category and matching type before it can run');
   }
 
@@ -3173,7 +3433,6 @@ export async function applyRuleToAllMatchingTransactions(userId: string, ruleId:
     .from(transactions)
     .where(and(eq(transactions.userId, userId), sql`NOT (${hasSplitSql()})`));
 
-  const allRules = await listRulesForMatching(userId);
   const idsToUpdate: string[] = [];
   for (const row of candidates) {
     const best = pickBestRuleMatch({
@@ -3185,9 +3444,9 @@ export async function applyRuleToAllMatchingTransactions(userId: string, ruleId:
       sourceClassificationTrusted: row.sourceClassificationTrusted,
     }, allRules);
     if (best?.id !== rule.id) continue;
-    const catDiff = row.category !== rule.category;
-    const subDiff = (row.subCategory ?? null) !== (rule.subCategory ?? null);
-    const typeDiff = rule.type != null && row.type !== rule.type;
+    const catDiff = row.category !== resolvedRule.category;
+    const subDiff = (row.subCategory ?? null) !== (resolvedRule.subCategory ?? null);
+    const typeDiff = resolvedRule.type != null && row.type !== resolvedRule.type;
     if (catDiff || subDiff || typeDiff || row.needsReview) idsToUpdate.push(row.id);
   }
 
@@ -3196,9 +3455,11 @@ export async function applyRuleToAllMatchingTransactions(userId: string, ruleId:
   await db
     .update(transactions)
     .set({
-      category: rule.category,
-      subCategory: rule.subCategory,
-      ...(rule.type != null ? { type: rule.type } : {}),
+      category: resolvedRule.category,
+      subCategory: resolvedRule.subCategory,
+      categoryId: resolvedRule.categoryId,
+      subCategoryId: resolvedRule.subCategoryId,
+      ...(resolvedRule.type != null ? { type: resolvedRule.type } : {}),
       needsReview: false,
     })
     .where(and(eq(transactions.userId, userId), inArray(transactions.id, idsToUpdate)));
@@ -3265,6 +3526,8 @@ export async function applyAllRulesToMatchingTransactions(userId: string): Promi
       .set({
         category: rule.category,
         subCategory: rule.subCategory,
+        categoryId: rule.categoryId,
+        subCategoryId: rule.subCategoryId,
         ...(rule.type != null ? { type: rule.type } : {}),
         needsReview: false,
       })

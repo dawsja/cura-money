@@ -12,7 +12,7 @@ import { getAuth, isLocalAuthDisabled, listActiveProviders } from '@/auth';
 import { safe, unauthorized } from '@/lib/errors';
 import { invalidateSetupCache } from '@/lib/guard';
 import { userHasCredential } from '@/db/queries';
-import { env } from '@/lib/env';
+import { env, useSecureAuthCookies } from '@/lib/env';
 import { DEMO_EMAIL, DEMO_PASSWORD } from '@/db/demo-reset';
 
 export const authRoutes = new Hono();
@@ -58,20 +58,18 @@ authRoutes.post(
     //     makes "click sign out → still see protected layout" happen.
     // We use Hono's setCookie with maxAge=0 + matching path + sameSite
     // so the browser actually drops them.
-    const isProd = env.NODE_ENV === 'production';
-    // The cookie names use the `__Secure-` prefix in production (because
-    // `useSecureCookies: env.NODE_ENV === 'production'` is set in config).
-    const sessionTokenName = isProd ? '__Secure-better-auth.session_token' : 'better-auth.session_token';
-    const sessionDataName = isProd ? '__Secure-better-auth.session_data' : 'better-auth.session_data';
+    const secureCookies = useSecureAuthCookies();
+    const sessionTokenName = secureCookies ? '__Secure-better-auth.session_token' : 'better-auth.session_token';
+    const sessionDataName = secureCookies ? '__Secure-better-auth.session_data' : 'better-auth.session_data';
 
     c.header(
       'Set-Cookie',
-      `${sessionTokenName}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${isProd ? '; Secure' : ''}`,
+      `${sessionTokenName}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secureCookies ? '; Secure' : ''}`,
       { append: true },
     );
     c.header(
       'Set-Cookie',
-      `${sessionDataName}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${isProd ? '; Secure' : ''}`,
+      `${sessionDataName}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secureCookies ? '; Secure' : ''}`,
       { append: true },
     );
 

@@ -17,23 +17,14 @@ interface MainCategory {
   subCategories: { id: string; name: string; planned: number; icon?: string }[];
 }
 interface BudgetRow { subCategoryId: string; planned: number; }
-interface Transaction {
-  id: string;
-  date: string;
-  merchant: string;
-  account: string;
-  category: string;
-  subCategory?: string;
-  amount: number;
-  type: 'income' | 'expense' | 'transfer';
-  splits?: TransactionSplit[];
-}
-interface TransactionSplit {
-  amount: number;
+interface BudgetActivityRow {
   category: string;
   subCategory: string;
-  type: Transaction['type'];
+  type: 'income' | 'expense';
+  actual: number;
+  transactions: BudgetDrilldownRow[];
 }
+interface BudgetActivityResponse { yearMonth: string; rows: BudgetActivityRow[]; }
 interface BudgetDrilldown {
   category: string;
   subCategory: string;
@@ -75,6 +66,12 @@ export function Budget() {
   const [paydownStatuses, setPaydownStatuses] = useState<Map<string, PlannedCellStatus>>(new Map());
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [drilldown, setDrilldown] = useState<BudgetDrilldown | null>(null);
+  const [futurePrompt, setFuturePrompt] = useState<{
+    subCategoryId: string;
+    yearMonth: string;
+    revision: string;
+  } | null>(null);
+  const [futureError, setFutureError] = useState<string | null>(null);
   const liveOverridesRef = useRef(liveOverrides);
   const paydownLiveRef = useRef(paydownLive);
   const budgetInFlight = useRef(new Set<string>());
@@ -85,7 +82,10 @@ export function Budget() {
     queryKey: ['budget', ym],
     queryFn: () => api.get<BudgetRow[]>(`/api/budget/${ym}`),
   });
-  const txns = useQuery({ queryKey: ['transactions'], queryFn: () => api.get<Transaction[]>('/api/transactions') });
+  const activity = useQuery({
+    queryKey: ['budget', 'activity', ym],
+    queryFn: () => api.get<BudgetActivityResponse>(`/api/budget/${ym}/activity`),
+  });
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api.get<Account[]>('/api/accounts') });
   const paydownSnapshot = useQuery<PaydownSnapshotResponse>({
     queryKey: ['paydown', 'snapshot', ym],
@@ -94,7 +94,11 @@ export function Budget() {
 
   const setBudget = useMutation({
     mutationFn: (input: { subCategoryId: string; yearMonth: string; planned: number }) =>
-      api.post('/api/budget', input),
+      api.post<{ ok: true; revision: string }>('/api/budget', input),
+  });
+  const applyFuture = useMutation({
+    mutationFn: (input: { subCategoryId: string; yearMonth: string; revision: string }) =>
+      api.post<{ ok: true }>('/api/budget/apply-future', input),
   });
 
   const setPaydownPlanned = useMutation({
@@ -131,55 +135,38 @@ export function Budget() {
 
   const earnedMap = useMemo(() => {
     const m = new Map<string, number>();
-    for (const t of txns.data ?? []) {
-      if (!t.date.startsWith(ym)) continue;
-      for (const allocation of t.splits?.length ? t.splits : [t]) {
-        if (allocation.type !== 'income') continue;
-        const key = actualKey(allocation.category, allocation.subCategory);
-        m.set(key, (m.get(key) ?? 0) + allocation.amount);
-      }
+    for (const row of activity.data?.rows ?? []) {
+      if (row.type !== 'income') continue;
+      m.set(actualKey(row.category, row.subCategory), row.actual);
     }
     return m;
-  }, [txns.data, ym]);
+  }, [activity.data]);
 
   const spentMap = useMemo(() => {
     const m = new Map<string, number>();
-    for (const t of txns.data ?? []) {
-      if (!t.date.startsWith(ym)) continue;
-      for (const allocation of t.splits?.length ? t.splits : [t]) {
-        if (allocation.type !== 'expense') continue;
-        const key = actualKey(allocation.category, allocation.subCategory);
-        m.set(key, (m.get(key) ?? 0) + allocation.amount);
-      }
+    for (const row of activity.data?.rows ?? []) {
+      if (row.type !== 'expense') continue;
+      m.set(actualKey(row.category, row.subCategory), row.actual);
     }
     return m;
-  }, [txns.data, ym]);
+  }, [activity.data]);
 
   const drilldownRows = useMemo(() => {
     if (!drilldown) return [];
-    const rows: BudgetDrilldownRow[] = [];
-    const selectedKey = actualKey(drilldown.category, drilldown.subCategory);
-    for (const transaction of txns.data ?? []) {
-      if (!transaction.date.startsWith(ym)) continue;
-      let amount = 0;
-      let matched = false;
-      for (const allocation of transaction.splits?.length ? transaction.splits : [transaction]) {
-        if (allocation.type !== drilldown.type) continue;
-        if (actualKey(allocation.category, allocation.subCategory) !== selectedKey) continue;
-        matched = true;
-        amount += allocation.amount;
-      }
-      if (!matched) continue;
-      rows.push({
-        id: transaction.id,
-        date: transaction.date,
-        merchant: transaction.merchant,
-        account: transaction.account,
-        amount,
-      });
-    }
-    return rows.sort((a, b) => b.date.localeCompare(a.date) || a.merchant.localeCompare(b.merchant));
-  }, [drilldown, txns.data, ym]);
+    return activity.data?.rows.find((row) =>
+      row.type === drilldown.type &&
+      actualKey(row.category, row.subCategory) === actualKey(drilldown.category, drilldown.subCategory)
+    )?.transactions ?? [];
+  }, [drilldown, activity.data]);
+
+  useEffect(() => {
+    if (!futurePrompt || applyFuture.isPending) return;
+    const timeout = setTimeout(() => {
+      setFuturePrompt(null);
+      setFutureError(null);
+    }, 8000);
+    return () => clearTimeout(timeout);
+  }, [futurePrompt, applyFuture.isPending]);
 
   const totals = useMemo(() => {
     let plannedIncome = 0;
@@ -266,7 +253,9 @@ export function Budget() {
     budgetInFlight.current.add(key);
     setBudgetStatuses((prev) => new Map(prev).set(key, 'saving'));
     try {
-      await setBudget.mutateAsync({ subCategoryId: id, yearMonth: ym, planned: live });
+      setFuturePrompt((current) => current?.subCategoryId === id && current.yearMonth === ym ? null : current);
+      setFutureError(null);
+      const result = await setBudget.mutateAsync({ subCategoryId: id, yearMonth: ym, planned: live });
       await qc.invalidateQueries({ queryKey: ['budget', ym] }, { throwOnError: true });
       window.dispatchEvent(new CustomEvent('cura:onboarding-budget-saved', { detail: { type } }));
       if (liveOverridesRef.current.get(key) === live) {
@@ -277,6 +266,7 @@ export function Budget() {
           return next;
         });
         setBudgetStatuses((prev) => new Map(prev).set(key, 'saved'));
+        setFuturePrompt({ subCategoryId: id, yearMonth: ym, revision: result.revision });
       }
     } catch {
       setBudgetStatuses((prev) => new Map(prev).set(key, 'error'));
@@ -365,10 +355,10 @@ export function Budget() {
 
   const incomeCats = (cats.data ?? []).filter((c) => c.type === 'income');
   const expenseCats = (cats.data ?? []).filter((c) => c.type === 'expense');
-  const loading = cats.isLoading || budgets.isLoading || txns.isLoading || accounts.isLoading || paydownSnapshot.isLoading;
-  const failed = cats.isError || budgets.isError || txns.isError || accounts.isError || paydownSnapshot.isError;
+  const loading = cats.isLoading || budgets.isLoading || activity.isLoading || accounts.isLoading || paydownSnapshot.isLoading;
+  const failed = cats.isError || budgets.isError || activity.isError || accounts.isError || paydownSnapshot.isError;
   const retry = () => {
-    void Promise.all([cats.refetch(), budgets.refetch(), txns.refetch(), accounts.refetch(), paydownSnapshot.refetch()]);
+    void Promise.all([cats.refetch(), budgets.refetch(), activity.refetch(), accounts.refetch(), paydownSnapshot.refetch()]);
   };
 
   return (
@@ -475,6 +465,48 @@ export function Budget() {
           yearMonth={ym}
           onClose={closeDrilldown}
         />
+      )}
+      {futurePrompt && (
+        <div className="app-toast fixed z-[60] max-w-sm rounded-lg border border-default bg-surface shadow-lg px-4 py-3 text-sm" role="status">
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="font-medium fg-primary">Budget saved for this month.</p>
+              <p className="mt-1 fg-secondary">Apply this amount to future months?</p>
+              {futureError && <p className="mt-2 text-rose-600 dark:text-rose-400" role="alert">{futureError}</p>}
+              <div className="mt-3 flex items-center gap-3">
+                <button
+                  type="button"
+                  className="text-sm font-medium fg-secondary hover:underline"
+                  disabled={applyFuture.isPending}
+                  onClick={() => { setFuturePrompt(null); setFutureError(null); }}
+                >
+                  Not now
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary px-3 py-1.5 text-sm"
+                  disabled={applyFuture.isPending}
+                  onClick={() => {
+                    const prompt = futurePrompt;
+                    setFutureError(null);
+                    applyFuture.mutate(prompt, {
+                      onSuccess: () => {
+                        void qc.invalidateQueries({ queryKey: ['budget'] });
+                        setFuturePrompt((current) => current?.revision === prompt.revision ? null : current);
+                      },
+                      onError: (error) => setFutureError((error as Error).message),
+                    });
+                  }}
+                >
+                  {applyFuture.isPending ? 'Applying…' : 'Apply'}
+                </button>
+              </div>
+            </div>
+            <button type="button" className="close-button flex h-8 w-8 items-center justify-center rounded-lg" aria-label="Dismiss" onClick={() => setFuturePrompt(null)}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -613,6 +645,9 @@ function BudgetSection({
                         step="0.01"
                         value={planned}
                         disabled={status === 'saving'}
+                        onFocus={(event) => {
+                          if (event.currentTarget.value === '0') event.currentTarget.select();
+                        }}
                         onChange={(e) => {
                           const v = Number(e.target.value);
                           if (Number.isFinite(v)) onLiveChange(sub.id, v);
@@ -712,6 +747,9 @@ function BudgetSection({
                         step="0.01"
                         value={planned}
                         disabled={status === 'saving'}
+                        onFocus={(event) => {
+                          if (event.currentTarget.value === '0') event.currentTarget.select();
+                        }}
                         onChange={(e) => {
                           const v = Number(e.target.value);
                           if (Number.isFinite(v)) onLiveChange(sub.id, v);
@@ -885,14 +923,11 @@ function BudgetTransactionsModal({
 }
 
 function CellFeedback({ status, onRetry }: { status?: PlannedCellStatus; onRetry: () => void }) {
-  if (!status) return null;
-  if (status === 'error') {
-    return (
-      <span className="block text-xs text-rose-600 dark:text-rose-400 mt-0.5">
-        Error{' '}
-        <button type="button" className="underline" onMouseDown={(e) => e.preventDefault()} onClick={onRetry}>Retry</button>
-      </span>
-    );
-  }
-  return <span aria-live="polite" className={clsx('block text-xs mt-0.5', status === 'saved' ? 'text-emerald-600 dark:text-emerald-400' : 'fg-muted')}>{status === 'saving' ? 'Saving…' : 'Saved'}</span>;
+  if (status !== 'error') return null;
+  return (
+    <span className="block text-xs text-rose-600 dark:text-rose-400 mt-0.5">
+      Error{' '}
+      <button type="button" className="underline" onMouseDown={(e) => e.preventDefault()} onClick={onRetry}>Retry</button>
+    </span>
+  );
 }

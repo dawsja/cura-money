@@ -114,6 +114,11 @@ export function Recurring() {
           Automatically detected charges that repeat across months. Review these to catch unused subscriptions or unexpected charges.
         </p>
       </div>
+      {dismiss.isError && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300" role="alert">
+          Could not dismiss the recurring charge: {dismiss.error.message}
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

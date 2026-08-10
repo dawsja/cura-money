@@ -204,6 +204,13 @@
       "when": 1787000000000,
       "tag": "0028_scoped_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1787100000000,
+      "tag": "0029_volatile_roughhouse",
+      "breakpoints": true
     }
   ]
 }

@@ -11,7 +11,7 @@ import clsx from 'clsx';
 import { AsyncQueryState } from '../components/ui/AsyncQueryState';
 
 interface Account { id: string; name: string; type: string; balance: number; institution?: string; }
-interface Transaction {
+interface DashboardTransaction {
   id: string;
   date: string;
   merchant: string;
@@ -20,13 +20,12 @@ interface Transaction {
   account: string;
   amount: number;
   type: 'income' | 'expense' | 'transfer';
-  splits?: TransactionSplit[];
 }
-interface TransactionSplit {
-  amount: number;
-  category: string;
-  subCategory: string;
-  type: Transaction['type'];
+interface DashboardActivity {
+  income: number;
+  expense: number;
+  transferCount: number;
+  recent: DashboardTransaction[];
 }
 
 const DEFAULT_WIDGET_ORDER = ['summary', 'assets-liabilities', 'accounts', 'recent-transactions'] as const;
@@ -43,7 +42,7 @@ const WIDGET_LABELS: Record<WidgetId, string> = {
 /** Visual styling for a transaction type — kept in one place so the
  *  Dashboard "Recent" list, the Transactions table, and anywhere else
  *  we render a tx all agree. */
-function txTypeStyle(type: Transaction['type']): { sign: string; amount: string } {
+function txTypeStyle(type: DashboardTransaction['type']): { sign: string; amount: string } {
   if (type === 'income') return { sign: '+', amount: 'text-emerald-600 dark:text-emerald-400' };
   if (type === 'expense') return { sign: '−', amount: 'text-rose-600 dark:text-rose-400' };
   return { sign: '⇄', amount: 'text-slate-600 dark:text-slate-400' };
@@ -63,9 +62,9 @@ export function Dashboard() {
       return next;
     });
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api.get<Account[]>('/api/accounts') });
-  const txns = useQuery({
-    queryKey: ['transactions'],
-    queryFn: () => api.get<Transaction[]>('/api/transactions'),
+  const activity = useQuery({
+    queryKey: ['dashboard', 'activity'],
+    queryFn: () => api.get<DashboardActivity>('/api/dashboard/activity'),
   });
   const layout = useQuery({
     queryKey: ['dashboard', 'layout'],
@@ -97,7 +96,7 @@ export function Dashboard() {
     setDraftHidden((current) => current.includes(widget) ? current.filter((id) => id !== widget) : [...current, widget]);
   };
 
-  if (accounts.isLoading || txns.isLoading) {
+  if (accounts.isLoading || activity.isLoading) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold fg-primary">Dashboard</h1>
@@ -106,7 +105,7 @@ export function Dashboard() {
     );
   }
 
-  if (accounts.isError || txns.isError) {
+  if (accounts.isError || activity.isError) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold fg-primary">Dashboard</h1>
@@ -114,8 +113,8 @@ export function Dashboard() {
           status="error"
           title="Could not load your dashboard"
           message="Account and transaction data is unavailable, so financial totals are hidden."
-          onRetry={() => void Promise.all([accounts.refetch(), txns.refetch()])}
-          retrying={accounts.isFetching || txns.isFetching}
+          onRetry={() => void Promise.all([accounts.refetch(), activity.refetch()])}
+          retrying={accounts.isFetching || activity.isFetching}
         />
       </div>
     );
@@ -125,14 +124,9 @@ export function Dashboard() {
   // net worth. `a.balance` is always stored positive — see
   // `netWorthContribution` in `lib/accounting.ts` for the convention.
   const totalBalance = accounts.data?.reduce((s, a) => s + netWorthContribution(a), 0) ?? 0;
-  const last30 = txns.data?.filter((t) => Date.now() - new Date(t.date).getTime() < 30 * 86400_000) ?? [];
-  // Transfers are excluded from cash-flow totals — they reallocate money
-  // between two of the user's own accounts and don't change net worth.
-  const last30Allocations = last30.flatMap((t): Array<{ amount: number; type: Transaction['type'] }> =>
-    t.splits?.length ? t.splits : [t]);
-  const income = last30Allocations.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const expense = last30Allocations.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-  const transferCount = last30.filter((t) => t.type === 'transfer').length;
+  const income = activity.data?.income ?? 0;
+  const expense = activity.data?.expense ?? 0;
+  const transferCount = activity.data?.transferCount ?? 0;
 
   // Assets vs Liabilities breakdown
   const assetAccounts = accounts.data?.filter((a) => a.type !== 'uncategorized' && !isLiability(a.type)) ?? [];
@@ -233,7 +227,7 @@ export function Dashboard() {
           </div>
         </div>
         <ul className="divide-y divide-slate-100 dark:divide-slate-700">
-          {txns.data?.slice(0, 4).map((t) => {
+          {activity.data?.recent.map((t) => {
             const style = txTypeStyle(t.type);
             return (
               <li key={t.id} className="flex justify-between py-2 text-sm">
@@ -248,7 +242,7 @@ export function Dashboard() {
               </li>
             );
           })}
-          {txns.data?.length === 0 && <li className="py-4 text-sm fg-muted text-center">No transactions yet.</li>}
+          {activity.data?.recent.length === 0 && <li className="py-4 text-sm fg-muted text-center">No transactions yet.</li>}
         </ul>
       </section>
     );

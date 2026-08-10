@@ -24,6 +24,15 @@ export const DEMO_PASSWORD = 'demo';
 
 const DEMO_USER_ID = 'demo-user';
 
+function demoAssignment(categoryName: string, subCategoryName: string) {
+  const category = INITIAL_CATEGORIES.find((item) => item.name === categoryName);
+  const subCategory = category?.subCategories.find((item) => item.name === subCategoryName);
+  return {
+    categoryId: category ? `${DEMO_USER_ID}:${category.id}` : null,
+    subCategoryId: subCategory ? `${DEMO_USER_ID}:${subCategory.id}` : null,
+  };
+}
+
 function dateAtOffset(dayOffset: number): string {
   const date = new Date();
   date.setUTCHours(12, 0, 0, 0);
@@ -58,6 +67,12 @@ const transactionTemplates: DemoTransaction[] = [
   { id: 'coffee-1', dayOffset: -2, merchant: 'Juniper Coffee', category: 'Food & Dining', subCategory: 'Coffee Shops', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 575, type: 'expense' },
   { id: 'fuel-1', dayOffset: -3, merchant: 'Shell', category: 'Auto & Transport', subCategory: 'Gas', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 4821, type: 'expense' },
   { id: 'restaurant-1', dayOffset: -4, merchant: 'Green Table Kitchen', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 6730, type: 'expense' },
+  { id: 'restaurant-2', dayOffset: -1, merchant: 'Harbor Ramen', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 4280, type: 'expense' },
+  { id: 'restaurant-3', dayOffset: -2, merchant: 'Copper Oven Pizza', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 5875, type: 'expense' },
+  { id: 'restaurant-4', dayOffset: -3, merchant: 'Oak & Ember', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 3690, type: 'expense' },
+  { id: 'restaurant-5', dayOffset: -5, merchant: 'The Corner Bistro', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 7425, type: 'expense' },
+  { id: 'restaurant-6', dayOffset: -6, merchant: 'Nightjar Bar', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 2960, type: 'expense' },
+  { id: 'restaurant-7', dayOffset: -8, merchant: 'Sunday Brunch Co.', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 5310, type: 'expense' },
   { id: 'internet-1', dayOffset: -5, merchant: 'Metro Fiber', category: 'Bills & Utilities', subCategory: 'Internet & Cable', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 7900, type: 'expense' },
   { id: 'review-1', dayOffset: -6, merchant: 'SQ *NORTHSIDE MARKET', category: 'Other', subCategory: 'Uncategorized', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 2347, type: 'expense', needsReview: true },
   { id: 'review-2', dayOffset: -7, merchant: 'ACH DEBIT 48392', category: 'Other', subCategory: 'Uncategorized', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 4200, type: 'expense', needsReview: true },
@@ -176,6 +191,7 @@ export async function resetDemoDatabase(): Promise<{ users: number; transactions
       sourceType: item.type,
       category: item.category,
       subCategory: item.subCategory,
+      ...demoAssignment(item.category, item.subCategory),
       accountId: item.accountId,
       account: item.accountName,
       amountCents: item.amountCents,
@@ -185,8 +201,8 @@ export async function resetDemoDatabase(): Promise<{ users: number; transactions
       needsReview: item.needsReview ?? false,
     })));
     await tx.insert(transactionSplits).values([
-      { id: 'demo-split-target-grocery', userId: DEMO_USER_ID, transactionId: 'demo-shopping-split', amountCents: 8238, category: 'Food & Dining', subCategory: 'Groceries', type: 'expense', sortOrder: 0 },
-      { id: 'demo-split-target-household', userId: DEMO_USER_ID, transactionId: 'demo-shopping-split', amountCents: 6000, category: 'Shopping', subCategory: 'Furniture & Housewares', type: 'expense', sortOrder: 1 },
+      { id: 'demo-split-target-grocery', userId: DEMO_USER_ID, transactionId: 'demo-shopping-split', amountCents: 8238, category: 'Food & Dining', subCategory: 'Groceries', ...demoAssignment('Food & Dining', 'Groceries'), type: 'expense', sortOrder: 0 },
+      { id: 'demo-split-target-household', userId: DEMO_USER_ID, transactionId: 'demo-shopping-split', amountCents: 6000, category: 'Shopping', subCategory: 'Furniture & Housewares', ...demoAssignment('Shopping', 'Furniture & Housewares'), type: 'expense', sortOrder: 1 },
     ]);
 
     const budgets = [
@@ -220,8 +236,8 @@ export async function resetDemoDatabase(): Promise<{ users: number; transactions
       { id: 'demo-goal-travel', userId: DEMO_USER_ID, name: 'Japan trip', target: 5000, startingValue: 500, accountId: 'demo-travel' },
     ]);
     await tx.insert(rules).values([
-      { id: 'demo-rule-market', userId: DEMO_USER_ID, matchValue: 'Fresh Market', accountId: 'demo-credit', sourceType: 'expense', sourceCategory: 'Food & Dining', sourceSubCategory: 'Groceries', category: 'Food & Dining', subCategory: 'Groceries', type: 'expense' },
-      { id: 'demo-rule-coffee', userId: DEMO_USER_ID, matchValue: 'Juniper Coffee', accountId: 'demo-credit', sourceType: 'expense', sourceCategory: 'Food & Dining', sourceSubCategory: 'Coffee Shops', category: 'Food & Dining', subCategory: 'Coffee Shops', type: 'expense' },
+      { id: 'demo-rule-market', userId: DEMO_USER_ID, matchValue: 'Fresh Market', accountId: 'demo-credit', sourceType: 'expense', sourceCategory: 'Food & Dining', sourceSubCategory: 'Groceries', category: 'Food & Dining', subCategory: 'Groceries', ...demoAssignment('Food & Dining', 'Groceries'), type: 'expense' },
+      { id: 'demo-rule-coffee', userId: DEMO_USER_ID, matchValue: 'Juniper Coffee', accountId: 'demo-credit', sourceType: 'expense', sourceCategory: 'Food & Dining', sourceSubCategory: 'Coffee Shops', category: 'Food & Dining', subCategory: 'Coffee Shops', ...demoAssignment('Food & Dining', 'Coffee Shops'), type: 'expense' },
     ]);
     await tx.insert(settings).values([
       { userId: DEMO_USER_ID, key: 'initial_categories_seeded', value: 'true' },

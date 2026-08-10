@@ -423,10 +423,7 @@ export function Transactions() {
   const addTx = useMutation({
     mutationFn: (input: EditableTransaction) =>
       api.post<Transaction>('/api/transactions', input),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-      qc.invalidateQueries({ queryKey: ['reviews'] });
-    },
+    onSuccess: invalidateFinancialQueries,
   });
 
   // User-defined rules. Loaded once on mount; consulted both by the
@@ -528,8 +525,7 @@ export function Transactions() {
       }),
     onSuccess: (_data, vars) => {
       createRuleFromTransaction.reset();
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-      qc.invalidateQueries({ queryKey: ['reviews'] });
+      invalidateFinancialQueries();
       setDetailTx((current) => current?.id === vars.transaction.id ? null : current);
       rulePromptIdRef.current = vars.transaction.id;
       setRulePrompt({
@@ -622,9 +618,7 @@ export function Transactions() {
   const updateTxDate = useMutation({
     mutationFn: (input: { id: string; date: string }) =>
       api.patch<{ ok: true }>(`/api/transactions/${input.id}`, { date: input.date }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-    },
+    onSuccess: invalidateFinancialQueries,
   });
 
   const markRecurring = useMutation({

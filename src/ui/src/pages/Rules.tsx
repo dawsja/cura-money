@@ -306,6 +306,11 @@ export function Rules() {
       <section className="card">
         {rules.isLoading ? (
           <div className="py-10 text-center text-sm fg-muted">Loading…</div>
+        ) : rules.isError ? (
+          <div className="py-8 text-center" role="alert">
+            <p className="text-sm text-rose-600 dark:text-rose-400">Could not load rules.</p>
+            <button type="button" className="btn-primary mt-3 px-3 py-1.5 text-sm" onClick={() => void rules.refetch()} disabled={rules.isFetching}>Retry</button>
+          </div>
         ) : rules.data?.length === 0 ? (
           <div className="py-10 text-center text-sm fg-muted">
             <AlertTriangle className="h-5 w-5 inline mr-1 fg-muted" />
@@ -578,7 +583,7 @@ export function Rules() {
 }
 
 function invalidateRuleRunDependents(qc: QueryClient) {
-  for (const queryKey of ['transactions', 'budget', 'reports', 'reviews']) {
+  for (const queryKey of ['transactions', 'dashboard', 'budget', 'reports', 'reviews']) {
     qc.invalidateQueries({ queryKey: [queryKey] });
   }
 }

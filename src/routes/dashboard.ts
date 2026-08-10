@@ -1,10 +1,15 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { getSetting, setSetting } from '@/db/queries';
+import { getDashboardActivity, getSetting, setSetting } from '@/db/queries';
 import { userId } from '@/lib/tenant';
 import { badRequest, safe } from '@/lib/errors';
 
 export const dashboardRoutes = new Hono();
+
+dashboardRoutes.get(
+  '/activity',
+  safe(async (c) => c.json(await getDashboardActivity(userId(c)))),
+);
 
 const DASHBOARD_LAYOUT_KEY = 'dashboard_widget_order';
 const WidgetId = z.enum(['summary', 'assets-liabilities', 'accounts', 'recent-transactions']);

@@ -1,7 +1,8 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, text, boolean, bigint, date, timestamp, index, unique, uniqueIndex, check } from 'drizzle-orm/pg-core';
+import { pgTable, text, boolean, bigint, date, timestamp, index, unique, uniqueIndex, check, foreignKey } from 'drizzle-orm/pg-core';
 import { user } from './auth';
-import { transactionTypeEnum } from './categories';
+import { categories, transactionTypeEnum } from './categories';
+import { subCategories } from './sub_categories';
 
 /**
  * Transactions — the core ledger entry. `external_id` is unique per user
@@ -34,6 +35,8 @@ export const transactions = pgTable(
     sourceClassificationTrusted: boolean('source_classification_trusted').notNull().default(true),
     category: text('category').notNull(),
     subCategory: text('sub_category'),
+    categoryId: text('category_id'),
+    subCategoryId: text('sub_category_id'),
     // Stable ledger identity. `account` remains a display snapshot for
     // compatibility and for rows whose legacy name could not be backfilled.
     accountId: text('account_id'),
@@ -49,6 +52,17 @@ export const transactions = pgTable(
     userIdx: index('idx_transactions_user').on(t.userId),
     dateIdx: index('idx_transactions_date').on(t.date),
     userDateIdx: index('idx_transactions_user_date').on(t.userId, t.date),
+    categoryAssignmentIdx: index('idx_transactions_user_category_assignment').on(t.userId, t.categoryId, t.subCategoryId),
+    tenantCategoryFk: foreignKey({
+      columns: [t.userId, t.categoryId],
+      foreignColumns: [categories.userId, categories.id],
+      name: 'transactions_user_category_fk',
+    }),
+    tenantSubCategoryFk: foreignKey({
+      columns: [t.userId, t.subCategoryId],
+      foreignColumns: [subCategories.userId, subCategories.id],
+      name: 'transactions_user_sub_category_fk',
+    }),
     userAccountIdx: index('idx_transactions_user_account').on(t.userId, t.accountId),
     externalIdx: uniqueIndex('idx_transactions_user_external').on(t.userId, t.externalId),
     userIdUnique: unique('transactions_user_id_id_unique').on(t.userId, t.id),

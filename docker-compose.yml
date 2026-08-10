@@ -32,10 +32,12 @@ services:
       TZ: ${TZ:-UTC}
       # Leave APP_URL / BETTER_AUTH_URL / OIDC_REDIRECT_BASE empty for IP-only
       # access (the app derives origins from the request's Host header). Set
-      # them when you put a stable domain in front (e.g. https://cura.example.com).
+       # them when you put a stable HTTPS domain in front. The configured
+       # scheme controls whether authentication cookies are Secure.
       APP_URL: ${APP_URL:-}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-}
       OIDC_REDIRECT_BASE: ${OIDC_REDIRECT_BASE:-}
+      AUTH_SECURE_COOKIES: ${AUTH_SECURE_COOKIES:-auto}
 
       PORT: ${PORT:-3000}
       LOG_LEVEL: ${LOG_LEVEL:-info}

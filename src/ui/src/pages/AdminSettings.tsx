@@ -94,6 +94,15 @@ export function AdminSettings() {
   if (me.isLoading) {
     return <div className="fg-muted">Loading…</div>;
   }
+  if (me.isError) {
+    return (
+      <div className="card max-w-md" role="alert">
+        <h1 className="text-lg font-semibold text-rose-600 dark:text-rose-400">Could not load settings</h1>
+        <p className="mt-2 text-sm fg-tertiary">Your current permissions could not be verified.</p>
+        <button type="button" className="btn-primary mt-3 px-3 py-1.5 text-sm" onClick={() => void me.refetch()} disabled={me.isFetching}>Retry</button>
+      </div>
+    );
+  }
   if (!isAdmin) {
     return (
       <div className="card max-w-md">
@@ -270,6 +279,13 @@ function OidcSection() {
 
       <div className="card">
         {providers.isLoading && <div className="fg-muted text-sm">Loading…</div>}
+        {providers.isError && (
+          <div className="py-6 text-center" role="alert">
+            <p className="text-sm text-rose-600 dark:text-rose-400">Could not load OIDC providers.</p>
+            <button type="button" className="btn-primary mt-3 px-3 py-1.5 text-sm" onClick={() => void providers.refetch()} disabled={providers.isFetching}>Retry</button>
+          </div>
+        )}
+        {del.isError && <p className="mb-3 text-sm text-rose-600 dark:text-rose-400" role="alert">Could not delete provider: {del.error.message}</p>}
         {providers.data?.length === 0 && (
           <div className="text-sm fg-muted text-center py-6">
             <KeyRound className="h-5 w-5 inline mr-1 fg-muted" /> No OIDC providers configured yet. Click "Add provider" to wire one up.
@@ -874,6 +890,12 @@ function UsersSection() {
           )}
         </form>
         {users.isLoading && <div className="fg-muted text-sm">Loading…</div>}
+        {users.isError && (
+          <div className="py-6 text-center" role="alert">
+            <p className="text-sm text-rose-600 dark:text-rose-400">Could not load users.</p>
+            <button type="button" className="btn-primary mt-3 px-3 py-1.5 text-sm" onClick={() => void users.refetch()} disabled={users.isFetching}>Retry</button>
+          </div>
+        )}
         {users.data?.length === 0 && (
           <div className="text-sm fg-muted text-center py-6">
             <Users className="h-5 w-5 inline mr-1 fg-muted" /> No users.

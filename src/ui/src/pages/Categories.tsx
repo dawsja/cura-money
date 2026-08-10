@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { Plus, Trash2, FolderTree, TrendingUp, TrendingDown, GripVertical, ArrowLeftRight, Pencil, Check, X } from 'lucide-react';
 import clsx from 'clsx';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { AsyncQueryState } from '../components/ui/AsyncQueryState';
 
 interface SubCategory { id: string; name: string; }
 interface MainCategory {
@@ -24,7 +25,10 @@ export function Categories() {
 
   const addMain = useMutation({
     mutationFn: (input: { name: string; type: 'income' | 'expense' | 'transfer' }) => api.post<MainCategory>('/api/categories', input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
+    onSuccess: () => {
+      setNewName('');
+      qc.invalidateQueries({ queryKey: ['categories'] });
+    },
   });
   const delMain = useMutation({
     mutationFn: (id: string) => api.delete(`/api/categories/${id}`),
@@ -46,6 +50,7 @@ export function Categories() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['categories'] });
       qc.invalidateQueries({ queryKey: ['transactions'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
       qc.invalidateQueries({ queryKey: ['rules'] });
       qc.invalidateQueries({ queryKey: ['budget'] });
       qc.invalidateQueries({ queryKey: ['reports'] });
@@ -89,7 +94,6 @@ export function Categories() {
     e.preventDefault();
     if (!newName.trim()) return;
     addMain.mutate({ name: newName.trim(), type: newType });
-    setNewName('');
   };
 
   // The backend already orders all categories together by sortOrder.
@@ -183,9 +187,14 @@ export function Categories() {
             <Plus className="h-4 w-4" /> Add
           </button>
         </form>
+        {addMain.isError && <p className="mt-2 text-sm text-rose-600 dark:text-rose-400" role="alert">{addMain.error.message}</p>}
       </section>
 
-      {(expenseCats.length > 0 || incomeCats.length > 0 || transferCats.length > 0) ? (
+      {cats.isLoading ? (
+        <AsyncQueryState status="loading" title="Loading categories…" />
+      ) : cats.isError ? (
+        <AsyncQueryState status="error" title="Could not load categories" message={cats.error.message} onRetry={() => void cats.refetch()} retrying={cats.isFetching} />
+      ) : (expenseCats.length > 0 || incomeCats.length > 0 || transferCats.length > 0) ? (
         <div className="grid gap-4 md:grid-cols-2">
           {expenseCats.length > 0 && (
             <CategoryGroup
@@ -195,7 +204,7 @@ export function Categories() {
               group="expense"
               categories={expenseCats}
               onDeleteMain={(id) => delMain.mutateAsync(id)}
-              onAddSub={(mainId, name) => addSub.mutate({ mainCategoryId: mainId, name })}
+               onAddSub={(mainId, name) => addSub.mutateAsync({ mainCategoryId: mainId, name })}
               onDeleteSub={(mainCategoryId, subCategoryId) => delSub.mutateAsync({ mainCategoryId, subCategoryId })}
               onRenameSub={(mainCategoryId, subCategoryId, name) => renameSub.mutateAsync({ mainCategoryId, subCategoryId, name })}
               onReorder={onReorder}
@@ -210,7 +219,7 @@ export function Categories() {
               group="income"
               categories={incomeCats}
               onDeleteMain={(id) => delMain.mutateAsync(id)}
-              onAddSub={(mainId, name) => addSub.mutate({ mainCategoryId: mainId, name })}
+               onAddSub={(mainId, name) => addSub.mutateAsync({ mainCategoryId: mainId, name })}
               onDeleteSub={(mainCategoryId, subCategoryId) => delSub.mutateAsync({ mainCategoryId, subCategoryId })}
               onRenameSub={(mainCategoryId, subCategoryId, name) => renameSub.mutateAsync({ mainCategoryId, subCategoryId, name })}
               onReorder={onReorder}
@@ -225,7 +234,7 @@ export function Categories() {
               group="transfer"
               categories={transferCats}
               onDeleteMain={(id) => delMain.mutateAsync(id)}
-              onAddSub={(mainId, name) => addSub.mutate({ mainCategoryId: mainId, name })}
+               onAddSub={(mainId, name) => addSub.mutateAsync({ mainCategoryId: mainId, name })}
               onDeleteSub={(mainCategoryId, subCategoryId) => delSub.mutateAsync({ mainCategoryId, subCategoryId })}
               onRenameSub={(mainCategoryId, subCategoryId, name) => renameSub.mutateAsync({ mainCategoryId, subCategoryId, name })}
               onReorder={onReorder}
@@ -261,7 +270,7 @@ function CategoryGroup({
   group: 'expense' | 'income' | 'transfer';
   categories: MainCategory[];
   onDeleteMain: (id: string) => Promise<unknown>;
-  onAddSub: (mainId: string, name: string) => void;
+  onAddSub: (mainId: string, name: string) => Promise<unknown>;
   onDeleteSub: (mainCategoryId: string, subCategoryId: string) => Promise<unknown>;
   onRenameSub: (mainCategoryId: string, subCategoryId: string, name: string) => Promise<unknown>;
   onReorder: (group: 'expense' | 'income' | 'transfer', sourceId: string, targetId: string, position: 'before' | 'after') => void;
@@ -662,7 +671,7 @@ function CategoryGroup({
 }
 
 function invalidateCategoryDependents(qc: QueryClient) {
-  for (const queryKey of ['categories', 'rules', 'budget', 'reports', 'transactions']) {
+  for (const queryKey of ['categories', 'rules', 'dashboard', 'budget', 'reports', 'transactions']) {
     qc.invalidateQueries({ queryKey: [queryKey] });
   }
 }
@@ -808,17 +817,27 @@ function computeDropIndex(
   return remaining.length;
 }
 
-function AddSub({ onAdd }: { onAdd: (name: string) => void }) {
+function AddSub({ onAdd }: { onAdd: (name: string) => Promise<unknown> }) {
   const [name, setName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   return (
     <form
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
         if (!name.trim()) return;
-        onAdd(name.trim());
-        setName('');
+        setBusy(true);
+        setError(null);
+        try {
+          await onAdd(name.trim());
+          setName('');
+        } catch (err) {
+          setError((err as Error).message);
+        } finally {
+          setBusy(false);
+        }
       }}
-      className="mt-2 flex gap-2"
+      className="mt-2 flex flex-wrap gap-2"
     >
       <input
         value={name}
@@ -826,9 +845,10 @@ function AddSub({ onAdd }: { onAdd: (name: string) => void }) {
         placeholder="Sub-category"
         className="flex-1 rounded border border-default bg-surface fg-primary placeholder-slate-400 px-2 py-1 text-sm focus:border-amber-500 focus:outline-none"
       />
-      <button type="submit" className="rounded bg-amber-500 px-2 text-slate-900 text-sm hover:bg-amber-600 flex items-center justify-center">
+      <button type="submit" disabled={busy} className="rounded bg-amber-500 px-2 text-slate-900 text-sm hover:bg-amber-600 flex items-center justify-center disabled:opacity-50">
         <Plus className="h-4 w-4" />
       </button>
+      {error && <span className="basis-full text-xs text-rose-600 dark:text-rose-400" role="alert">{error}</span>}
     </form>
   );
 }

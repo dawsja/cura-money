@@ -74,9 +74,15 @@ Optional at-rest encryption configuration:
 The checked-in Compose service forwards both variables from the project
 `.env` file into the app container when configured.
 
-Set only when behind a domain:
+Set these to the public HTTPS origin when behind a TLS reverse proxy. Cura uses
+the configured scheme for secure authentication cookies. Leave them empty for
+direct HTTP access on localhost or a LAN address:
 
 - `APP_URL` / `BETTER_AUTH_URL` / `OIDC_REDIRECT_BASE`
+
+`AUTH_SECURE_COOKIES=false` is required for direct HTTP and is included in the
+example environment file. Use `auto` (or `true`) behind HTTPS. Existing
+installations without this setting retain their previous production default.
 
 See `.env.example` for the full list. `RUN_CRON=true` enables the hardcoded UTC
 schedules; set it to `false` to disable scheduled work. The jobs use local and

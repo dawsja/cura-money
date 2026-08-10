@@ -132,6 +132,9 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
       qc.invalidateQueries({ queryKey: ['reviews', 'count'] });
       qc.invalidateQueries({ queryKey: ['reviews', 'queue'] });
       qc.invalidateQueries({ queryKey: ['transactions'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      qc.invalidateQueries({ queryKey: ['budget'] });
+      qc.invalidateQueries({ queryKey: ['reports'] });
       qc.invalidateQueries({ queryKey: ['notifications'] });
       if (context?.prevCount === 1) setCelebratedKey(Date.now());
     },
@@ -161,6 +164,9 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reviews'] });
       qc.invalidateQueries({ queryKey: ['transactions'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      qc.invalidateQueries({ queryKey: ['budget'] });
+      qc.invalidateQueries({ queryKey: ['reports'] });
       qc.invalidateQueries({ queryKey: ['notifications'] });
       setCelebratedKey(Date.now());
     },

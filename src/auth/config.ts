@@ -23,7 +23,7 @@ import { genericOAuth } from 'better-auth/plugins/generic-oauth';
 import { ac, admin as adminRole, user as userRole } from './permissions';
 import { db } from '@/db/client';
 import * as schema from '@/db/schema';
-import { env, resolveOrigin } from '@/lib/env';
+import { configuredExternalOrigin, env, resolveOrigin, useSecureAuthCookies } from '@/lib/env';
 
 /** Provider shape that gets handed to Better Auth's genericOAuth plugin. */
 export interface AuthOidcProvider {
@@ -73,7 +73,7 @@ function isExplicitOrigin(request: Request): boolean {
 export function createAuth(providers: AuthOidcProvider[]) {
   const baseConfig: BetterAuthOptions = {
     appName: 'Cura Money',
-    baseURL: env.OIDC_REDIRECT_BASE || env.BETTER_AUTH_URL || undefined,
+    baseURL: configuredExternalOrigin(),
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins: (request) => {
       if (!request) return env.APP_URL ? [env.APP_URL] : [];
@@ -154,7 +154,7 @@ export function createAuth(providers: AuthOidcProvider[]) {
     },
 
     advanced: {
-      useSecureCookies: env.NODE_ENV === 'production',
+      useSecureCookies: useSecureAuthCookies(),
     },
 
     rateLimit: {

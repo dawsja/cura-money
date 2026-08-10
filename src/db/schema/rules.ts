@@ -3,6 +3,8 @@ import { foreignKey, pgTable, text, timestamp, index, integer, unique } from 'dr
 import { accounts } from './accounts';
 import { user } from './auth';
 import { transactionTypeEnum } from './categories';
+import { categories } from './categories';
+import { subCategories } from './sub_categories';
 
 /**
  * Categorization rules have explicit match conditions and an assignment.
@@ -34,6 +36,8 @@ export const rules = pgTable(
     sourceSubCategory: text('source_sub_category'),
     category: text('category').notNull(),
     subCategory: text('sub_category'),
+    categoryId: text('category_id'),
+    subCategoryId: text('sub_category_id'),
     type: transactionTypeEnum('type'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -45,6 +49,7 @@ export const rules = pgTable(
     // enough — we no longer rely on equality on match_value alone.
     userMerchantIdx: index('idx_rules_user_merchant').on(t.userId, t.matchValue),
     userAccountIdx: index('idx_rules_user_account').on(t.userId, t.accountId),
+    userCategoryAssignmentIdx: index('idx_rules_user_category_assignment').on(t.userId, t.categoryId, t.subCategoryId),
     normalizedScopeUnique: unique('rules_user_normalized_scope_unique').on(
       t.userId,
       t.normalizedMatchValue,
@@ -58,6 +63,16 @@ export const rules = pgTable(
       foreignColumns: [accounts.userId, accounts.id],
       name: 'rules_user_account_fk',
     }).onDelete('cascade'),
+    tenantCategoryFk: foreignKey({
+      columns: [t.userId, t.categoryId],
+      foreignColumns: [categories.userId, categories.id],
+      name: 'rules_user_category_fk',
+    }),
+    tenantSubCategoryFk: foreignKey({
+      columns: [t.userId, t.subCategoryId],
+      foreignColumns: [subCategories.userId, subCategories.id],
+      name: 'rules_user_sub_category_fk',
+    }),
   }),
 );
 
