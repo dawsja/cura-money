@@ -23,12 +23,14 @@ import { pickBestRuleMatch } from './merchant-match';
 import { secureFetch, SecureFetchError, validatePublicHttpsUrl } from './secure-fetch';
 import { openSecretWithMetadata, sealSecret } from './secret-box';
 import { simpleFinAmountToCents } from './simplefin-amount';
+import { env } from './env';
 
 // ---- Types --------------------------------------------------------------
 
 export interface SimpleFinTransaction {
   id: string;
   posted: number; // Unix epoch seconds
+  transacted_at?: number;
   amount: string | number;
   description?: string;
   payee?: string;
@@ -70,6 +72,7 @@ const NumericSchema = z.union([z.number().finite(), z.string().regex(/^-?\d+(?:\
 const SimpleFinTransactionSchema = z.object({
   id: z.string().min(1),
   posted: z.number().finite().nonnegative(),
+  transacted_at: z.number().finite().nonnegative().optional(),
   amount: NumericSchema,
   description: z.string().optional(),
   payee: z.string().optional(),
@@ -270,6 +273,25 @@ const SIMPLEFIN_CHUNK_MS = 60 * 24 * 60 * 60 * 1000; // 60 days per request
 // Re-pull from last_sync minus this buffer so we don't miss a transaction
 // that posted in the gap between the last sync and the new one.
 const SIMPLEFIN_INCREMENTAL_BUFFER_MS = 5 * 24 * 60 * 60 * 1000;
+const SIMPLEFIN_DATE_TIME_ZONE_SETTING = 'simplefin_date_time_zone';
+
+const simpleFinDateFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: env.TZ,
+  calendar: 'gregory',
+  numberingSystem: 'latn',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function formatSimpleFinDate(timestampMs: number): string {
+  const parts = simpleFinDateFormatter.formatToParts(new Date(timestampMs));
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+  if (!year || !month || !day) throw new Error('Unable to format SimpleFIN transaction date.');
+  return `${year}-${month}-${day}`;
+}
 
 function addSyncWindows(windows: Array<[number, number]>, startMs: number, endMs: number): void {
   for (let start = startMs; start < endMs; start += SIMPLEFIN_CHUNK_MS) {
@@ -320,7 +342,11 @@ async function performSimpleFinSync(
   // SIMPLEFIN_LOOKBACK_MONTHS in <= SIMPLEFIN_CHUNK_MS chunks. After that,
   // incremental from the watermark minus a 5-day safety buffer.
   // addTransactionWithExternalId atomically dedupes on (user_id, external_id).
-  const lastSyncRaw = options?.fullSync ? null : await getSetting(userId, 'simplefin_last_sync');
+  const lastDateTimeZone = await getSetting(userId, SIMPLEFIN_DATE_TIME_ZONE_SETTING);
+  const refreshTransactionDates = lastDateTimeZone !== env.TZ;
+  const lastSyncRaw = options?.fullSync || refreshTransactionDates
+    ? null
+    : await getSetting(userId, 'simplefin_last_sync');
   const now = Date.now();
   const windows: Array<[number, number]> = [];
 
@@ -525,9 +551,11 @@ async function performSimpleFinSync(
           throw new SimpleFinError('SimpleFIN returned an invalid transaction amount.', 'invalid_amount');
         }
         const merchant = sTx.payee || sTx.description || 'Unknown Merchant';
-        const dateStr = sTx.posted
-          ? new Date(sTx.posted * 1000).toISOString().slice(0, 10)
-          : new Date().toISOString().slice(0, 10);
+        // SimpleFIN uses posted=0 for pending entries. Prefer its optional
+        // purchase timestamp before falling back to the sync date.
+        const transactionTimestamp = sTx.posted || sTx.transacted_at;
+        const transactionTimestampMs = transactionTimestamp ? transactionTimestamp * 1000 : now;
+        const dateStr = formatSimpleFinDate(transactionTimestampMs);
         const isIncome = signedAmountCents > 0;
         const absAmountCents = Math.abs(signedAmountCents);
         // User rules win on category/sub/type. Smart categoriser fills
@@ -589,6 +617,7 @@ async function performSimpleFinSync(
   await setSetting(userId, 'simplefin_legacy_account_migration_complete', 'true');
   if (errors.length === 0) {
     await setSetting(userId, 'simplefin_last_sync', new Date().toISOString());
+    await setSetting(userId, SIMPLEFIN_DATE_TIME_ZONE_SETTING, env.TZ);
   }
   return {
     accountsSynced,

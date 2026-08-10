@@ -49,8 +49,20 @@ const previousEncryptionKeys = z.preprocess(
   }),
 );
 
+const timeZone = z.string().trim().min(1).max(100).default('UTC').superRefine((value, ctx) => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value }).format();
+  } catch {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be a valid IANA timezone, such as America/Chicago' });
+  }
+});
+
 const Env = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+
+  // Deployment-wide calendar timezone. Financial timestamps are converted to
+  // ledger dates in this zone instead of the container's implicit timezone.
+  TZ: timeZone,
 
   // External-facing URL of the app. Empty → derive per-request from headers.
   // Set this when you want OIDC callbacks and self-references to always use

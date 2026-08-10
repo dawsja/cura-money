@@ -83,6 +83,11 @@ schedules; set it to `false` to disable scheduled work. The jobs use local and
 PostgreSQL advisory locks to avoid overlapping copies. Log level and port have
 defaults. Configured app/auth/OIDC URLs must be HTTP(S) origins without paths.
 
+Set `TZ` to the deployment's IANA timezone, such as `America/Chicago`. Cura uses
+it to convert SimpleFIN timestamps into transaction calendar dates. Changing
+`TZ` triggers a refresh of the available SimpleFIN history while preserving
+dates that users manually changed. Scheduled job execution remains in UTC.
+
 Financial-data retention is non-destructive by default: `RETENTION_DAYS=0`
 keeps history indefinitely. Set a positive day count to opt in to automatic
 transaction and old budget-history deletion. The authenticated

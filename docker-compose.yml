@@ -29,6 +29,7 @@ services:
         required: true
     environment:
       NODE_ENV: ${NODE_ENV:-production}
+      TZ: ${TZ:-UTC}
       # Leave APP_URL / BETTER_AUTH_URL / OIDC_REDIRECT_BASE empty for IP-only
       # access (the app derives origins from the request's Host header). Set
       # them when you put a stable domain in front (e.g. https://cura.example.com).
