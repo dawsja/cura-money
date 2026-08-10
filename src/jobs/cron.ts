@@ -4,7 +4,7 @@
  *
  * Schedules are HARDCODED — operators cannot tune them. Rationale:
  *   - SIMPLEFIN_POLL_CRON respects SimpleFIN's documented <=24 requests/day
- *     quota. 12/day leaves headroom for the 3-call first-sync backfill
+ *     quota. 12/day leaves headroom for the 4-call first-sync backfill
  *     and ad-hoc manual syncs.
  *   - BUDGET_ROLLFORWARD_CRON runs on the 1st of the month to roll
  *     budget carry-forwards forward before the user opens the app.

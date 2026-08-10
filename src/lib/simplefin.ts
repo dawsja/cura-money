@@ -200,8 +200,7 @@ export async function claimSetupToken(setupToken: string): Promise<string> {
  * Fetch account + transaction data from SimpleFIN.
  *
  * `startDate` and `endDate` are Unix epoch SECONDS. Per the SimpleFIN
- * Bridge docs, the difference between them must be <= 90 days. We keep
- * our windows at 60 days to stay well inside that limit.
+ * Bridge guidance recommends a maximum range of 45 days per request.
  */
 export async function fetchSimpleFinData(
   accessUrl: string,
@@ -286,12 +285,12 @@ export async function fetchSimpleFinData(
 
 // HARDCODED — operators cannot tune these. Rationale: stay strictly inside
 // SimpleFIN Bridge's documented limits (https://docs.simplefin.org/):
-//   - <= 90 days per /accounts request (we use 60, with margin)
-//   - <= 24 requests/day per access token (we use 12/day cron + 3-call
+//   - <= 45 days per /accounts request
+//   - <= 24 requests/day per access token (we use 12/day cron + 4-call
 //     first-sync backfill, comfortably under quota)
 const SIMPLEFIN_LOOKBACK_MONTHS = 6;
 const SIMPLEFIN_LOOKBACK_MS = SIMPLEFIN_LOOKBACK_MONTHS * 30 * 24 * 60 * 60 * 1000;
-const SIMPLEFIN_CHUNK_MS = 60 * 24 * 60 * 60 * 1000; // 60 days per request
+const SIMPLEFIN_CHUNK_MS = 45 * 24 * 60 * 60 * 1000;
 // Re-pull from last_sync minus this buffer so we don't miss a transaction
 // that posted in the gap between the last sync and the new one.
 const SIMPLEFIN_INCREMENTAL_BUFFER_MS = 5 * 24 * 60 * 60 * 1000;
@@ -387,7 +386,7 @@ async function performSimpleFinSync(
   // handling simple. Each window returns the same account shells with
   // only that window's transactions — merge them so the 6-month backfill
   // keeps every chunk's txs instead of letting the last window overwrite
-  // the earlier ones (which left users with only ~60 days of history).
+  // the earlier ones (which previously left users with only one chunk).
   const rawAccountsById = new Map<string, SimpleFinAccount>();
   const connectionsById = new Map<string, SimpleFinConnection>();
   const errors = new Set<string>();
