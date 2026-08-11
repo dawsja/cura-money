@@ -2,8 +2,9 @@
  * /api/rules — CRUD on user-defined categorization rules.
  *
  * Rules combine merchant matching with optional source account, type, and
- * category conditions. SimpleFIN, manual add, and historical runs use the
- * same deterministic resolver.
+ * category conditions. SimpleFIN and historical runs use the same
+ * deterministic resolver; manually entered transactions keep the category
+ * selected by the user.
  *
  * `POST /api/rules/:id/run` re-applies a single rule to every existing
  * transaction in the user's ledger (the ▶ button on the Rules page).

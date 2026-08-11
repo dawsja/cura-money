@@ -28,7 +28,6 @@ import { firstMonthPaydownPayments, type PaydownAccount, type PaydownMethod } fr
 import {
   normalizeMerchant,
   pickBestRuleMatch,
-  type RuleMatchContext,
 } from '@/lib/merchant-match';
 import { centsToDollars, dollarsToCents } from '@/lib/money';
 import { latestBudgetsUpTo } from './budget-repository';
@@ -1710,16 +1709,9 @@ export async function addTransaction(
   const sourceCategory = tx.sourceCategory ?? tx.category;
   const sourceSubCategory = tx.sourceSubCategory ?? tx.subCategory;
   const sourceType = tx.sourceType ?? tx.type;
-  const ruleMatch = await findRuleForTransaction(userId, {
-    merchant: tx.merchant,
-    accountId: account.id,
-    sourceCategory,
-    sourceSubCategory,
-    sourceType,
-  });
-  const category = ruleMatch?.subCategory ? ruleMatch.category : tx.category;
-  const subCategory = ruleMatch?.subCategory ?? tx.subCategory;
-  const type = ruleMatch?.type ?? tx.type;
+  const category = tx.category;
+  const subCategory = tx.subCategory;
+  const type = tx.type;
   const assignment = subCategory ? await resolveCategoryAssignment(userId, category, subCategory) : null;
   if (!assignment || (assignment.type !== type && category !== 'Pay down goals')) {
     throw Object.assign(new Error('transaction must use a valid category, subCategory, and matching type'), {
@@ -1739,6 +1731,7 @@ export async function addTransaction(
     subCategory: subCategory ?? null,
     categoryId: assignment.categoryId,
     subCategoryId: assignment.subCategoryId,
+    categoryUserModified: true,
     accountId: account.id,
     account: account.name,
     amountCents,
@@ -1821,6 +1814,7 @@ export async function editTransaction(
         subCategory: patch.subCategory !== undefined ? (patch.subCategory ?? null) : existing.subCategory,
         categoryId: changesAssignment ? assignment!.categoryId : existing.categoryId,
         subCategoryId: changesAssignment ? assignment!.subCategoryId : existing.subCategoryId,
+        ...(changesAssignment ? { categoryUserModified: true } : {}),
         accountId: nextAccount?.id ?? existing.accountId,
         account: nextAccount?.name ?? existing.account,
         amountCents: nextAmountCents,
@@ -1927,6 +1921,7 @@ export async function bulkAssignTransactions(
         subCategory: assignment.subCategory,
         categoryId: assignment.categoryId,
         subCategoryId: assignment.subCategoryId,
+        categoryUserModified: true,
         needsReview: false,
       })
       .where(and(eq(transactions.userId, userId), inArray(transactions.id, input.ids)))
@@ -2085,6 +2080,7 @@ export async function updateFullTransaction(
         subCategory: nextSubCategory,
         categoryId: parentAssignment?.categoryId ?? parent.categoryId,
         subCategoryId: parentAssignment?.subCategoryId ?? parent.subCategoryId,
+        categoryUserModified: parent.categoryUserModified || changesAssignment || input.splits.length > 0,
         accountId: account.id,
         account: account.name,
         amountCents,
@@ -2234,7 +2230,7 @@ export async function replaceTransactionSplits(
     await tx.insert(transactionSplits).values(rows);
     await tx
       .update(transactions)
-      .set({ needsReview: false })
+      .set({ needsReview: false, categoryUserModified: true })
       .where(and(eq(transactions.userId, userId), eq(transactions.id, transactionId)));
     return rows.map((row) => ({
       id: row.id,
@@ -2610,6 +2606,7 @@ export async function markTransactionReviewed(
       subCategory: patch.subCategory !== undefined ? (patch.subCategory ?? null) : existing.subCategory,
       categoryId: changesAssignment ? assignment!.categoryId : existing.categoryId,
       subCategoryId: changesAssignment ? assignment!.subCategoryId : existing.subCategoryId,
+      ...(changesAssignment ? { categoryUserModified: true } : {}),
       type: patch.type ?? existing.type,
     })
     .where(and(
@@ -3448,26 +3445,6 @@ export async function deleteRule(userId: string, id: string): Promise<void> {
   await db.delete(rules).where(and(eq(rules.userId, userId), eq(rules.id, id)));
 }
 
-/**
- * Look up the scoped rule that applies to a transaction's source values.
- */
-export async function findRuleForTransaction(
-  userId: string,
-  context: RuleMatchContext,
-): Promise<Pick<Rule, 'category' | 'subCategory' | 'categoryId' | 'subCategoryId' | 'type'> | null> {
-  if (!context.merchant?.trim()) return null;
-  const rows = await listRulesForMatching(userId);
-  const best = pickBestRuleMatch(context, rows);
-  if (!best) return null;
-  return {
-    category: best.category,
-    subCategory: best.subCategory,
-    categoryId: best.categoryId,
-    subCategoryId: best.subCategoryId,
-    type: best.type,
-  };
-}
-
 export type RuleFromTransactionResult =
   | { status: 'created' | 'narrowed' | 'updated' | 'unchanged'; rule: Rule }
   | { status: 'confirmation_required'; rule: Rule };
@@ -3597,7 +3574,11 @@ export async function applyRuleToAllMatchingTransactions(userId: string, ruleId:
       needsReview: transactions.needsReview,
     })
     .from(transactions)
-    .where(and(eq(transactions.userId, userId), sql`NOT (${hasSplitSql()})`));
+    .where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.categoryUserModified, false),
+      sql`NOT (${hasSplitSql()})`,
+    ));
 
   const idsToUpdate: string[] = [];
   for (const row of candidates) {
@@ -3628,7 +3609,11 @@ export async function applyRuleToAllMatchingTransactions(userId: string, ruleId:
       ...(resolvedRule.type != null ? { type: resolvedRule.type } : {}),
       needsReview: false,
     })
-    .where(and(eq(transactions.userId, userId), inArray(transactions.id, idsToUpdate)));
+    .where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.categoryUserModified, false),
+      inArray(transactions.id, idsToUpdate),
+    ));
 
   return { updated: idsToUpdate.length };
 }
@@ -3660,7 +3645,11 @@ export async function applyAllRulesToMatchingTransactions(userId: string): Promi
       needsReview: transactions.needsReview,
     })
     .from(transactions)
-    .where(and(eq(transactions.userId, userId), sql`NOT (${hasSplitSql()})`));
+    .where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.categoryUserModified, false),
+      sql`NOT (${hasSplitSql()})`,
+    ));
 
   // ruleId → transaction ids that need that rule's category applied
   const byRule = new Map<string, string[]>();
@@ -3697,7 +3686,11 @@ export async function applyAllRulesToMatchingTransactions(userId: string): Promi
         ...(rule.type != null ? { type: rule.type } : {}),
         needsReview: false,
       })
-      .where(and(eq(transactions.userId, userId), inArray(transactions.id, ids)));
+      .where(and(
+        eq(transactions.userId, userId),
+        eq(transactions.categoryUserModified, false),
+        inArray(transactions.id, ids),
+      ));
     updated += ids.length;
   }
 

@@ -37,6 +37,9 @@ export const transactions = pgTable(
     subCategory: text('sub_category'),
     categoryId: text('category_id'),
     subCategoryId: text('sub_category_id'),
+    // User-picked assignments are transaction-specific overrides and must
+    // not be replaced by later historical rule runs.
+    categoryUserModified: boolean('category_user_modified').notNull().default(false),
     // Stable ledger identity. `account` remains a display snapshot for
     // compatibility and for rows whose legacy name could not be backfilled.
     accountId: text('account_id'),
