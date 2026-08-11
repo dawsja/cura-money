@@ -20,7 +20,7 @@ const themeOptions: Array<{
 /**
  * Profile menu — click the avatar to open a dropdown with:
  *   - User's full name + email
- *   - Admin settings (admins only)
+ *   - Settings
  *   - Sign out
  *
  * Closes on: click outside, Escape.
@@ -33,8 +33,6 @@ export function ProfileMenu() {
   const me = useQuery({ queryKey: ['me'], queryFn: fetchMe });
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const isAdmin = me.data?.user.role === 'admin';
-
   const go = (to: string) => {
     setOpen(false);
     navigate(to);
@@ -149,19 +147,17 @@ export function ProfileMenu() {
                 );
               })}
             </div>
-            {isAdmin && (
-              <div className="mt-1 border-t border-default pt-1">
-                <button
-                  type="button"
-                  onClick={() => go('/admin/settings')}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700"
-                  role="menuitem"
-                >
-                  <Settings className="h-4 w-4 shrink-0" />
-                  <span className="flex-1 text-left">Settings</span>
-                </button>
-              </div>
-            )}
+            <div className="mt-1 border-t border-default pt-1">
+              <button
+                type="button"
+                onClick={() => go('/settings')}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700"
+                role="menuitem"
+              >
+                <Settings className="h-4 w-4 shrink-0" />
+                <span className="flex-1 text-left">Settings</span>
+              </button>
+            </div>
             <div className="mt-1 border-t border-default pt-1">
               <button
                 type="button"

@@ -6,11 +6,12 @@ import { formatAccountBalance, isLiability } from '../lib/accounting';
 import { Plus, Trash2, RefreshCw, ExternalLink, Wallet, Landmark, CreditCard, Banknote, PiggyBank, TrendingUp, AlertTriangle, CircleHelp, EyeOff, Eye, Pencil, X } from 'lucide-react';
 import clsx from 'clsx';
 import { Dialog } from '../components/ui/dialog';
+import { ConfirmDialog } from '../components/ui/confirm-dialog';
 
 type EditableAccountType = 'checking' | 'savings' | 'credit' | 'investment' | 'loan';
 type AccountType = EditableAccountType | 'uncategorized';
 
-interface Account { id: string; name: string; type: AccountType; balance: number; institution?: string; interestRate?: number; minPayment?: number; plannedPayment?: number; includeInPaydown?: boolean; hidden?: boolean; alias?: string; }
+interface Account { id: string; source: 'manual' | 'simplefin'; name: string; type: AccountType; balance: number; institution?: string; interestRate?: number; minPayment?: number; plannedPayment?: number; includeInPaydown?: boolean; hidden?: boolean; alias?: string; }
 interface SfStatus { demoMode: boolean; connected: boolean; lastSync?: string | null; lastAttempt?: string | null; lastError?: string | null; }
 interface SfClaim { setupToken: string; }
 
@@ -68,13 +69,14 @@ export function Accounts() {
 
   // Account currently open in the edit modal (alias + type).
   const [editing, setEditing] = useState<Account | null>(null);
+  const [confirmation, setConfirmation] = useState<{ action: 'hide' | 'delete'; account: Account } | null>(null);
 
   const invalidateFinancialData = () => {
     FINANCIAL_QUERY_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: [key] }));
   };
 
   const add = useMutation({
-    mutationFn: (input: Omit<Account, 'id' | 'hidden'>) => api.post<Account>('/api/accounts', input),
+    mutationFn: (input: Omit<Account, 'id' | 'source' | 'hidden'>) => api.post<Account>('/api/accounts', input),
     onSuccess: () => {
       invalidateFinancialData();
       setName('');
@@ -164,7 +166,7 @@ export function Accounts() {
     (acc[a.type] ??= []).push(a);
     return acc;
   }, {} as Record<AccountType, Account[]>);
-  const accountOperationError = del.error ?? hide.error ?? unhide.error;
+  const accountOperationError = unhide.error;
 
   const renderRow = (a: Account, opts?: { dimmed?: boolean; extraMeta?: React.ReactNode }) => {
     const { text: balanceText, colorClass: balanceColor } = formatAccountBalance(a, (n) => formatMoney(n));
@@ -182,6 +184,11 @@ export function Accounts() {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 min-w-0">
             <div className="font-medium text-sm fg-primary truncate">{displayName}</div>
+            {a.source === 'simplefin' && (
+              <span className="shrink-0 rounded-full border border-default bg-canvas-subtle px-1.5 py-0.5 text-[10px] font-medium fg-muted">
+                SimpleFIN
+              </span>
+            )}
               <button
                 type="button"
                 onClick={() => setEditing(a)}
@@ -219,10 +226,7 @@ export function Accounts() {
             </button>
           ) : (
             <button
-              onClick={() => {
-                if (confirm(`Hide "${displayName}"? It will be removed from the accounts list, dashboard, transactions, and budget. The next SimpleFIN sync will skip it. You can un-hide from the "Show hidden" section below.`))
-                  hide.mutate(a.id);
-              }}
+              onClick={() => { hide.reset(); setConfirmation({ action: 'hide', account: a }); }}
               className="flex h-11 w-11 items-center justify-center rounded-lg fg-tertiary hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 sm:h-8 sm:w-8"
               title="Hide account"
               aria-label="Hide"
@@ -230,16 +234,16 @@ export function Accounts() {
               <EyeOff className="h-4 w-4" />
             </button>
           )}
-          <button
-            onClick={() => {
-              if (confirm(`Delete account "${displayName}"?`)) del.mutate(a.id);
-            }}
-            className="flex h-11 w-11 items-center justify-center rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 sm:h-8 sm:w-8"
-            title="Delete account"
-            aria-label="Delete"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          {a.source === 'manual' && (
+            <button
+              onClick={() => { del.reset(); setConfirmation({ action: 'delete', account: a }); }}
+              className="flex h-11 w-11 items-center justify-center rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 sm:h-8 sm:w-8"
+              title="Delete account"
+              aria-label="Delete"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </li>
     );
@@ -485,6 +489,31 @@ export function Accounts() {
           }}
           onSave={(patch) => editAccount.mutate({ id: editing.id, ...patch })}
         />
+      )}
+      {confirmation?.action === 'hide' && (
+        <ConfirmDialog
+          title={`Hide “${confirmation.account.alias || confirmation.account.name}”?`}
+          confirmLabel="Hide account"
+          onConfirm={() => hide.mutateAsync(confirmation.account.id)}
+          onClose={() => setConfirmation(null)}
+        >
+          <p>This account and its activity will be excluded from Dashboard, Transactions, Budget, Paydown, Reports, and the main account list.</p>
+          <p>It will remain available in the hidden accounts section, and sync will pause until you unhide it.</p>
+        </ConfirmDialog>
+      )}
+      {confirmation?.action === 'delete' && (
+        <ConfirmDialog
+          title={`Delete “${confirmation.account.alias || confirmation.account.name}”?`}
+          confirmLabel="Delete account"
+          destructive
+          onConfirm={() => del.mutateAsync(confirmation.account.id)}
+          onClose={() => setConfirmation(null)}
+        >
+          <p>This permanently removes the account balance and detaches any savings goals linked to the account.</p>
+          <p>Account-specific paydown rows will also be removed.</p>
+          <p>If its name uniquely matches a Pay down category, that category, its budget entries, and its categorization rules will also be removed.</p>
+          <p>Historical transactions are retained and remain visible in your ledger and reports.</p>
+        </ConfirmDialog>
       )}
     </div>
   );

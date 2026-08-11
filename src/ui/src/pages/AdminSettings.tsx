@@ -69,6 +69,11 @@ interface LocalAuthInfo {
   oidcAdminCount: number;
 }
 
+interface AuthOptions {
+  localAuthDisabled: boolean;
+  demoMode: boolean;
+}
+
 interface ContainerUpdateStatus {
   updateAvailable: boolean | null;
   currentRevision: string | null;
@@ -87,7 +92,7 @@ const EMPTY_PROVIDER_FORM = {
 
 const PWD_INPUT_CLS = 'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
 
-export function AdminSettings() {
+export function Settings() {
   const me = useQuery({ queryKey: ['me'], queryFn: fetchMe });
 
   const isAdmin = me.data?.user.role === 'admin';
@@ -104,36 +109,27 @@ export function AdminSettings() {
       </div>
     );
   }
-  if (!isAdmin) {
-    return (
-      <div className="card max-w-md">
-        <h1 className="text-lg font-semibold text-rose-600 dark:text-rose-400">Admin only</h1>
-        <p className="mt-2 text-sm fg-tertiary">
-          This page is reserved for the admin role. Sign in with the admin account
-          to manage OIDC providers, change your password, and manage users.
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold fg-primary">Settings</h1>
+      <h1 className="text-2xl font-bold fg-primary">Settings</h1>
+
+      <div className="space-y-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wide fg-muted">Personal</h2>
+        <PasswordSection
+          hasCredential={me.data?.user.hasCredential ?? false}
+          email={me.data?.user.email ?? ''}
+        />
       </div>
 
-      <ContainerUpdateSection />
-
-      <OidcSection />
-
-      <AuthenticationSection />
-
-      <PasswordSection
-        hasCredential={me.data?.user.hasCredential ?? false}
-        email={me.data?.user.email ?? ''}
-      />
-
-      <UsersSection />
+      {isAdmin && (
+        <div className="space-y-6 border-t border-default pt-6">
+          <h2 className="text-sm font-semibold uppercase tracking-wide fg-muted">Admin</h2>
+          <ContainerUpdateSection />
+          <OidcSection />
+          <AuthenticationSection />
+          <UsersSection />
+        </div>
+      )}
     </div>
   );
 }
@@ -374,7 +370,7 @@ function OidcSection() {
 //
 // Renders below the OIDC section per the operator flow: "wire up OIDC
 // first, then optionally turn off local auth once an OIDC admin exists".
-// Reachable only by admins (the page guard already enforces that).
+// Mounted only for users with the exact admin role.
 // ============================================================================
 
 function AuthenticationSection() {
@@ -638,10 +634,14 @@ function LocalAuthConfirmModal({
 }
 
 // ============================================================================
-// Change password — only visible for users with a credential account.
+// Change password — available to every user, with guidance for OIDC accounts.
 // ============================================================================
 
 function PasswordSection({ hasCredential, email }: { hasCredential: boolean; email: string }) {
+  const authOptions = useQuery({
+    queryKey: ['auth-options'],
+    queryFn: () => api.get<AuthOptions>('/api/auth-app/auth-options'),
+  });
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -666,6 +666,46 @@ function PasswordSection({ hasCredential, email }: { hasCredential: boolean; ema
           </p>
         </div>
       </section>
+    );
+  }
+
+  if (authOptions.isPending || authOptions.isFetching) {
+    return (
+      <PasswordUnavailable>
+        Checking whether password changes are available…
+      </PasswordUnavailable>
+    );
+  }
+
+  if (authOptions.isError) {
+    return (
+      <PasswordUnavailable>
+        <p>Could not verify whether password changes are enabled, so the form is unavailable.</p>
+        <button
+          type="button"
+          className="btn-primary mt-3 px-3 py-1.5 text-sm"
+          onClick={() => void authOptions.refetch()}
+          disabled={authOptions.isFetching}
+        >
+          {authOptions.isFetching ? 'Retrying…' : 'Retry'}
+        </button>
+      </PasswordUnavailable>
+    );
+  }
+
+  if (authOptions.data.demoMode) {
+    return (
+      <PasswordUnavailable>
+        Password changes are disabled in public demo mode.
+      </PasswordUnavailable>
+    );
+  }
+
+  if (authOptions.data.localAuthDisabled) {
+    return (
+      <PasswordUnavailable>
+        Local email/password authentication is disabled, so password changes are blocked. Ask an administrator to re-enable local sign-in first.
+      </PasswordUnavailable>
     );
   }
 
@@ -759,6 +799,21 @@ function PasswordSection({ hasCredential, email }: { hasCredential: boolean; ema
           <KeySquare className="h-4 w-4" /> {busy ? 'Changing…' : 'Change password'}
         </button>
       </form>
+    </section>
+  );
+}
+
+function PasswordUnavailable({ children }: { children: React.ReactNode }) {
+  return (
+    <section>
+      <SectionHeader
+        icon={<Lock className="h-4 w-4" />}
+        title="Change password"
+        subtitle="Change the password for your local account."
+      />
+      <div className="card max-w-md text-sm fg-tertiary" role="status">
+        {children}
+      </div>
     </section>
   );
 }
@@ -1086,12 +1141,12 @@ function SectionHeader({
   return (
     <div className="flex items-start justify-between gap-3 mb-3">
       <div>
-        <h2 className="text-lg font-semibold fg-primary flex items-center gap-2">
+        <h3 className="text-lg font-semibold fg-primary flex items-center gap-2">
           <span className="h-7 w-7 rounded-lg flex items-center justify-center bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
             {icon}
           </span>
           {title}
-        </h2>
+        </h3>
         {subtitle && <p className="text-sm fg-tertiary mt-1 max-w-2xl">{subtitle}</p>}
       </div>
       {action}

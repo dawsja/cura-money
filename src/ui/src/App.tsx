@@ -10,7 +10,7 @@ import { Accounts } from './pages/Accounts';
 import { Budget } from './pages/Budget';
 import { Categories } from './pages/Categories';
 import { Transactions } from './pages/Transactions';
-import { AdminSettings } from './pages/AdminSettings';
+import { Settings } from './pages/AdminSettings';
 import { Paydown } from './pages/Paydown';
 import { SaveUp } from './pages/SaveUp';
 import { Reports } from './pages/Reports';
@@ -24,12 +24,9 @@ interface SetupStatus {
   bootstrapCompleted: boolean;
   oidcConfigured: boolean;
   bootstrapTokenRequired: boolean;
+  needsAdmin: boolean;
   demoMode: boolean;
 }
-
-// Admin-only routes. Users without the `admin` role get a 403 from the API
-// and the page renders its own "Admin only" guard.
-const ADMIN_ROUTES = new Set(['/admin/settings']);
 
 async function fetchSetupStatus(): Promise<SetupStatus> {
   const r = await fetch('/api/setup/status', { credentials: 'include' });
@@ -42,6 +39,7 @@ export default function App() {
   const meQ = useQuery({
     queryKey: ['me'],
     queryFn: fetchMe,
+    enabled: setupQ.data?.bootstrapCompleted === true,
     refetchInterval: setupQ.data?.demoMode ? 5_000 : false,
   });
 
@@ -73,6 +71,7 @@ export default function App() {
     return (
       <Routes>
         <Route path="/setup" element={<Setup />} />
+        {!setupQ.data.needsAdmin && <Route path="/sign-in" element={<SignIn />} />}
         <Route path="*" element={<Navigate to="/setup" replace />} />
       </Routes>
     );
@@ -124,7 +123,7 @@ export default function App() {
             <Route path="/reports" element={<Reports />} />
             <Route path="/rules" element={<Rules />} />
             <Route path="/recurring" element={<Recurring />} />
-            <Route path="/admin/settings" element={<AdminSettings />} />
+            <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Layout>

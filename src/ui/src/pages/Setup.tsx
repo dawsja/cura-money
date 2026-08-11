@@ -1,17 +1,17 @@
 /**
  * First-run wizard. Four steps:
  *   1. Bootstrap token + first admin
- *   2. Configure OIDC provider (or skip — admin can add one later in /admin/settings)
- *   3. Test OIDC handshake (only reached if OIDC was configured, not if skipped)
- *   4. Done — redirect to /sign-in
+ *   2. Configure OIDC provider (or skip — admin can add one later in /settings)
+ *   3. Review OIDC configuration (only reached if OIDC was configured)
+ *   4. Done — App transitions to authenticated routing
  *
  * The bootstrap token is printed to the `app` container logs on first
  * boot (see src/auth/setup.ts → ensureSetupState). Operators copy-paste
  * it into step 1.
  */
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 
 interface SetupStatus {
@@ -20,6 +20,7 @@ interface SetupStatus {
   oidcConfigured: boolean;
   bootstrapTokenRequired: boolean;
   needsAdmin: boolean;
+  nextStep: 'admin' | 'oidc-configure' | 'oidc-review' | 'done';
 }
 
 async function fetchStatus(): Promise<SetupStatus> {
@@ -29,19 +30,20 @@ async function fetchStatus(): Promise<SetupStatus> {
 const FIELD_CLS = 'mt-1 w-full rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
 
 export function Setup() {
-  const navigate = useNavigate();
-  const qc = useQueryClient();
-  const statusQ = useQuery({ queryKey: ['setup'], queryFn: fetchStatus });
-
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const statusQ = useQuery({ queryKey: ['setup'], queryFn: fetchStatus, retry: false });
+  const [editingOidc, setEditingOidc] = useState(false);
 
   // step 1
-  const [token, setToken] = useState('');
+  const [bootstrapToken, setBootstrapToken] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [step1Err, setStep1Err] = useState<string | null>(null);
   const [step1Busy, setStep1Busy] = useState(false);
+
+  // Optional recovery credential for post-admin steps. Normally the
+  // HttpOnly continuation cookie is sufficient.
+  const [continuationToken, setContinuationToken] = useState('');
 
   // step 2
   const [providerId, setProviderId] = useState('pocketid');
@@ -55,16 +57,28 @@ export function Setup() {
   const [step3Err, setStep3Err] = useState<string | null>(null);
   const [step3Busy, setStep3Busy] = useState(false);
 
+  const continuationBody = () => {
+    const token = continuationToken.trim();
+    return token ? { token } : {};
+  };
+
+  const refreshStatus = async () => {
+    await statusQ.refetch();
+  };
+
   const onBootstrap = async (e: React.FormEvent) => {
     e.preventDefault();
     setStep1Err(null);
     setStep1Busy(true);
     try {
       await api.post('/api/setup/bootstrap-admin', {
-        token, email, password, name,
+        token: bootstrapToken, email, password, name,
       });
-      await qc.invalidateQueries({ queryKey: ['setup'] });
-      setStep(2);
+      setBootstrapToken('');
+      setEmail('');
+      setPassword('');
+      setName('');
+      await refreshStatus();
     } catch (err) {
       setStep1Err((err as Error).message);
     } finally {
@@ -78,11 +92,12 @@ export function Setup() {
     setStep2Busy(true);
     try {
       await api.post('/api/setup/configure-oidc', {
-        token, providerId, discoveryUrl, clientId, clientSecret,
+        ...continuationBody(), providerId, discoveryUrl, clientId, clientSecret,
         scopes: ['openid', 'email', 'profile'],
       });
-      await qc.invalidateQueries({ queryKey: ['setup'] });
-      setStep(3);
+      setClientSecret('');
+      setEditingOidc(false);
+      await refreshStatus();
     } catch (err) {
       setStep2Err((err as Error).message);
     } finally {
@@ -94,11 +109,10 @@ export function Setup() {
     setStep3Err(null);
     setStep3Busy(true);
     try {
-      await api.post('/api/setup/test-oidc', { token });
-      await api.post('/api/setup/complete', { token });
-      await qc.invalidateQueries({ queryKey: ['setup'] });
-      setStep(4);
-      setTimeout(() => navigate('/sign-in'), 1500);
+      await api.post('/api/setup/review-oidc', continuationBody());
+      await api.post('/api/setup/complete', continuationBody());
+      setContinuationToken('');
+      await refreshStatus();
     } catch (err) {
       setStep3Err((err as Error).message);
     } finally {
@@ -107,15 +121,14 @@ export function Setup() {
   };
 
   // Skip OIDC entirely — the admin will sign in with email/password and
-  // add a provider later from /admin/settings. We jump straight to step 4.
+  // add a provider later from /settings.
   const onSkipOidc = async () => {
     setStep2Err(null);
     setStep2Busy(true);
     try {
-      await api.post('/api/setup/complete', { token });
-      await qc.invalidateQueries({ queryKey: ['setup'] });
-      setStep(4);
-      setTimeout(() => navigate('/sign-in'), 1500);
+      await api.post('/api/setup/complete', continuationBody());
+      setContinuationToken('');
+      await refreshStatus();
     } catch (err) {
       setStep2Err((err as Error).message);
     } finally {
@@ -126,6 +139,30 @@ export function Setup() {
   if (statusQ.isLoading) {
     return <div className="flex h-full items-center justify-center fg-muted bg-page">Loading…</div>;
   }
+
+  if (statusQ.isError || !statusQ.data) {
+    return (
+      <div className="flex h-full items-center justify-center bg-page px-4">
+        <div className="card w-full max-w-md space-y-4 text-center">
+          <h1 className="text-lg font-semibold fg-primary">Setup status unavailable</h1>
+          <p className="text-sm text-rose-600 dark:text-rose-400">
+            {statusQ.error instanceof Error ? statusQ.error.message : 'Could not load setup status.'}
+          </p>
+          <button type="button" className="btn-primary" onClick={() => void statusQ.refetch()}>
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const authoritativeStep = {
+    admin: 1,
+    'oidc-configure': 2,
+    'oidc-review': 3,
+    done: 4,
+  }[statusQ.data.nextStep] as 1 | 2 | 3 | 4;
+  const step = editingOidc && authoritativeStep === 3 ? 2 : authoritativeStep;
 
   return (
     <div className="h-full overflow-y-auto bg-page px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:flex sm:items-center sm:justify-center">
@@ -144,7 +181,7 @@ export function Setup() {
                 on first boot (look for the &quot;SETUP BOOTSTRAP TOKEN&quot; banner). It
                 expires in 1 hour; restart the container to regenerate.
               </p>
-              <Field label="Bootstrap token" value={token} onChange={setToken} mono />
+              <Field label="Bootstrap token" value={bootstrapToken} onChange={setBootstrapToken} mono />
               <Field label="Email" type="email" value={email} onChange={setEmail} />
               <Field label="Name" value={name} onChange={setName} />
               <Field label="Password (min 12 chars)" type="password" value={password} onChange={setPassword} />
@@ -163,6 +200,13 @@ export function Setup() {
                 a self-hosted, passkey-first setup. Discovery and callback URLs must use
                 HTTPS, except localhost during development.
               </p>
+              {editingOidc && (
+                <p className="text-sm fg-tertiary">
+                  Reconfiguring replaces the saved provider settings. The saved client secret cannot
+                  be recovered, so you must re-enter it before saving.
+                </p>
+              )}
+              <ContinuationTokenField value={continuationToken} onChange={setContinuationToken} />
               <p className="text-sm fg-tertiary">
                 Not ready yet? You can skip this step and add a provider later from <strong>Settings</strong>.
                 Sign-in with email and password will work either way.
@@ -182,11 +226,8 @@ export function Setup() {
               <Field label="Client ID" value={clientId} onChange={setClientId} />
               <Field label="Client secret" type="password" value={clientSecret} onChange={setClientSecret} />
               {step2Err && <p className="text-sm text-rose-600 dark:text-rose-400">{step2Err}</p>}
-               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-                <button type="button" className="fg-tertiary text-sm" onClick={() => setStep(1)}>
-                  ← Back
-                </button>
-                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:gap-4">
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:gap-4">
                   <button
                     type="button"
                     className="fg-tertiary text-sm underline"
@@ -195,7 +236,7 @@ export function Setup() {
                   >
                     Skip for now
                   </button>
-                   <button type="submit" className="btn-primary w-full sm:w-auto" disabled={step2Busy}>
+                  <button type="submit" className="btn-primary w-full sm:w-auto" disabled={step2Busy}>
                     {step2Busy ? 'Validating…' : 'Save provider'}
                   </button>
                 </div>
@@ -205,14 +246,16 @@ export function Setup() {
 
           {step === 3 && (
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold fg-primary">3. Test the OIDC handshake</h2>
+              <h2 className="text-lg font-semibold fg-primary">3. Review OIDC and complete</h2>
               <p className="text-sm fg-tertiary">
-                Click below to verify the provider is registered and mark setup complete.
+                Your provider configuration is saved and registered. Completing setup does not
+                perform an OIDC sign-in handshake.
               </p>
+              <ContinuationTokenField value={continuationToken} onChange={setContinuationToken} />
               {step3Err && <p className="text-sm text-rose-600 dark:text-rose-400">{step3Err}</p>}
               <div className="flex justify-between">
-                <button type="button" className="fg-tertiary text-sm" onClick={() => setStep(2)}>
-                  ← Back
+                <button type="button" className="fg-tertiary text-sm" onClick={() => setEditingOidc(true)}>
+                  Replace / reconfigure provider
                 </button>
                 <button onClick={onComplete} className="btn-primary" disabled={step3Busy}>
                   {step3Busy ? 'Completing…' : 'Complete setup'}
@@ -234,16 +277,24 @@ export function Setup() {
         <div className="mt-6 flex justify-center">
           <Stepper current={step} />
         </div>
+        {!statusQ.data.needsAdmin && step < 4 && (
+          <p className="mt-4 text-center text-sm fg-tertiary">
+            Setup access expired?{' '}
+            <Link className="font-medium text-amber-600 underline dark:text-amber-400" to="/sign-in?callbackURL=%2Fsetup">
+              Sign in as an existing admin to continue setup
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   );
 }
 
 function Field({
-  label, value, onChange, type = 'text', hint, mono, placeholder,
+  label, value, onChange, type = 'text', hint, mono, placeholder, required = true,
 }: {
   label: string; value: string; onChange: (v: string) => void;
-  type?: string; hint?: string; mono?: boolean; placeholder?: string;
+  type?: string; hint?: string; mono?: boolean; placeholder?: string; required?: boolean;
 }) {
   return (
     <label className="block">
@@ -254,15 +305,29 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className={`${FIELD_CLS} ${mono ? 'font-mono' : ''}`}
-        required
+        required={required}
       />
       {hint && <span className="mt-1 block text-xs fg-muted">{hint}</span>}
     </label>
   );
 }
 
+function ContinuationTokenField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <Field
+      label="Continuation bootstrap token (optional)"
+      type="password"
+      value={value}
+      onChange={onChange}
+      hint="Restart Cura Money to print a new current token in the logs, or sign in as an admin."
+      mono
+      required={false}
+    />
+  );
+}
+
 function Stepper({ current }: { current: 1 | 2 | 3 | 4 }) {
-  const steps = ['Admin', 'OIDC', 'Test', 'Done'];
+  const steps = ['Admin', 'OIDC', 'Review', 'Done'];
   return (
     <ol className="flex w-full items-center justify-center gap-1 sm:gap-2" aria-label={`Setup step ${current} of 4`}>
       {steps.map((label, idx) => {

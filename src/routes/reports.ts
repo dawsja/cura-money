@@ -4,8 +4,9 @@
  * Each endpoint takes a `range` (1m / 3m / 6m / 1y / all) or a `month`
  * (YYYY-MM) and returns the shape the chart needs. The server is the
  * source of truth for the math so the client just renders. All
- * cash-ledger responses exclude transfers and hidden-account
- * transactions (Hard Rule #14).
+ * cash-ledger responses exclude transfers where applicable and activity from
+ * known hidden, investment, or uncategorized accounts. Activity whose account
+ * was deleted remains historical ledger data.
  *
  * Range tokens are resolved relative to "today" (UTC) so the chart
  * boundaries are stable across timezones. When retention is enabled, ranges

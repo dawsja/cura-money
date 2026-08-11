@@ -4,11 +4,13 @@
  *
  *   GET  /api/setup/status              — public, no auth
  *   POST /api/setup/bootstrap-admin     — public (gated by token)
- *   POST /api/setup/configure-oidc      — public (only after admin exists)
- *   POST /api/setup/test-oidc           — public (used by the wizard's final step)
- *   POST /api/setup/complete            — public (mark wizard done)
+ *   POST /api/setup/configure-oidc      — continuation credential or admin session
+ *   POST /api/setup/review-oidc         — verify that OIDC configuration is persisted
+ *   POST /api/setup/test-oidc           — backward-compatible alias for review-oidc
+ *   POST /api/setup/complete            — idempotently mark wizard done
  */
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import {
@@ -26,9 +28,13 @@ import { assertSecureOidcConfiguration } from '@/lib/oidc-url';
 import { db } from '@/db/client';
 import { user } from '@/db/schema/auth';
 import { checkSetupRateLimit } from '@/lib/setup-rate-limit';
-import { env } from '@/lib/env';
+import { env, useSecureAuthCookies } from '@/lib/env';
 
 export const setupRoutes = new Hono();
+
+const SETUP_CONTINUATION_COOKIE = 'cura_setup_continuation';
+const SETUP_COOKIE_PATH = '/api/setup';
+const SETUP_COOKIE_MAX_AGE_SECONDS = 60 * 60;
 
 setupRoutes.use('*', async (c, next) => {
   if (!env.DEMO_MODE || c.req.method === 'GET') return next();
@@ -60,9 +66,28 @@ function enforceSetupRateLimit(c: Parameters<typeof badRequest>[0]): Response | 
   return c.json({ error: 'Too many setup attempts; try again later.', code: 'rate_limited' }, 429);
 }
 
-async function authorizeSetupMutation(request: Request, token?: string): Promise<'token' | 'admin' | null> {
+function setSetupContinuationCookie(c: Context, token: string): void {
+  setCookie(c, SETUP_CONTINUATION_COOKIE, token, {
+    path: SETUP_COOKIE_PATH,
+    httpOnly: true,
+    sameSite: 'Lax',
+    secure: useSecureAuthCookies(),
+    maxAge: SETUP_COOKIE_MAX_AGE_SECONDS,
+  });
+}
+
+function clearSetupContinuationCookie(c: Context): void {
+  deleteCookie(c, SETUP_CONTINUATION_COOKIE, {
+    path: SETUP_COOKIE_PATH,
+    secure: useSecureAuthCookies(),
+  });
+}
+
+async function authorizeSetupMutation(c: Context, token?: string): Promise<'token' | 'cookie' | 'admin' | null> {
   if (token && await verifyBootstrapToken(token)) return 'token';
-  const session = await getAuth().api.getSession({ headers: request.headers });
+  const cookieToken = getCookie(c, SETUP_CONTINUATION_COOKIE);
+  if (cookieToken && await verifyBootstrapToken(cookieToken)) return 'cookie';
+  const session = await getAuth().api.getSession({ headers: c.req.raw.headers });
   if (!session?.user?.id) return null;
   const [row] = await db.select({ role: user.role }).from(user).where(eq(user.id, session.user.id)).limit(1);
   return row?.role === 'admin' ? 'admin' : null;
@@ -70,7 +95,11 @@ async function authorizeSetupMutation(request: Request, token?: string): Promise
 
 setupRoutes.get(
   '/status',
-  safe(async (c) => c.json({ ...await setupStatus(), demoMode: env.DEMO_MODE })),
+  safe(async (c) => {
+    const setup = await setupStatus();
+    if (setup.bootstrapCompleted) clearSetupContinuationCookie(c);
+    return c.json({ ...setup, demoMode: env.DEMO_MODE });
+  }),
 );
 
 setupRoutes.post(
@@ -83,6 +112,7 @@ setupRoutes.post(
     if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
     try {
       const result = await bootstrapAdmin(parsed.data);
+      setSetupContinuationCookie(c, parsed.data.token);
       invalidateSetupCache();
       return c.json({ ok: true, userId: result.userId });
     } catch (err) {
@@ -105,21 +135,35 @@ setupRoutes.post(
 setupRoutes.post(
   '/configure-oidc',
   safe(async (c) => {
-    if ((await setupStatus()).bootstrapCompleted) return forbidden(c, 'setup is already complete');
+    const setup = await setupStatus();
+    if (setup.bootstrapCompleted) {
+      clearSetupContinuationCookie(c);
+      return forbidden(c, 'setup is already complete');
+    }
+    if (setup.needsAdmin) return forbidden(c, 'Create the first admin before configuring OIDC.');
     const limited = enforceSetupRateLimit(c);
     if (limited) return limited;
     const body = await c.req.json().catch(() => null);
     const parsed = ConfigureOidcSchema.safeParse(body);
     if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
-    if (!await authorizeSetupMutation(c.req.raw, parsed.data.token)) return unauthorized(c);
+    const authorization = await authorizeSetupMutation(c, parsed.data.token);
+    if (!authorization) return unauthorized(c);
+    if (authorization === 'token' && parsed.data.token) setSetupContinuationCookie(c, parsed.data.token);
     try {
       assertSecureOidcConfiguration(c.req.raw);
       const { token: _token, ...provider } = parsed.data;
-      const result = await configureOidc(provider);
+      const result = await configureOidc(provider, { requireIncompleteSetup: true });
       invalidateSetupCache();
       return c.json({ ok: true, ...result });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown';
+      if (message === 'setup_already_completed') {
+        clearSetupContinuationCookie(c);
+        return conflict(c, 'Setup was completed while the provider was being configured.', 'setup_completed');
+      }
+      if (message === 'admin_required') {
+        return forbidden(c, 'Create the first admin before configuring OIDC.');
+      }
       if (message.startsWith('discovery_doc_unreachable_')) {
         return badRequest(c, `OIDC discovery doc unreachable: ${message}`, 'discovery_unreachable');
       }
@@ -132,43 +176,68 @@ setupRoutes.post(
       if (message.endsWith('_https_required') || message.endsWith('_invalid_url')) {
         return badRequest(c, 'OIDC discovery and callback/base URLs must use HTTPS. HTTP is allowed only for localhost during development.', 'https_required');
       }
+      if (message === 'setup_already_completed') {
+        clearSetupContinuationCookie(c);
+        return forbidden(c, 'setup is already complete');
+      }
+      if (message === 'admin_required') {
+        return forbidden(c, 'Create the first admin before configuring OIDC.');
+      }
       logger.error({ err }, 'configure-oidc failed');
       return serverError(c);
     }
   }),
 );
 
-setupRoutes.post(
-  '/test-oidc',
-  safe(async (c) => {
-    if ((await setupStatus()).bootstrapCompleted) return forbidden(c, 'setup is already complete');
-    const limited = enforceSetupRateLimit(c);
-    if (limited) return limited;
-    const body = await c.req.json().catch(() => ({}));
-    const parsed = SetupMutationSchema.safeParse(body);
-    if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
-    if (!await authorizeSetupMutation(c.req.raw, parsed.data.token)) return unauthorized(c);
-    const s = await setupStatus();
-    if (!s.oidcConfigured) {
-      return badRequest(c, 'OIDC not yet configured.', 'oidc_not_configured');
-    }
-    return c.json({ ok: true });
-  }),
-);
+const reviewOidc = safe(async (c) => {
+  const setup = await setupStatus();
+  if (setup.bootstrapCompleted) {
+    clearSetupContinuationCookie(c);
+    return forbidden(c, 'setup is already complete');
+  }
+  if (setup.needsAdmin) return forbidden(c, 'Create the first admin before reviewing OIDC.');
+  const limited = enforceSetupRateLimit(c);
+  if (limited) return limited;
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = SetupMutationSchema.safeParse(body);
+  if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
+    const authorization = await authorizeSetupMutation(c, parsed.data.token);
+    if (!authorization) return unauthorized(c);
+    if (authorization === 'token' && parsed.data.token) setSetupContinuationCookie(c, parsed.data.token);
+  if (!setup.oidcConfigured) {
+    return badRequest(c, 'OIDC not yet configured.', 'oidc_not_configured');
+  }
+  return c.json({ ok: true });
+});
+
+setupRoutes.post('/review-oidc', reviewOidc);
+setupRoutes.post('/test-oidc', reviewOidc);
 
 setupRoutes.post(
   '/complete',
   safe(async (c) => {
-    if ((await setupStatus()).bootstrapCompleted) return forbidden(c, 'setup is already complete');
+    const setup = await setupStatus();
+    if (setup.bootstrapCompleted) {
+      clearSetupContinuationCookie(c);
+      return c.json({ ok: true });
+    }
+    if (setup.needsAdmin) return forbidden(c, 'Create the first admin before completing setup.');
     const limited = enforceSetupRateLimit(c);
     if (limited) return limited;
     const body = await c.req.json().catch(() => ({}));
     const parsed = SetupMutationSchema.safeParse(body);
     if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
-    const authorization = await authorizeSetupMutation(c.req.raw, parsed.data.token);
-    if (!authorization) return unauthorized(c);
+    const authorization = await authorizeSetupMutation(c, parsed.data.token);
+    if (!authorization) {
+      if ((await setupStatus()).bootstrapCompleted) {
+        clearSetupContinuationCookie(c);
+        return c.json({ ok: true });
+      }
+      return unauthorized(c);
+    }
     try {
       await markBootstrapComplete();
+      clearSetupContinuationCookie(c);
       invalidateSetupCache();
       return c.json({ ok: true });
     } catch (err) {

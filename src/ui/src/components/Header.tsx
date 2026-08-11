@@ -13,11 +13,12 @@ const routeTitles: Record<string, string> = {
   '/reports': 'Reports',
   '/rules': 'Rules',
   '/recurring': 'Recurring',
-  '/admin/settings': 'Settings',
+  '/settings': 'Settings',
 };
 
 /**
- * The Header carries the mobile page title, notification bell, and profile
+ * The Header maps authenticated routes, including Settings, to mobile page
+ * titles and carries the notification bell and profile
  * menu. User identity / sign-out live inside
  * the `ProfileMenu` dropdown — the visible chrome here is intentionally
  * minimal so the user focuses on the page content.

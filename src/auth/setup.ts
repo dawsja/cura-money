@@ -11,8 +11,8 @@
  *      under a Postgres serializable transaction.
  *   4. configureOidc()     — validate discovery doc, store provider,
  *      register with Better Auth's genericOAuth plugin.
- *   5. testOidc()          — one-shot handshake to mark bootstrap done.
- *   6. issueBootstrapToken() — break-glass CLI helper.
+ *   5. markBootstrapComplete() — lock and complete the setup state.
+ *   6. issueBootstrapToken()   — break-glass CLI helper.
  */
 import { eq, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
@@ -37,9 +37,10 @@ export interface SetupStatus {
   oidcConfigured: boolean;
   bootstrapTokenRequired: boolean;
   needsAdmin: boolean;
+  nextStep: 'admin' | 'oidc-configure' | 'oidc-review' | 'done';
   /**
    * True when local email/password auth is hidden + blocked. Set by
-   * an admin from /admin/settings after at least one OIDC user has
+   * an admin from /settings after at least one OIDC user has
    * been promoted to admin. Defaults to false — local auth is on by
    * default so a fresh install never locks its first admin out.
    */
@@ -56,6 +57,7 @@ export async function status(): Promise<SetupStatus> {
       oidcConfigured: false,
       bootstrapTokenRequired: false,
       needsAdmin: true,
+      nextStep: 'admin',
       localAuthDisabled: false,
     };
   }
@@ -69,6 +71,13 @@ export async function status(): Promise<SetupStatus> {
     oidcConfigured: row.oidcConfigured,
     bootstrapTokenRequired: !row.bootstrapCompleted && tokenValid,
     needsAdmin: row.needsAdmin,
+    nextStep: row.bootstrapCompleted
+      ? 'done'
+      : row.needsAdmin
+        ? 'admin'
+        : row.oidcConfigured
+          ? 'oidc-review'
+          : 'oidc-configure',
     localAuthDisabled: row.localAuthDisabled,
   };
 }
@@ -209,35 +218,44 @@ export async function configureOidc(input: {
   clientId: string;
   clientSecret: string;
   scopes?: string[];
-}): Promise<{ providerId: string; restartRequired: boolean }> {
+}, options?: { requireIncompleteSetup?: boolean }): Promise<{ providerId: string; restartRequired: boolean }> {
   await fetchSecureOidcDiscovery(input.discoveryUrl);
   const sealedClientSecret = sealSecret(input.clientSecret);
 
-  // Persist
   const id = `oidc-${randomBytes(8).toString('hex')}`;
-  await db
-    .insert(oidcProviders)
-    .values({
-      id,
-      providerId: input.providerId,
-      discoveryUrl: input.discoveryUrl,
-      clientId: input.clientId,
-      clientSecret: sealedClientSecret,
-      scopes: input.scopes ?? ['openid', 'email', 'profile'],
-      isActive: true,
-    })
-    .onConflictDoUpdate({
-      target: oidcProviders.providerId,
-      set: {
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM setup_state WHERE id = 1 FOR UPDATE`);
+    const [state] = await tx.select().from(setupState).where(eq(setupState.id, 1)).limit(1);
+    if (!state) throw new Error('setup_state_missing');
+    if (options?.requireIncompleteSetup) {
+      if (state.bootstrapCompleted) throw new Error('setup_already_completed');
+      if (state.needsAdmin) throw new Error('admin_required');
+    }
+
+    await tx
+      .insert(oidcProviders)
+      .values({
+        id,
+        providerId: input.providerId,
         discoveryUrl: input.discoveryUrl,
         clientId: input.clientId,
         clientSecret: sealedClientSecret,
         scopes: input.scopes ?? ['openid', 'email', 'profile'],
         isActive: true,
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: oidcProviders.providerId,
+        set: {
+          discoveryUrl: input.discoveryUrl,
+          clientId: input.clientId,
+          clientSecret: sealedClientSecret,
+          scopes: input.scopes ?? ['openid', 'email', 'profile'],
+          isActive: true,
+        },
+      });
 
-  await db.update(setupState).set({ oidcConfigured: true }).where(eq(setupState.id, 1));
+    await tx.update(setupState).set({ oidcConfigured: true }).where(eq(setupState.id, 1));
+  });
 
   // Hot-register the new provider with the running Better Auth instance.
   // Without this, the wizard's "test" step (and any immediate OIDC
@@ -261,6 +279,11 @@ export async function configureOidc(input: {
 export async function markBootstrapComplete(): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM setup_state WHERE id = 1 FOR UPDATE`);
+    const [state] = await tx.select().from(setupState).where(eq(setupState.id, 1)).limit(1);
+    if (!state) throw new Error('setup_state_missing');
+    if (state.bootstrapCompleted) return;
+    if (state.needsAdmin) throw new Error('admin_required');
+
     const admins = await tx.select({ id: user.id }).from(user).where(eq(user.role, 'admin')).limit(1);
     if (admins.length === 0) throw new Error('admin_required');
     await tx

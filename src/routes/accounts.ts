@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { getAllAccounts, getAccount, addAccount, editAccount, deleteAccount, setAccountHidden } from '@/db/queries';
 import { userId, routeParam } from '@/lib/tenant';
-import { badRequest, safe } from '@/lib/errors';
+import { badRequest, conflict, safe } from '@/lib/errors';
 import { aprRate, moneyAmount } from '@/lib/money';
 
 export const accountRoutes = new Hono();
@@ -103,7 +103,14 @@ accountRoutes.patch(
 accountRoutes.delete(
   '/:id',
   safe(async (c) => {
-    await deleteAccount(userId(c), routeParam(c, 'id'));
+    const result = await deleteAccount(userId(c), routeParam(c, 'id'));
+    if (result === 'simplefin_forbidden') {
+      return conflict(
+        c,
+        'SimpleFIN accounts cannot be deleted. Hide the account instead.',
+        'simplefin_account_delete_forbidden',
+      );
+    }
     return c.json({ ok: true });
   }),
 );

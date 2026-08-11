@@ -34,6 +34,7 @@ import { latestBudgetsUpTo } from './budget-repository';
 
 // ---- Shared types ---------------------------------------------------------
 export type AccountType = 'checking' | 'savings' | 'credit' | 'investment' | 'loan' | 'uncategorized';
+export type AccountSource = 'manual' | 'simplefin';
 // `transfer` covers credit card payments, account-to-account moves, and
 // any other transaction where money moves between two of the user's own
 // accounts. Transfers are excluded from income/expense totals because
@@ -42,6 +43,7 @@ export type TransactionType = 'income' | 'expense' | 'transfer';
 
 export interface Account {
   id: string;
+  source: AccountSource;
   name: string;
   type: AccountType;
   balance: number;
@@ -52,10 +54,9 @@ export interface Account {
   minPayment: number;
   plannedPayment: number;
   includeInPaydown: boolean;
-  // `hidden` removes the account from every read view (dashboard,
-  // accounts list, transactions, budget, paydown) and from SimpleFIN
-  // sync. Survives a sync because the sync helper checks the existing
-  // row before writing.
+  // `hidden` removes the account from financial read views and pauses
+  // SimpleFIN sync for that account. It survives sync because the sync
+  // helper checks the existing row before writing.
   hidden: boolean;
   // User-set display alias. NULL means "use the canonical name". Never
   // touched by SimpleFIN sync, so the user's chosen name persists
@@ -219,6 +220,10 @@ export async function seedInitialCategoriesIfEmpty(userId: string): Promise<void
 
 // ---- Accounts -----------------------------------------------------------
 
+function accountSource(id: string): AccountSource {
+  return id.startsWith('simplefin-') ? 'simplefin' : 'manual';
+}
+
 export async function getAllAccounts(userId: string, options?: { includeHidden?: boolean }): Promise<Account[]> {
   // Default hides hidden accounts — every consumer (dashboard, accounts
   // list, transactions filter, paydown) wants them out. The Accounts
@@ -230,6 +235,7 @@ export async function getAllAccounts(userId: string, options?: { includeHidden?:
   const rows = await db.select().from(accounts).where(where).orderBy(asc(accounts.name));
   return rows.map((r) => ({
     id: r.id,
+    source: accountSource(r.id),
     name: r.name,
     type: r.type,
     balance: Math.abs(r.balance),
@@ -259,6 +265,7 @@ export async function getAccount(userId: string, id: string): Promise<Account | 
   if (!row) return null;
   return {
     id: row.id,
+    source: accountSource(row.id),
     name: row.name,
     type: row.type,
     balance: Math.abs(row.balance),
@@ -272,7 +279,7 @@ export async function getAccount(userId: string, id: string): Promise<Account | 
   };
 }
 
-export async function addAccount(userId: string, acc: Omit<Account, 'id'>): Promise<Account> {
+export async function addAccount(userId: string, acc: Omit<Account, 'id' | 'source'>): Promise<Account> {
   const id = `acc-${nanoid(10)}`;
   await db.insert(accounts).values({
     id,
@@ -287,7 +294,7 @@ export async function addAccount(userId: string, acc: Omit<Account, 'id'>): Prom
     includeInPaydown: acc.includeInPaydown,
     hidden: acc.hidden,
   });
-  return { ...acc, id, balance: Math.abs(acc.balance) };
+  return { ...acc, id, source: 'manual', balance: Math.abs(acc.balance) };
 }
 
 export async function editAccount(userId: string, id: string, patch: Partial<Account>): Promise<void> {
@@ -436,6 +443,7 @@ export async function getLiabilityAccounts(userId: string): Promise<Account[]> {
     .filter((r) => (r.type === 'credit' || r.type === 'loan') && !r.hidden)
     .map((r) => ({
       id: r.id,
+      source: accountSource(r.id),
       name: r.name,
       type: r.type,
       balance: Math.abs(r.balance),
@@ -449,14 +457,19 @@ export async function getLiabilityAccounts(userId: string): Promise<Account[]> {
     }));
 }
 
-export async function deleteAccount(userId: string, id: string): Promise<void> {
-  await db.transaction(async (tx) => {
+export async function deleteAccount(
+  userId: string,
+  id: string,
+): Promise<'deleted' | 'not_found' | 'simplefin_forbidden'> {
+  return db.transaction(async (tx) => {
     const [account] = await tx
-      .select({ name: accounts.name })
+      .select({ id: accounts.id, name: accounts.name })
       .from(accounts)
       .where(and(eq(accounts.userId, userId), eq(accounts.id, id)))
+      .for('update')
       .limit(1);
-    if (!account) return;
+    if (!account) return 'not_found';
+    if (accountSource(account.id) === 'simplefin') return 'simplefin_forbidden';
 
     const [paydownCategory] = await tx
       .select({ id: categories.id })
@@ -487,14 +500,14 @@ export async function deleteAccount(userId: string, id: string): Promise<void> {
       .where(and(eq(goals.userId, userId), eq(goals.accountId, id)));
     await tx.delete(monthlyPaydown).where(and(eq(monthlyPaydown.userId, userId), eq(monthlyPaydown.accountId, id)));
     await tx.delete(accounts).where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+    return 'deleted';
   });
 }
 
 /**
- * Toggle the `hidden` flag for one account. Hidden accounts are excluded
- * from every read view and from SimpleFIN sync (the sync helper checks
- * the existing row and skips the upsert). Row stays in the table so
- * the user can un-hide later.
+ * Toggle the `hidden` flag for one account. Hidden accounts are excluded from
+ * financial views and SimpleFIN sync, but remain available to the Accounts
+ * page when it explicitly requests hidden rows so the user can unhide them.
  */
 export async function setAccountHidden(userId: string, id: string, hidden: boolean): Promise<void> {
   await db
@@ -552,6 +565,7 @@ export async function upsertAccount(
   const effectiveBalance = Math.abs(row?.balance ?? acc.balance);
   return {
     id: acc.id,
+    source: accountSource(acc.id),
     name: row?.name ?? acc.name,
     type: effectiveType,
     balance: effectiveBalance,
@@ -1094,6 +1108,7 @@ async function loadAccountLedgerMeta(userId: string): Promise<{
   const meta = new Map<string, AccountLedgerMeta>();
   const byName = new Map<string, AccountLedgerMeta>();
   const duplicateNames = new Set<string>();
+  const excludedByName = new Map<string, boolean>();
   for (const r of await db
     .select({
       id: accounts.id,
@@ -1112,6 +1127,7 @@ async function loadAccountLedgerMeta(userId: string): Promise<{
       alias: r.alias ?? null,
     };
     meta.set(r.id, value);
+    excludedByName.set(r.name, (excludedByName.get(r.name) ?? true) && isLedgerExcluded(value));
     // Legacy rows have no account_id. Preserve name fallback only when the
     // name is unambiguous for this tenant.
     if (duplicateNames.has(r.name)) continue;
@@ -1127,9 +1143,12 @@ async function loadAccountLedgerMeta(userId: string): Promise<{
     meta,
     byName,
     excludedIds: excluded.map((value) => value.id),
-    excludedNames: excluded
-      .filter((value) => byName.get(value.name)?.id === value.id)
-      .map((value) => value.name),
+    // A legacy row cannot be distinguished from an orphan row that happens
+    // to share a name with current excluded accounts. Exclude that ambiguous
+    // row only when every current account with the name is ledger-excluded.
+    excludedNames: Array.from(excludedByName)
+      .filter(([, isExcluded]) => isExcluded)
+      .map(([name]) => name),
   };
 }
 
@@ -2930,7 +2949,6 @@ export async function getPaydownModalData(userId: string, yearMonth: string): Pr
   const monthStart = `${yearMonth}-01`;
   const monthEnd = endOfMonth(yearMonth);
   const meta = await getPaydownSnapshotMeta(userId, yearMonth);
-  const visible = await visibleAccountIdentity(userId);
 
   const liabilityRows = await db
     .select({
@@ -2979,9 +2997,7 @@ export async function getPaydownModalData(userId: string, yearMonth: string): Pr
   // Payments usually post on the funding account (checking), so match by
   // subcategory name — not transactions.account.
   const actualByName = new Map<string, number>();
-  const actualRows = visible.ids.length === 0
-    ? []
-    : await loadEffectiveLedgerAllocations(userId, monthStart, monthEnd, visible);
+  const actualRows = await loadEffectiveLedgerAllocations(userId, monthStart, monthEnd);
   for (const row of actualRows) {
     if (row.category !== 'Pay down goals' || !row.subCategory) continue;
     actualByName.set(row.subCategory, (actualByName.get(row.subCategory) ?? 0) + row.amountCents);
@@ -3988,12 +4004,9 @@ function protectionMessage(reason: AdminProtectionReason | null): string {
 
 // ---- Reports aggregates ---------------------------------------------------
 //
-// Report series helpers are read-only (except investment series, which
-// upserts today's live balances into the snapshot table so the chart
-// never lags a just-completed sync), userId-scoped, and exclude
-// transfers + hidden-account transactions by the same convention the
-// Dashboard and Budget pages use (Hard Rule #14). The page calls a
-// matching endpoint per chart so the client never re-aggregates.
+// Report series helpers are read-only, userId-scoped, and use the same
+// account exclusion policy as Transactions, Dashboard, and Budget. The page
+// calls a matching endpoint per chart so the client never re-aggregates.
 
 /**
  * Returns 'YYYY-MM-DD' for the last day of `yearMonth`. Uses date math
@@ -4032,38 +4045,6 @@ function eachMonth(start: string, end: string): string[] {
   return out;
 }
 
-// ---- Helpers for the "filter hidden accounts" pattern ---------------------
-
-/**
- * Returns the set of account names that participate in the cash ledger
- * (not hidden, not investment, and not uncategorized). Transactions whose
- * account column is
- * in this set are the only ones included in report aggregations.
- * Mirrors `getAllTransactions` / `listTransactions`.
- */
-async function visibleAccountIdentity(userId: string): Promise<{ ids: string[]; names: string[] }> {
-  const rows = await db
-    .select({ id: accounts.id, name: accounts.name, type: accounts.type, hidden: accounts.hidden })
-    .from(accounts)
-    .where(eq(accounts.userId, userId));
-  const nameCounts = new Map<string, number>();
-  for (const row of rows) nameCounts.set(row.name, (nameCounts.get(row.name) ?? 0) + 1);
-  const visible = rows.filter((r) => !r.hidden && r.type !== 'investment' && r.type !== 'uncategorized');
-  return {
-    ids: visible.map((r) => r.id),
-    // Name fallback is only safe for legacy rows when one tenant account owns
-    // that name. Current rows use account_id and remain duplicate-independent.
-    names: visible.filter((r) => nameCounts.get(r.name) === 1).map((r) => r.name),
-  };
-}
-
-function visibleAccountCondition(visible: { ids: string[]; names: string[] }) {
-  return or(
-    inArray(transactions.accountId, visible.ids),
-    and(isNull(transactions.accountId), inArray(transactions.account, visible.names)),
-  );
-}
-
 interface EffectiveLedgerAllocation {
   transactionId: string;
   date: string;
@@ -4081,15 +4062,15 @@ async function loadEffectiveLedgerAllocations(
   userId: string,
   fromDate: string,
   toDate: string,
-  visible?: { ids: string[]; names: string[] },
 ): Promise<EffectiveLedgerAllocation[]> {
+  const { excludedIds, excludedNames } = await loadAccountLedgerMeta(userId);
   const conditions = [
     eq(transactions.userId, userId),
     eq(transactions.needsReview, false),
     gte(transactions.date, fromDate),
     lte(transactions.date, toDate),
   ];
-  const visibility = visible ? visibleAccountCondition(visible) : undefined;
+  const visibility = ledgerVisibilityCondition(excludedIds, excludedNames);
   if (visibility) conditions.push(visibility);
   const rows = await db
     .select({
@@ -4140,23 +4121,15 @@ export interface CashFlowPoint {
 }
 
 /**
- * Monthly income vs. expense for the requested range. Transfers are
- * excluded — they don't change net worth. Hidden accounts are excluded.
+ * Monthly income vs. expense for the requested range. Transfers are excluded
+ * because they don't change net worth. Known hidden, investment, and
+ * uncategorized accounts are excluded; deleted-account history is retained.
  *
  * Returns a dense monthly series (zero-filled) so the chart's x-axis
  * doesn't have gaps for months with no activity.
  */
 export async function getCashFlowSeries(userId: string, fromDate: string, toDate: string): Promise<CashFlowPoint[]> {
-  const visible = await visibleAccountIdentity(userId);
-  if (visible.ids.length === 0)
-    return eachMonth(fromDate.slice(0, 7), toDate.slice(0, 7)).map((month) => ({
-      month,
-      income: 0,
-      expense: 0,
-      net: 0,
-    }));
-
-  const rows = await loadEffectiveLedgerAllocations(userId, fromDate, toDate, visible);
+  const rows = await loadEffectiveLedgerAllocations(userId, fromDate, toDate);
 
   const byMonth = new Map<string, { incomeCents: number; expenseCents: number }>();
   for (const r of rows) {
@@ -4230,12 +4203,8 @@ export async function getNetWorthSeries(userId: string, fromDate: string, toDate
     0,
   );
 
-  const visible = await visibleAccountIdentity(userId);
-
   // Sum of income/expense transactions in the range, grouped by month.
-  const txRows = visible.ids.length === 0
-    ? []
-    : await loadEffectiveLedgerAllocations(userId, fromDate, toDate, visible);
+  const txRows = await loadEffectiveLedgerAllocations(userId, fromDate, toDate);
 
   const monthDelta = new Map<string, number>();
   for (const r of txRows) {
@@ -4273,13 +4242,10 @@ export interface CategorySpend {
  * it doesn't explode into 30 slices). Empty list if no data.
  */
 export async function getSpendingByCategory(userId: string, yearMonth: string): Promise<CategorySpend[]> {
-  const visible = await visibleAccountIdentity(userId);
-  if (visible.ids.length === 0) return [];
-
   const monthStart = `${yearMonth}-01`;
   const monthEnd = endOfMonth(yearMonth);
 
-  const rows = await loadEffectiveLedgerAllocations(userId, monthStart, monthEnd, visible);
+  const rows = await loadEffectiveLedgerAllocations(userId, monthStart, monthEnd);
   const totals = new Map<string, number>();
   for (const row of rows) {
     if (row.type !== 'expense') continue;
@@ -4301,11 +4267,8 @@ export async function getSpendingCategoryTrends(
   fromDate: string,
   toDate: string,
 ): Promise<SpendingTrendResult> {
-  const visible = await visibleAccountIdentity(userId);
   const months = eachMonth(fromDate.slice(0, 7), toDate.slice(0, 7));
-  if (visible.ids.length === 0) return { categories: [], series: months.map((month) => ({ month })) };
-
-  const allocations = await loadEffectiveLedgerAllocations(userId, fromDate, toDate, visible);
+  const allocations = await loadEffectiveLedgerAllocations(userId, fromDate, toDate);
   const grouped = new Map<string, { month: string; category: string; totalCents: number }>();
   for (const row of allocations) {
     if (row.type !== 'expense') continue;
@@ -4366,11 +4329,7 @@ export async function getSpendingPace(userId: string, yearMonth: string): Promis
   const previousMonth = previousDate.toISOString().slice(0, 7);
   const currentEnd = endOfMonth(yearMonth);
   const previousEnd = endOfMonth(previousMonth);
-  const visible = await visibleAccountIdentity(userId);
-
-  const allocations = visible.ids.length === 0
-    ? []
-    : await loadEffectiveLedgerAllocations(userId, `${previousMonth}-01`, currentEnd, visible);
+  const allocations = await loadEffectiveLedgerAllocations(userId, `${previousMonth}-01`, currentEnd);
   const expenseByDate = new Map<string, number>();
   for (const row of allocations) {
     if (row.type !== 'expense') continue;
@@ -4425,9 +4384,9 @@ export interface MerchantTotal {
 }
 
 /**
- * Top merchants by total spend in the requested range. Excludes
- * transfers and hidden accounts. Defaults to top 10 to keep the bar
- * chart readable.
+ * Top merchants by total spend in the requested range. Expense allocations
+ * inherently exclude transfers; account visibility follows the shared ledger
+ * exclusion policy. Defaults to top 10 to keep the bar chart readable.
  */
 export async function getTopMerchants(
   userId: string,
@@ -4435,10 +4394,7 @@ export async function getTopMerchants(
   toDate: string,
   limit = 10,
 ): Promise<MerchantTotal[]> {
-  const visible = await visibleAccountIdentity(userId);
-  if (visible.ids.length === 0) return [];
-
-  const allocations = await loadEffectiveLedgerAllocations(userId, fromDate, toDate, visible);
+  const allocations = await loadEffectiveLedgerAllocations(userId, fromDate, toDate);
   const totals = new Map<string, { totalCents: number; transactionIds: Set<string> }>();
   for (const row of allocations) {
     if (row.type !== 'expense') continue;
@@ -4476,8 +4432,6 @@ export interface BudgetVsActualRow {
  * to keep the chart focused on what the user is actually tracking.
  */
 export async function getBudgetVsActual(userId: string, yearMonth: string): Promise<BudgetVsActualRow[]> {
-  const visible = await visibleAccountIdentity(userId);
-
   const monthStart = `${yearMonth}-01`;
   const monthEnd = endOfMonth(yearMonth);
 
@@ -4491,7 +4445,7 @@ export async function getBudgetVsActual(userId: string, yearMonth: string): Prom
     })
     .from(subCategories)
     .innerJoin(categories, eq(subCategories.mainCategoryId, categories.id))
-    .where(and(eq(subCategories.userId, userId), eq(categories.type, 'expense')));
+    .where(and(eq(subCategories.userId, userId), eq(categories.userId, userId), eq(categories.type, 'expense')));
   const subToMain = new Map<string, string>();
   for (const r of subRows) subToMain.set(r.subId, r.mainName);
 
@@ -4501,9 +4455,7 @@ export async function getBudgetVsActual(userId: string, yearMonth: string): Prom
   // Actual per main category for the month. The `category` column on a
   // transaction holds the MAIN category name (not the sub — see schema),
   // so we can group by it directly and skip the sub→main join.
-  const allocations = visible.ids.length === 0
-    ? []
-    : await loadEffectiveLedgerAllocations(userId, monthStart, monthEnd, visible);
+  const allocations = await loadEffectiveLedgerAllocations(userId, monthStart, monthEnd);
   const actualByCategory = new Map<string, number>();
   for (const row of allocations) {
     if (row.type !== 'expense') continue;
