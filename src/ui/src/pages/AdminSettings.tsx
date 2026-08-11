@@ -832,10 +832,19 @@ function UsersSection() {
   const [confirmDelete, setConfirmDelete] = useState<AdminUser | null>(null);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const [roleErr, setRoleErr] = useState<{ userId: string; message: string } | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [createErr, setCreateErr] = useState<string | null>(null);
+
+  const closeCreateModal = () => {
+    setCreateOpen(false);
+    setNewName('');
+    setNewEmail('');
+    setNewPassword('');
+    setCreateErr(null);
+  };
 
   const createUser = useMutation({
     mutationFn: () => api.post<AdminUser>('/api/admin/users', {
@@ -844,10 +853,7 @@ function UsersSection() {
       password: newPassword,
     }),
     onSuccess: () => {
-      setNewName('');
-      setNewEmail('');
-      setNewPassword('');
-      setCreateErr(null);
+      closeCreateModal();
       qc.invalidateQueries({ queryKey: ['admin', 'users'] });
     },
     onError: (error) => {
@@ -901,55 +907,17 @@ function UsersSection() {
       <SectionHeader
         icon={<Users className="h-4 w-4" />}
         title="Users"
+        action={
+          <button
+            type="button"
+            className="btn-primary flex shrink-0 items-center gap-1.5 px-3"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="h-4 w-4" /> Add user
+          </button>
+        }
       />
       <div className="card">
-        <form
-          className="mb-4 grid gap-2 border-b border-default pb-4 sm:grid-cols-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setCreateErr(null);
-            createUser.mutate();
-          }}
-        >
-          <input
-            value={newName}
-            onChange={(event) => setNewName(event.target.value)}
-            placeholder="Name"
-            maxLength={120}
-            required
-            className="rounded-lg border border-default bg-surface fg-primary px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-          />
-          <input
-            type="email"
-            value={newEmail}
-            onChange={(event) => setNewEmail(event.target.value)}
-            placeholder="Email"
-            required
-            className="rounded-lg border border-default bg-surface fg-primary px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-          />
-          <div className="flex gap-2">
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              placeholder="Temporary password"
-              minLength={12}
-              maxLength={256}
-              required
-              className="min-w-0 flex-1 rounded-lg border border-default bg-surface fg-primary px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={createUser.isPending}
-              className="btn-primary flex items-center gap-1 px-3 disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4" /> Add
-            </button>
-          </div>
-          {createErr && (
-            <p className="text-sm text-rose-600 dark:text-rose-400 sm:col-span-3">{createErr}</p>
-          )}
-        </form>
         {users.isLoading && <div className="fg-muted text-sm">Loading…</div>}
         {users.isError && (
           <div className="py-6 text-center" role="alert">
@@ -1031,6 +999,24 @@ function UsersSection() {
         </ul>
       </div>
 
+      {createOpen && (
+        <AddUserModal
+          name={newName}
+          email={newEmail}
+          password={newPassword}
+          busy={createUser.isPending}
+          err={createErr}
+          onNameChange={setNewName}
+          onEmailChange={setNewEmail}
+          onPasswordChange={setNewPassword}
+          onClose={closeCreateModal}
+          onSubmit={() => {
+            setCreateErr(null);
+            createUser.mutate();
+          }}
+        />
+      )}
+
       {confirmDelete && (
         <DeleteUserModal
           user={confirmDelete}
@@ -1044,6 +1030,118 @@ function UsersSection() {
         />
       )}
     </section>
+  );
+}
+
+function AddUserModal({
+  name,
+  email,
+  password,
+  busy,
+  err,
+  onNameChange,
+  onEmailChange,
+  onPasswordChange,
+  onClose,
+  onSubmit,
+}: {
+  name: string;
+  email: string;
+  password: string;
+  busy: boolean;
+  err: string | null;
+  onNameChange: (value: string) => void;
+  onEmailChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Dialog
+      aria-label="Add user"
+      onClose={onClose}
+      closeDisabled={busy}
+      contentClassName="card w-full max-w-md"
+    >
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold fg-primary">Add user</h2>
+          <p className="mt-1 text-sm fg-muted">Create a local account with a temporary password.</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          className="close-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg disabled:opacity-50"
+          aria-label="Close add user dialog"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <form
+        className="space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        <label className="block">
+          <span className="text-sm font-medium fg-secondary">Name</span>
+          <input
+            value={name}
+            onChange={(event) => onNameChange(event.target.value)}
+            maxLength={120}
+            required
+            autoFocus
+            autoComplete="name"
+            className={`mt-1 w-full ${PWD_INPUT_CLS}`}
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium fg-secondary">Email</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => onEmailChange(event.target.value)}
+            required
+            autoComplete="email"
+            className={`mt-1 w-full ${PWD_INPUT_CLS}`}
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium fg-secondary">
+            Temporary password <span className="text-xs fg-muted font-normal">(min 12 chars)</span>
+          </span>
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => onPasswordChange(event.target.value)}
+            minLength={12}
+            maxLength={256}
+            required
+            autoComplete="new-password"
+            className={`mt-1 w-full ${PWD_INPUT_CLS}`}
+          />
+        </label>
+
+        {err && <p className="text-sm text-rose-600 dark:text-rose-400" role="alert">{err}</p>}
+
+        <div className="flex justify-end gap-2 pt-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="rounded-lg px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-700"
+          >
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary" disabled={busy}>
+            {busy ? 'Adding…' : 'Add user'}
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
