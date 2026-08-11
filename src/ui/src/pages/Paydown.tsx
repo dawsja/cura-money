@@ -21,6 +21,7 @@ import { useNavigate } from 'react-router-dom';
 import { CartesianGrid, Line, LineChart, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { api } from '../lib/api';
 import { formatMoney, currentYearMonth, timeAgo } from '../lib/format';
+import { Dialog } from '../components/ui/dialog';
 import {
   ChartContainer,
   ChartTooltip,
@@ -267,9 +268,7 @@ export function Paydown() {
   const patchAccount = useMutation({
     mutationFn: (input: { id: string; patch: Partial<PaydownAccount> }) =>
       api.patch(`/api/paydown/account/${input.id}`, input.patch),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['paydown'] });
-    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['paydown'] }),
   });
 
   const currentYm = currentYearMonth();
@@ -418,7 +417,16 @@ export function Paydown() {
   const accList = accounts.data ?? [];
   const hasAnyDebt = accList.some((a) => a.balance > 0);
   const accountColor = (idx: number) => {
-    const palette = ['#f59e0b', '#0ea5e9', '#10b981', '#8b5cf6', '#ef4444', '#ec4899', '#14b8a6', '#f97316'];
+    const palette = [
+      'var(--chart-category-1)',
+      'var(--chart-category-2)',
+      'var(--chart-category-3)',
+      'var(--chart-category-4)',
+      'var(--chart-category-5)',
+      'var(--chart-category-6)',
+      'var(--chart-category-7)',
+      'var(--chart-category-8)',
+    ];
     return palette[idx % palette.length];
   };
 
@@ -685,7 +693,7 @@ export function Paydown() {
                       <div className="flex items-center gap-3">
                         <span
                           className="h-2.5 w-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: a.includeInPaydown ? accountColor(i) : '#cbd5e1' }}
+                          style={{ backgroundColor: a.includeInPaydown ? accountColor(i) : 'var(--chart-excluded)' }}
                           title={a.includeInPaydown ? 'Included' : 'Excluded'}
                         />
                         <div className="flex-1 min-w-0">
@@ -722,7 +730,9 @@ export function Paydown() {
                         </button>
                         <AccountEditModal
                           account={a}
-                          onSave={(patch) => patchAccount.mutate({ id: a.id, patch })}
+                          onSave={async (patch) => {
+                            await patchAccount.mutateAsync({ id: a.id, patch });
+                          }}
                         />
                       </div>
                     </li>
@@ -862,77 +872,123 @@ function PayoffChart({
   const chartWidth = Math.max(600, chartData.length * 5);
 
   return (
-    <div className="overflow-x-auto pb-2">
-      <div style={{ minWidth: chartWidth }}>
-        <ChartContainer config={chartConfig} className="h-[360px]">
-          <LineChart data={chartData} margin={{ top: 20, right: 30, left: 10, bottom: 10 }}>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey="month"
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              minTickGap={32}
-              interval="preserveStartEnd"
-              tickFormatter={xTickFormatter}
-            />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(v) => formatTick(Number(v))}
-              width={60}
-            />
-            <ChartTooltip
-              cursor={{ stroke: 'var(--chart-axis)', strokeWidth: 1, strokeDasharray: '2 3' }}
-              content={<ChartTooltipContent config={chartConfig} />}
-            />
-            {isSimulated && (
+    <>
+      <div className="overflow-x-auto pb-2" aria-hidden="true">
+        <div style={{ minWidth: chartWidth }}>
+          <ChartContainer config={chartConfig} className="h-[360px]" aria-hidden={true}>
+            <LineChart data={chartData} margin={{ top: 20, right: 30, left: 10, bottom: 10 }}>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="month"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                minTickGap={32}
+                interval="preserveStartEnd"
+                tickFormatter={xTickFormatter}
+              />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(v) => formatTick(Number(v))}
+                width={60}
+              />
+              <ChartTooltip
+                cursor={{ stroke: 'var(--chart-axis)', strokeWidth: 1, strokeDasharray: '2 3' }}
+                content={<ChartTooltipContent config={chartConfig} />}
+              />
+              {isSimulated && (
+                <Line
+                  type="natural"
+                  dataKey="baseline"
+                  stroke="var(--color-baseline)"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 4"
+                  dot={false}
+                />
+              )}
               <Line
                 type="natural"
-                dataKey="baseline"
-                stroke="var(--color-baseline)"
-                strokeWidth={1.5}
-                strokeDasharray="4 4"
+                dataKey="total"
+                stroke="var(--color-total)"
+                strokeWidth={2.5}
                 dot={false}
               />
-            )}
-            <Line
-              type="natural"
-              dataKey="total"
-              stroke="var(--color-total)"
-              strokeWidth={2.5}
-              dot={false}
-            />
-            {accounts.map((a, i) => (
-              <Line
-                key={a.id}
-                type="natural"
-                dataKey={a.id}
-                stroke={`var(--color-${a.id})`}
-                strokeWidth={1.5}
-                dot={false}
-                opacity={0.55}
-                connectNulls={false}
-              />
-            ))}
-            {payoffMarkers.map((m) => (
-              <ReferenceLine
-                key={m.accountId}
-                x={m.month}
-                stroke="var(--chart-grid)"
-                strokeDasharray="2 3"
-                label={{
-                  value: monthShort(m.month),
-                  position: 'top',
-                  fontSize: 9,
-                  fill: 'var(--chart-axis)',
-                }}
-              />
-            ))}
-          </LineChart>
-        </ChartContainer>
+              {accounts.map((a) => (
+                <Line
+                  key={a.id}
+                  type="natural"
+                  dataKey={a.id}
+                  stroke={`var(--color-${a.id})`}
+                  strokeWidth={1.5}
+                  dot={false}
+                  opacity={0.55}
+                  connectNulls={false}
+                />
+              ))}
+              {payoffMarkers.map((m) => (
+                <ReferenceLine
+                  key={m.accountId}
+                  x={m.month}
+                  stroke="var(--chart-grid)"
+                  strokeDasharray="2 3"
+                  label={{
+                    value: monthShort(m.month),
+                    position: 'top',
+                    fontSize: 9,
+                    fill: 'var(--chart-axis)',
+                  }}
+                />
+              ))}
+            </LineChart>
+          </ChartContainer>
+        </div>
       </div>
-    </div>
+      <details className="mt-3 border-t border-default pt-3">
+        <summary className="cursor-pointer text-xs font-medium fg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500">
+          View projection data
+        </summary>
+        <p className="mt-2 text-xs fg-muted">
+          {formatMoney(projection.startingTotal)} total debt
+          {projection.debtFreeMonth
+            ? `, projected debt-free ${monthLong(projection.debtFreeMonth)}.`
+            : ', with no payoff date in this projection.'}
+        </p>
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full min-w-max text-left text-xs">
+            <caption className="sr-only">Monthly total debt, account balances, and baseline comparison</caption>
+            <thead className="fg-muted">
+              <tr className="border-b border-default">
+                <th scope="col" className="py-2 pr-3 font-medium">Month</th>
+                <th scope="col" className="py-2 px-3 text-right font-medium">Total debt</th>
+                {accounts.map((account) => (
+                  <th key={account.id} scope="col" className="py-2 px-3 text-right font-medium">{account.name}</th>
+                ))}
+                {isSimulated && <th scope="col" className="py-2 pl-3 text-right font-medium">Baseline total</th>}
+              </tr>
+            </thead>
+            <tbody className="fg-secondary">
+              {chartData.map((point) => (
+                <tr key={String(point.month)} className="border-b border-default last:border-0">
+                  <th scope="row" className="py-2 pr-3 font-medium fg-primary">{monthLong(String(point.month))}</th>
+                  <td className="py-2 px-3 text-right tabular-nums">{formatMoney(Number(point.total))}</td>
+                  {accounts.map((account) => (
+                    <td key={account.id} className="py-2 px-3 text-right tabular-nums">
+                      {point[account.id] === null ? 'Paid off' : formatMoney(Number(point[account.id] ?? 0))}
+                    </td>
+                  ))}
+                  {isSimulated && (
+                    <td className="py-2 pl-3 text-right tabular-nums">
+                      {point.baseline === undefined ? 'Not available' : formatMoney(Number(point.baseline))}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </>
   );
 }
 
@@ -949,7 +1005,7 @@ function AccountEditModal({
   onSave,
 }: {
   account: PaydownAccount;
-  onSave: (patch: { interestRate: number; minPayment: number; plannedPayment: number }) => void;
+  onSave: (patch: { interestRate: number; minPayment: number; plannedPayment: number }) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   // Preserve up to 4 decimal places on the way in — the old toFixed(2)
@@ -957,6 +1013,8 @@ function AccountEditModal({
   const [apr, setApr] = useState(String(Number((account.interestRate * 100).toFixed(4))));
   const [min, setMin] = useState(String(account.minPayment));
   const [planned, setPlanned] = useState(String(account.plannedPayment));
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   // Credit / loan accounts require a non-zero minimum payment or the
   // paydown chart never produces a payoff date. Disable Save until the
   // user enters something > 0 and surface the reason inline.
@@ -965,10 +1023,21 @@ function AccountEditModal({
   const requiresMin = account.type === 'credit' || account.type === 'loan';
   const plannedBelowMin = plannedNum > 0 && plannedNum < minNum;
   const canSave = (!requiresMin || minNum > 0) && !plannedBelowMin;
+  const openEditor = () => {
+    setApr(String(Number((account.interestRate * 100).toFixed(4))));
+    setMin(String(account.minPayment));
+    setPlanned(String(account.plannedPayment));
+    setSaveError(null);
+    setOpen(true);
+  };
+  const closeEditor = () => {
+    if (!saving) setOpen(false);
+  };
   if (!open) {
     return (
       <button
-        onClick={() => setOpen(true)}
+        type="button"
+        onClick={openEditor}
         className="edit-icon-button rounded-lg p-1.5"
         title="Edit account details"
       >
@@ -978,21 +1047,34 @@ function AccountEditModal({
   }
   const INPUT_CLS = 'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setOpen(false)}>
-      <div className="card w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+    <Dialog
+      aria-label={`Edit ${account.name}`}
+      aria-busy={saving}
+      onClose={closeEditor}
+      closeDisabled={saving}
+      contentClassName="card w-full max-w-sm"
+    >
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold fg-primary">Edit {account.name}</h3>
-          <button onClick={() => setOpen(false)} className="close-button rounded-lg p-2" aria-label="Close account details">
+          <button type="button" onClick={closeEditor} disabled={saving} className="close-button rounded-lg p-2 disabled:opacity-50" aria-label="Close account details">
             <X className="h-4 w-4" />
           </button>
         </div>
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            if (!canSave) return;
+            if (!canSave || saving) return;
             const aprNum = (Number(apr) || 0) / 100;
-            onSave({ interestRate: aprNum, minPayment: minNum, plannedPayment: plannedNum });
-            setOpen(false);
+            setSaveError(null);
+            setSaving(true);
+            try {
+              await onSave({ interestRate: aprNum, minPayment: minNum, plannedPayment: plannedNum });
+              setOpen(false);
+            } catch (error) {
+              setSaveError(error instanceof Error && error.message ? error.message : 'Could not save account details. Please try again.');
+            } finally {
+              setSaving(false);
+            }
           }}
           className="space-y-3"
         >
@@ -1005,6 +1087,7 @@ function AccountEditModal({
               max="100"
               value={apr}
               onChange={(e) => setApr(e.target.value)}
+              disabled={saving}
               className={`mt-1 w-full ${INPUT_CLS} tabular-nums`}
             />
             <span className="text-[10px] fg-muted">Set to 0 for 0% APR (e.g. intro rate, paid-in-full card)</span>
@@ -1019,6 +1102,7 @@ function AccountEditModal({
                 min="0"
                 value={min}
                 onChange={(e) => setMin(e.target.value)}
+                disabled={saving}
                 aria-invalid={requiresMin && minNum <= 0}
                 className={`w-full ${INPUT_CLS} pl-7 pr-3 ${requiresMin && minNum <= 0 ? 'border-rose-400 dark:border-rose-500' : ''}`}
               />
@@ -1039,6 +1123,7 @@ function AccountEditModal({
                 min="0"
                 value={planned}
                 onChange={(e) => setPlanned(e.target.value)}
+                disabled={saving}
                 placeholder="0"
                 aria-invalid={plannedBelowMin}
                 className={`w-full ${INPUT_CLS} pl-7 pr-3 ${plannedBelowMin ? 'border-rose-400 dark:border-rose-500' : ''}`}
@@ -1050,16 +1135,18 @@ function AccountEditModal({
               <span className="text-[10px] fg-muted">Leave 0 to use the minimum. Only set if you plan to pay more than the minimum.</span>
             )}
           </label>
+          {saveError && (
+            <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{saveError}</p>
+          )}
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setOpen(false)} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+            <button type="button" onClick={closeEditor} disabled={saving} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50">
               Cancel
             </button>
-            <button type="submit" disabled={!canSave} className="btn-primary flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
-              <Check className="h-4 w-4" /> Save
+            <button type="submit" disabled={!canSave || saving} className="btn-primary flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
+              <Check className="h-4 w-4" /> {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Dialog>
   );
 }

@@ -3,7 +3,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -15,6 +14,7 @@ import { Check, CircleHelp, X } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Button } from './ui/button';
+import { Dialog } from './ui/dialog';
 import { useReviews } from './ReviewsProvider';
 
 const STEP_IDS = [
@@ -285,7 +285,7 @@ export function FinancialOnboardingProvider({ userId, children }: { userId: stri
   const activeDefinition = status === 'in_progress' ? STEPS[step] : null;
   useEffect(() => {
     const update = () => {
-      const overlay = document.querySelector('[class~="fixed"][class~="inset-0"][class~="z-50"]:not(.onboarding-modal)');
+      const overlay = document.querySelector('[data-dialog-overlay]:not(.onboarding-modal)');
       setProductOverlayOpen(overlay !== null);
     };
     update();
@@ -463,36 +463,18 @@ function OnboardingModal({
   complete?: boolean;
 }) {
   const primaryRef = useRef<HTMLButtonElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
-  const handleSecondary = useEffectEvent(onSecondary);
-  useEffect(() => {
-    primaryRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        handleSecondary();
-        return;
-      }
-      if (event.key !== 'Tab' || !dialogRef.current) return;
-      const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')];
-      if (focusable.length === 0) return;
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
 
   return (
-    <div className="onboarding-modal fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="presentation">
-      <section ref={dialogRef} className="card w-full max-w-lg shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="financial-onboarding-title" aria-describedby="financial-onboarding-description">
+    <Dialog
+      aria-labelledby="financial-onboarding-title"
+      aria-describedby="financial-onboarding-description"
+      onClose={onSecondary}
+      closeOnBackdrop={false}
+      closeDisabled={busy}
+      initialFocusRef={primaryRef}
+      overlayClassName="onboarding-modal dialog-overlay--onboarding"
+      contentClassName="card w-full max-w-lg shadow-2xl"
+    >
         <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
           {complete ? <Check className="h-6 w-6" /> : <CircleHelp className="h-6 w-6" />}
         </div>
@@ -503,8 +485,7 @@ function OnboardingModal({
           <Button variant="ghost" onClick={onSecondary} disabled={busy}>{secondaryLabel}</Button>
           <Button ref={primaryRef} onClick={onPrimary} disabled={busy}>{primaryLabel}</Button>
         </div>
-      </section>
-    </div>
+    </Dialog>
   );
 }
 

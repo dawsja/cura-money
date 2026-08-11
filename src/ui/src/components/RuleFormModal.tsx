@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Check, X } from 'lucide-react';
 import clsx from 'clsx';
+import { Dialog } from './ui/dialog';
 
 /**
  * Reusable form modal for creating or editing a categorization rule.
@@ -137,14 +138,12 @@ export function RuleFormModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={() => !submitting && onClose()}
+    <Dialog
+      aria-label={mode === 'create' ? 'Create rule' : 'Edit rule'}
+      onClose={onClose}
+      closeDisabled={submitting}
+      contentClassName="card w-full max-w-md"
     >
-      <div
-        className="card max-h-[90vh] w-full max-w-md overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold fg-primary">
             {mode === 'create' ? 'Create rule' : 'Edit rule'}
@@ -152,7 +151,8 @@ export function RuleFormModal({
           <button
             type="button"
             onClick={() => !submitting && onClose()}
-            className="close-button rounded-lg p-2"
+            disabled={submitting}
+            className="close-button rounded-lg p-2 disabled:opacity-50"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -328,7 +328,8 @@ export function RuleFormModal({
             <button
               type="button"
               onClick={() => !submitting && onClose()}
-              className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
+              disabled={submitting}
+              className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50"
             >
               Cancel
             </button>
@@ -344,7 +345,6 @@ export function RuleFormModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Dialog>
   );
 }

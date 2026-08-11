@@ -6,11 +6,12 @@
  *                            the bell (does NOT bulk-skip reviews)
  *
  * Upcoming charges are derived from recurring detection (lastDate +
- * frequency). Windows: monthly ≤7d, quarterly ≤14d, yearly ≤30d.
+ * frequency). Lead windows are monthly 7d, quarterly 14d, and yearly 30d;
+ * recently overdue charges remain visible for 7d.
  */
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { pendingReviewCount, getSetting, setSetting } from '@/db/queries';
+import { pendingReviewNotificationState, getSetting, setSetting } from '@/db/queries';
 import { userId } from '@/lib/tenant';
 import { safe } from '@/lib/errors';
 import { loadActiveRecurringCharges, recurringKey } from '@/services/recurring';
@@ -18,15 +19,23 @@ import { loadActiveRecurringCharges, recurringKey } from '@/services/recurring';
 export const notificationRoutes = new Hono();
 
 const DISMISSED_KEY = 'dismissed_notifications';
+const OVERDUE_NOTIFY_WINDOW_DAYS = 7;
 
 const DismissedStateSchema = z.object({
+  reviewsClearedThroughIdentity: z.string().optional().catch(undefined),
+  // A legacy count is consumed once and upgraded to an identity watermark;
+  // counts alone must not suppress a later generation of reviews.
   reviewsClearedAtCount: z.number().optional().catch(undefined),
   upcoming: z.array(z.string()).catch([]),
 });
 
 type DismissedState = z.infer<typeof DismissedStateSchema>;
 
-function upcomingDismissKey(merchant: string, amount: number, nextDate: string): string {
+function upcomingDismissKey(merchant: string, amount: number, account: string, nextDate: string): string {
+  return `${recurringKey(merchant, amount, account)}|${nextDate}`;
+}
+
+function legacyUpcomingDismissKey(merchant: string, amount: number, nextDate: string): string {
   return `${recurringKey(merchant, amount)}|${nextDate}`;
 }
 
@@ -42,22 +51,25 @@ async function getDismissed(uid: string): Promise<DismissedState> {
 }
 
 function estimateNextCharge(lastDate: string, frequency: 'monthly' | 'quarterly' | 'yearly'): string {
-  const d = new Date(`${lastDate}T12:00:00`);
-  if (frequency === 'monthly') d.setMonth(d.getMonth() + 1);
-  else if (frequency === 'quarterly') d.setMonth(d.getMonth() + 3);
-  else d.setFullYear(d.getFullYear() + 1);
+  const [year, month, day] = lastDate.split('-').map(Number) as [number, number, number];
+  const months = frequency === 'monthly' ? 1 : frequency === 'quarterly' ? 3 : 12;
+  const targetMonth = month - 1 + months;
+  const targetYear = year + Math.floor(targetMonth / 12);
+  const normalizedMonth = targetMonth % 12;
+  const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+  const d = new Date(Date.UTC(targetYear, normalizedMonth, Math.min(day, lastDay), 12));
   return d.toISOString().slice(0, 10);
 }
 
 function daysUntil(nextDate: string, now = new Date()): number {
-  const next = new Date(`${nextDate}T12:00:00`);
-  const today = new Date(now);
-  today.setHours(12, 0, 0, 0);
-  return (next.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
+  const [year, month, day] = nextDate.split('-').map(Number) as [number, number, number];
+  const next = Date.UTC(year, month - 1, day);
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return (next - today) / 86_400_000;
 }
 
 function isInNotifyWindow(days: number, frequency: 'monthly' | 'quarterly' | 'yearly'): boolean {
-  // Include overdue / due today (days <= 0) so missed charges still surface.
+  if (days < -OVERDUE_NOTIFY_WINDOW_DAYS) return false;
   if (days > 30 && frequency === 'yearly') return false;
   if (frequency === 'monthly') return days <= 7;
   if (frequency === 'quarterly') return days <= 14;
@@ -73,24 +85,45 @@ export interface UpcomingNotification {
   daysUntil: number;
 }
 
+async function migrateLegacyReviewDismissal(
+  uid: string,
+  dismissed: DismissedState,
+  reviewState: { count: number; latestIdentity?: string },
+): Promise<DismissedState> {
+  if (typeof dismissed.reviewsClearedAtCount !== 'number') return dismissed;
+  const preserveLegacyClear = reviewState.count > 0
+    && reviewState.count <= dismissed.reviewsClearedAtCount
+    && !!reviewState.latestIdentity;
+  const upgraded: DismissedState = {
+    reviewsClearedThroughIdentity: dismissed.reviewsClearedThroughIdentity
+      ?? (preserveLegacyClear ? reviewState.latestIdentity : undefined),
+    upcoming: dismissed.upcoming,
+  };
+  await setSetting(uid, DISMISSED_KEY, JSON.stringify(upgraded));
+  return upgraded;
+}
+
 notificationRoutes.get(
   '/',
   safe(async (c) => {
     const uid = userId(c);
-    const [reviewCount, dismissed, merged] = await Promise.all([
-      pendingReviewCount(uid),
+    const [reviewState, dismissed, merged] = await Promise.all([
+      pendingReviewNotificationState(uid),
       getDismissed(uid),
       loadActiveRecurringCharges(uid),
     ]);
 
-    const dismissedUpcoming = new Set(dismissed.upcoming);
+    const upgradedDismissed = await migrateLegacyReviewDismissal(uid, dismissed, reviewState);
+    const dismissedUpcoming = new Set(upgradedDismissed.upcoming);
     const upcoming: UpcomingNotification[] = [];
     for (const ch of merged) {
       const nextDate = estimateNextCharge(ch.lastDate, ch.frequency);
       const days = daysUntil(nextDate);
       if (!isInNotifyWindow(days, ch.frequency)) continue;
-      const key = upcomingDismissKey(ch.merchant, ch.amount, nextDate);
-      if (dismissedUpcoming.has(key)) continue;
+      const key = upcomingDismissKey(ch.merchant, ch.amount, ch.accountId ?? ch.account, nextDate);
+      if (dismissedUpcoming.has(key) || dismissedUpcoming.has(legacyUpcomingDismissKey(ch.merchant, ch.amount, nextDate))) {
+        continue;
+      }
       upcoming.push({
         key,
         merchant: ch.merchant,
@@ -102,19 +135,19 @@ notificationRoutes.get(
     }
     upcoming.sort((a, b) => a.daysUntil - b.daysUntil || b.amount - a.amount);
 
-    const reviewsDismissed =
-      typeof dismissed.reviewsClearedAtCount === 'number' &&
-      reviewCount > 0 &&
-      reviewCount <= dismissed.reviewsClearedAtCount;
+    const reviewsDismissed = reviewState.count > 0
+      && !!reviewState.latestIdentity
+      && !!upgradedDismissed.reviewsClearedThroughIdentity
+      && reviewState.latestIdentity <= upgradedDismissed.reviewsClearedThroughIdentity;
 
     return c.json({
       reviews: {
-        count: reviewCount,
-        visible: reviewCount > 0 && !reviewsDismissed,
+        count: reviewState.count,
+        visible: reviewState.count > 0 && !reviewsDismissed,
       },
       upcoming,
       badgeCount:
-        (reviewCount > 0 && !reviewsDismissed ? 1 : 0) + upcoming.length,
+        (reviewState.count > 0 && !reviewsDismissed ? 1 : 0) + upcoming.length,
     });
   }),
 );
@@ -123,8 +156,8 @@ notificationRoutes.post(
   '/clear',
   safe(async (c) => {
     const uid = userId(c);
-    const [reviewCount, dismissed, merged] = await Promise.all([
-      pendingReviewCount(uid),
+    const [reviewState, dismissed, merged] = await Promise.all([
+      pendingReviewNotificationState(uid),
       getDismissed(uid),
       loadActiveRecurringCharges(uid),
     ]);
@@ -134,11 +167,11 @@ notificationRoutes.post(
       const nextDate = estimateNextCharge(ch.lastDate, ch.frequency);
       const days = daysUntil(nextDate);
       if (!isInNotifyWindow(days, ch.frequency)) continue;
-      upcomingKeys.add(upcomingDismissKey(ch.merchant, ch.amount, nextDate));
+      upcomingKeys.add(upcomingDismissKey(ch.merchant, ch.amount, ch.accountId ?? ch.account, nextDate));
     }
 
     const next: DismissedState = {
-      reviewsClearedAtCount: reviewCount,
+      reviewsClearedThroughIdentity: reviewState.latestIdentity,
       upcoming: [...upcomingKeys],
     };
     await setSetting(uid, DISMISSED_KEY, JSON.stringify(next));

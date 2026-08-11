@@ -1,13 +1,15 @@
 import { useState, useMemo, useCallback, useEffect, useId, useRef } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { formatDate, formatMoney, currentYearMonth } from '../lib/format';
-import { BarChart3, ChevronDown, ChevronRight, ReceiptText, X } from 'lucide-react';
+import { ArrowRight, BarChart3, Check, ChevronDown, ChevronRight, ExternalLink, Layers3, LoaderCircle, ReceiptText, Search, Undo2, X } from 'lucide-react';
 import { MonthPicker } from '../components/MonthPicker';
 import { Progress } from '../components/ui/progress';
 import { BudgetSummaryBox } from '../components/BudgetSummaryBox';
 import { PaydownBudgetSection, type PaydownBudgetRow, type PaydownBudgetMeta, type PlannedCellStatus } from '../components/PaydownBudgetSection';
 import clsx from 'clsx';
+import { Dialog } from '../components/ui/dialog';
 
 interface MainCategory {
   id: string;
@@ -36,6 +38,15 @@ interface BudgetDrilldownRow {
   merchant: string;
   account: string;
   amount: number;
+  hasSplits: boolean;
+  parentAmount: number;
+}
+interface BulkAssignmentInput {
+  ids: string[];
+  expected: BudgetDrilldown;
+  type: 'income' | 'expense';
+  category: string;
+  subCategory: string;
 }
 interface Account {
   id: string;
@@ -463,6 +474,7 @@ export function Budget() {
           selection={drilldown}
           rows={drilldownRows}
           yearMonth={ym}
+          categories={cats.data ?? []}
           onClose={closeDrilldown}
         />
       )}
@@ -803,71 +815,90 @@ function BudgetTransactionsModal({
   selection,
   rows,
   yearMonth,
+  categories,
   onClose,
 }: {
   selection: BudgetDrilldown;
   rows: BudgetDrilldownRow[];
   yearMonth: string;
+  categories: MainCategory[];
   onClose: () => void;
 }) {
+  const qc = useQueryClient();
   const titleId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [moveIds, setMoveIds] = useState<string[] | null>(null);
+  const [lastMove, setLastMove] = useState<BulkAssignmentInput | null>(null);
+  const [movePending, setMovePending] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const [undoPending, setUndoPending] = useState(false);
+  const [undoError, setUndoError] = useState<string | null>(null);
+  const undoRef = useRef<HTMLButtonElement>(null);
   const [year, month] = yearMonth.split('-').map(Number);
   const monthLabel = new Date(year ?? 0, (month ?? 1) - 1, 1).toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
   });
   const total = rows.reduce((sum, row) => sum + row.amount, 0);
+  const eligibleIds = useMemo(() => rows.filter((row) => !row.hasSplits).map((row) => row.id), [rows]);
+  const allEligibleSelected = eligibleIds.length > 0 && eligibleIds.every((id) => selectedIds.has(id));
+  const visibleSelectedCount = eligibleIds.filter((id) => selectedIds.has(id)).length;
+  const financialQueryKeys = ['transactions', 'reviews', 'accounts', 'dashboard', 'budget', 'reports', 'paydown', 'recurring', 'notifications', 'goals', 'simplefin'];
 
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
-      );
-      if (!focusable?.length) {
-        event.preventDefault();
-        dialogRef.current?.focus();
-        return;
-      }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      previouslyFocused?.focus();
-    };
-  }, [onClose]);
+  const invalidateFinancialQueries = async () => {
+    await Promise.all(financialQueryKeys.map((key) => qc.invalidateQueries({ queryKey: [key] })));
+  };
+  const move = useMutation({
+    mutationFn: (input: BulkAssignmentInput) =>
+      api.patch<{ updated: number }>('/api/transactions/bulk-assignment', input),
+  });
+  const undo = useMutation({
+    mutationFn: (input: BulkAssignmentInput) =>
+      api.patch<{ updated: number }>('/api/transactions/bulk-assignment', input),
+  });
+  const isPending = movePending || undoPending;
+  const transactionHref = (merchant?: string) => {
+    const lastDay = new Date(year ?? 0, month ?? 1, 0).getDate();
+    const params = new URLSearchParams({
+      types: selection.type,
+      category: selection.category,
+      subCategory: selection.subCategory,
+      from: `${yearMonth}-01`,
+      to: `${yearMonth}-${String(lastDay).padStart(2, '0')}`,
+      reviewed: 'true',
+    });
+    if (merchant) params.set('merchant', merchant);
+    return `/transactions?${params.toString()}`;
+  };
+  const openMove = (ids: string[]) => {
+    if (isPending) return;
+    move.reset();
+    setMoveError(null);
+    setMoveIds(ids);
+  };
+  const toggleSelected = (id: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const closeViewer = () => {
+    if (!isPending) onClose();
+  };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    <Dialog
+      aria-labelledby={titleId}
+      aria-busy={isPending}
+      onClose={closeViewer}
+      closeDisabled={isPending}
+      initialFocusRef={closeRef}
+      overlayClassName="dialog-overlay--dim"
+      contentClassName="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-xl border border-default bg-surface shadow-2xl"
     >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl border border-default bg-surface shadow-2xl"
-      >
         <div className="flex items-start justify-between gap-3 border-b border-default p-4 sm:p-5">
           <div className="min-w-0">
             <h2 id={titleId} className="truncate text-lg font-semibold fg-primary">{selection.subCategory}</h2>
@@ -876,7 +907,8 @@ function BudgetTransactionsModal({
           <button
             ref={closeRef}
             type="button"
-            onClick={onClose}
+            onClick={closeViewer}
+            disabled={isPending}
             className="close-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
             aria-label="Close transaction details"
           >
@@ -884,10 +916,78 @@ function BudgetTransactionsModal({
           </button>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-b border-default bg-canvas-subtle px-4 py-3 text-sm sm:px-5">
-          <span className="fg-secondary">{rows.length} transaction{rows.length === 1 ? '' : 's'}</span>
-          <span className="font-semibold tabular-nums fg-primary">{formatMoney(total)} {selection.type === 'income' ? 'earned' : 'spent'}</span>
+        <div className="border-b border-default bg-canvas-subtle px-4 py-3 sm:px-5">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="fg-secondary">{rows.length} transaction{rows.length === 1 ? '' : 's'}</span>
+            <span className="font-semibold tabular-nums fg-primary">{formatMoney(total)} {selection.type === 'income' ? 'earned' : 'spent'}</span>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {eligibleIds.length > 0 && (
+              <button
+                type="button"
+                disabled={isPending}
+                className="flex h-11 items-center rounded-lg border border-default bg-surface px-3 text-sm font-medium fg-secondary hover:fg-primary"
+                onClick={() => {
+                  setSelectMode((current) => !current);
+                  setSelectedIds(new Set());
+                }}
+              >
+                {selectMode ? 'Exit select' : 'Select transactions'}
+              </button>
+            )}
+            {selectMode && (
+              <button
+                type="button"
+                disabled={isPending}
+                className="flex h-11 items-center rounded-lg px-3 text-sm font-medium fg-secondary hover:fg-primary"
+                onClick={() => setSelectedIds(allEligibleSelected ? new Set() : new Set(eligibleIds))}
+              >
+                {allEligibleSelected ? 'Clear eligible' : 'Select all eligible'}
+              </button>
+            )}
+            <Link
+              to={transactionHref()}
+              className="ml-auto inline-flex h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-amber-700 hover:underline dark:text-amber-300"
+            >
+              View all in Transactions <ExternalLink className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          </div>
+          {selectMode && <p className="mt-2 text-xs fg-muted" aria-live="polite">{visibleSelectedCount} selected · Split transactions are not eligible.</p>}
         </div>
+
+        {(lastMove || undoError) && (
+          <div className="flex items-center justify-between gap-3 border-b border-default px-4 py-3 text-sm sm:px-5" role={undoError ? 'alert' : 'status'}>
+            <span className={undoError ? 'text-rose-600 dark:text-rose-400' : 'fg-secondary'}>
+              {undoError ?? `${lastMove?.ids.length ?? 0} transaction${lastMove?.ids.length === 1 ? '' : 's'} moved.`}
+            </span>
+            {lastMove && (
+              <button
+                ref={undoRef}
+                type="button"
+                disabled={isPending}
+                className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-amber-700 hover:underline disabled:cursor-wait disabled:opacity-60 dark:text-amber-300"
+                onClick={async () => {
+                  undo.reset();
+                  setUndoError(null);
+                  setUndoPending(true);
+                  try {
+                    const result = await undo.mutateAsync(lastMove);
+                    if (result.updated !== lastMove.ids.length) throw new Error('Not all transactions could be restored. Refresh and try again.');
+                    await invalidateFinancialQueries();
+                    setLastMove(null);
+                  } catch (error) {
+                    setUndoError((error as Error).message);
+                  } finally {
+                    setUndoPending(false);
+                  }
+                }}
+              >
+                {undoPending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Undo2 className="h-4 w-4" aria-hidden="true" />}
+                {undoPending ? 'Undoing…' : 'Undo'}
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="min-h-0 overflow-y-auto">
           {rows.length === 0 ? (
@@ -898,27 +998,269 @@ function BudgetTransactionsModal({
             </div>
           ) : (
             <ul className="divide-y divide-slate-100 dark:divide-slate-700">
-              {rows.map((row) => (
-                <li key={row.id} className="flex items-start justify-between gap-4 px-4 py-3 sm:px-5">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium fg-primary">{row.merchant || 'Unknown merchant'}</p>
-                    <p className="mt-0.5 text-xs fg-muted">{formatDate(row.date)} · {row.account || 'Unknown account'}</p>
-                  </div>
-                  <span className={clsx(
-                    'shrink-0 text-sm font-semibold tabular-nums',
-                    selection.type === 'income'
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'text-rose-600 dark:text-rose-400',
-                  )}>
-                    {selection.type === 'income' ? '+' : '−'}{formatMoney(row.amount)}
-                  </span>
-                </li>
-              ))}
+              {rows.map((row) => {
+                const checked = selectedIds.has(row.id);
+                return (
+                  <li key={row.id} className="flex items-start gap-3 px-4 py-3 sm:px-5">
+                    {selectMode && !row.hasSplits && (
+                      <label className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-lg">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={isPending}
+                          onChange={() => toggleSelected(row.id)}
+                          className="h-5 w-5 accent-amber-600 disabled:cursor-wait disabled:opacity-50"
+                          aria-label={`Select ${row.merchant || 'unknown merchant'} transaction from ${formatDate(row.date)}`}
+                        />
+                      </label>
+                    )}
+                    {selectMode && row.hasSplits && <span className="w-11 shrink-0" aria-hidden="true" />}
+                    <div className="min-w-0 flex-1">
+                      <div className={clsx(
+                        'grid items-center gap-2',
+                        !row.hasSplits && !selectMode
+                          ? 'grid-cols-[minmax(0,1fr)_2.75rem_auto]'
+                          : 'grid-cols-[minmax(0,1fr)_auto]',
+                      )}>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium fg-primary">{row.merchant || 'Unknown merchant'}</p>
+                          <p className="mt-0.5 text-xs fg-muted">{formatDate(row.date)} · {row.account || 'Unknown account'}</p>
+                        </div>
+                        {!row.hasSplits && !selectMode && (
+                          <button
+                            type="button"
+                            disabled={isPending}
+                            className="inline-flex h-11 w-11 items-center justify-center rounded-full fg-secondary hover:bg-slate-100 hover:fg-primary disabled:cursor-wait disabled:opacity-50 dark:hover:bg-slate-700"
+                            onClick={() => openMove([row.id])}
+                            aria-label={`Move ${row.merchant || 'unknown merchant'} transaction to another category`}
+                            title="Move to another category"
+                          >
+                            <ArrowRight className="h-5 w-5" aria-hidden="true" />
+                          </button>
+                        )}
+                        <span className={clsx(
+                          'shrink-0 text-right text-sm font-semibold tabular-nums',
+                          selection.type === 'income'
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400',
+                        )}>
+                          {selection.type === 'income' ? '+' : '−'}{formatMoney(row.amount)}
+                        </span>
+                      </div>
+                      {row.hasSplits && (
+                        <div className="mt-2 flex min-h-11 flex-wrap items-center gap-2">
+                          <>
+                            <span className="inline-flex items-center gap-1 rounded-full border border-default bg-canvas-subtle px-2 py-1 text-xs font-semibold fg-secondary">
+                              <Layers3 className="h-3.5 w-3.5" aria-hidden="true" /> Split
+                            </span>
+                            <span className="text-xs fg-muted">{formatMoney(row.amount)} allocated of {formatMoney(row.parentAmount)}</span>
+                            <Link
+                              to={transactionHref(row.merchant || undefined)}
+                              className="ml-auto inline-flex h-11 items-center gap-1 rounded-lg px-2 text-sm font-medium text-amber-700 hover:underline dark:text-amber-300"
+                            >
+                              Open split <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                            </Link>
+                          </>
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
+
+        {selectMode && visibleSelectedCount > 0 && (
+          <div className="sticky bottom-0 border-t border-default bg-surface p-3 sm:p-4">
+            <button
+              type="button"
+              disabled={isPending}
+              className="btn-primary flex h-11 w-full items-center justify-center gap-2 px-4 text-sm sm:ml-auto sm:w-auto"
+              onClick={() => openMove(eligibleIds.filter((id) => selectedIds.has(id)))}
+            >
+              Move {visibleSelectedCount} transaction{visibleSelectedCount === 1 ? '' : 's'} <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
+        {moveIds && (
+          <MoveTransactionsDialog
+            count={moveIds.length}
+            type={selection.type}
+            categories={categories}
+            currentCategory={selection.category}
+            currentSubCategory={selection.subCategory}
+            isPending={movePending}
+            error={moveError}
+            onClose={() => { if (!movePending) setMoveIds(null); }}
+            onSave={async (destination) => {
+              const ids = moveIds;
+              setMoveError(null);
+              setMovePending(true);
+              try {
+                const destinationAssignment = { type: selection.type, ...destination };
+                const result = await move.mutateAsync({ ids, expected: selection, ...destinationAssignment });
+                if (result.updated !== ids.length) throw new Error('Not all transactions could be moved. Refresh and try again.');
+                setLastMove({ ids, expected: destinationAssignment, ...selection });
+                setUndoError(null);
+                setSelectedIds(new Set());
+                setSelectMode(false);
+                setMoveIds(null);
+                await invalidateFinancialQueries();
+                window.requestAnimationFrame(() => undoRef.current?.focus());
+              } catch (error) {
+                setMoveError((error as Error).message);
+              } finally {
+                setMovePending(false);
+              }
+            }}
+          />
+        )}
+    </Dialog>
+  );
+}
+
+function MoveTransactionsDialog({
+  count,
+  type,
+  categories,
+  currentCategory,
+  currentSubCategory,
+  isPending,
+  error,
+  onClose,
+  onSave,
+}: {
+  count: number;
+  type: 'income' | 'expense';
+  categories: MainCategory[];
+  currentCategory: string;
+  currentSubCategory: string;
+  isPending: boolean;
+  error: string | null;
+  onClose: () => void;
+  onSave: (destination: { category: string; subCategory: string }) => Promise<void>;
+}) {
+  const titleId = useId();
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [search, setSearch] = useState('');
+  const [destination, setDestination] = useState<{ category: string; subCategory: string } | null>(null);
+  const visibleCategories = categories
+    .filter((category) => category.type === type || category.name === 'Pay down goals')
+    .map((category) => ({
+      ...category,
+      subCategories: category.subCategories.filter((subCategory) =>
+        category.name !== currentCategory || subCategory.name !== currentSubCategory),
+    }))
+    .filter((category) => category.subCategories.length > 0);
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  const filteredCategories = visibleCategories
+    .map((category) => ({
+      ...category,
+      subCategories: category.subCategories.filter((subCategory) =>
+        !normalizedSearch
+        || category.name.toLocaleLowerCase().includes(normalizedSearch)
+        || subCategory.name.toLocaleLowerCase().includes(normalizedSearch)),
+    }))
+    .filter((category) => category.subCategories.length > 0);
+
+  return (
+    <Dialog
+      aria-labelledby={titleId}
+      aria-busy={isPending}
+      onClose={onClose}
+      closeDisabled={isPending}
+      initialFocusRef={searchRef}
+      overlayClassName="dialog-overlay--dim"
+      contentClassName="flex w-full max-w-lg flex-col overflow-hidden rounded-xl border border-default bg-surface shadow-2xl"
+    >
+      <div className="border-b border-default p-4 sm:p-5">
+        <h3 id={titleId} className="text-lg font-semibold fg-primary">Move {count} transaction{count === 1 ? '' : 's'}</h3>
+        <p className="mt-1 text-sm fg-muted">Choose the new budget category. Split transactions cannot be moved here.</p>
       </div>
-    </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-4 sm:p-5">
+        <label htmlFor={`${titleId}-category-search`} className="text-sm font-medium fg-secondary">Find a destination</label>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 fg-muted" aria-hidden="true" />
+          <input
+            ref={searchRef}
+            id={`${titleId}-category-search`}
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search categories"
+            autoComplete="off"
+            disabled={isPending}
+            className="h-11 w-full rounded-lg border border-default bg-surface py-2 pl-10 pr-3 text-sm fg-primary placeholder-slate-400 focus:border-amber-500 focus:outline-none disabled:cursor-wait disabled:opacity-60"
+          />
+        </div>
+        <div
+          role="radiogroup"
+          aria-label="Destination category"
+          className="max-h-[min(50vh,22rem)] min-h-32 overflow-y-auto overscroll-contain rounded-lg border border-default bg-canvas-subtle p-2"
+        >
+          {filteredCategories.length === 0 ? (
+            <p className="px-3 py-8 text-center text-sm fg-muted">No categories match your search.</p>
+          ) : filteredCategories.map((category) => (
+            <section key={category.id} className="mb-3 last:mb-0" aria-labelledby={`${titleId}-${category.id}`}>
+              <h4 id={`${titleId}-${category.id}`} className="px-2 py-1 text-xs font-semibold uppercase tracking-wide fg-muted">
+                {category.name}
+              </h4>
+              <div className="space-y-1">
+                {category.subCategories.map((subCategory) => {
+                  const selected = destination?.category === category.name && destination.subCategory === subCategory.name;
+                  return (
+                    <button
+                      key={subCategory.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      disabled={isPending}
+                      onClick={() => setDestination({ category: category.name, subCategory: subCategory.name })}
+                      className={clsx(
+                        'flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors disabled:cursor-wait disabled:opacity-60',
+                        selected
+                          ? 'bg-amber-100 font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                          : 'fg-primary hover:bg-slate-100 dark:hover:bg-slate-700',
+                      )}
+                    >
+                      <span>{subCategory.name}</span>
+                      {selected && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+        {destination && (
+          <p className="text-xs fg-secondary" aria-live="polite">
+            Moving to <span className="font-semibold fg-primary">{destination.category} › {destination.subCategory}</span>
+          </p>
+        )}
+        {error && <p className="text-sm text-rose-600 dark:text-rose-400" role="alert">{error}</p>}
+      </div>
+      <div className="flex flex-col-reverse gap-2 border-t border-default p-4 sm:flex-row sm:justify-end">
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={onClose}
+          className="flex h-11 items-center justify-center rounded-lg border border-default px-4 text-sm font-medium fg-secondary disabled:cursor-wait disabled:opacity-60"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={!destination || isPending}
+          onClick={() => { if (destination) void onSave(destination); }}
+          className="btn-primary flex h-11 items-center justify-center gap-2 px-4 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isPending && <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />}
+          {isPending ? 'Moving…' : 'Save move'}
+        </button>
+      </div>
+    </Dialog>
   );
 }
 

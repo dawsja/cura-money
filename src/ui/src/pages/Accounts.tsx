@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { formatMoney } from '../lib/format';
 import { formatAccountBalance, isLiability } from '../lib/accounting';
 import { Plus, Trash2, RefreshCw, ExternalLink, Wallet, Landmark, CreditCard, Banknote, PiggyBank, TrendingUp, AlertTriangle, CircleHelp, EyeOff, Eye, Pencil, X } from 'lucide-react';
 import clsx from 'clsx';
+import { Dialog } from '../components/ui/dialog';
 
 type EditableAccountType = 'checking' | 'savings' | 'credit' | 'investment' | 'loan';
 type AccountType = EditableAccountType | 'uncategorized';
@@ -513,17 +514,8 @@ function EditAccountModal({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isSaving) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isSaving, onClose]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -538,14 +530,13 @@ function EditAccountModal({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <Dialog
       aria-labelledby="edit-account-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={() => { if (!isSaving) onClose(); }}
+      onClose={onClose}
+      closeDisabled={isSaving}
+      initialFocusRef={inputRef}
+      contentClassName="card w-full max-w-sm"
     >
-      <div className="card w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <h3 id="edit-account-title" className="text-lg font-semibold fg-primary">
             Edit account
@@ -647,7 +638,6 @@ function EditAccountModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Dialog>
   );
 }

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Plus, Trash2, Edit3, RefreshCw, ShieldCheck, X, AlertTriangle, Copy, Check, KeyRound, Lock, Users, Eye, EyeOff, KeySquare, ShieldAlert, ShieldOff, Shield, Container } from 'lucide-react';
 import { api } from '../lib/api';
 import { fetchMe, changePassword } from '../lib/auth';
+import { Dialog } from '../components/ui/dialog';
 
 interface OidcProvider {
   id: string;
@@ -557,8 +558,13 @@ function LocalAuthConfirmModal({
   const canConfirm = intent === 'enable' || (typed === 'CONFIRM' && !busy);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="card w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+    <Dialog
+      role="alertdialog"
+      aria-label={intent === 'disable' ? 'Disable local sign-in?' : 'Re-enable local sign-in?'}
+      onClose={onCancel}
+      closeDisabled={busy}
+      contentClassName="card w-full max-w-md"
+    >
         <div className="flex items-center gap-2 mb-3">
           <AlertTriangle className={`h-5 w-5 shrink-0 ${intent === 'disable' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`} />
           <h3 className="text-lg font-semibold fg-primary">
@@ -605,7 +611,8 @@ function LocalAuthConfirmModal({
           <button
             type="button"
             onClick={onCancel}
-            className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
+            disabled={busy}
+            className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50"
           >
             Cancel
           </button>
@@ -626,8 +633,7 @@ function LocalAuthConfirmModal({
                 : 'Re-enable local sign-in'}
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -1005,8 +1011,13 @@ function DeleteUserModal({
   const [typed, setTyped] = useState('');
   const canConfirm = typed === user.email && !busy;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="card w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+    <Dialog
+      role="alertdialog"
+      aria-label="Delete user?"
+      onClose={onCancel}
+      closeDisabled={busy}
+      contentClassName="card w-full max-w-md"
+    >
         <div className="flex items-center gap-2 mb-3">
           <AlertTriangle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0" />
           <h3 className="text-lg font-semibold fg-primary">Delete user?</h3>
@@ -1041,7 +1052,7 @@ function DeleteUserModal({
         </label>
         {err && <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">{err}</p>}
         <div className="flex justify-end gap-2 pt-4">
-          <button type="button" onClick={onCancel} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+          <button type="button" onClick={onCancel} disabled={busy} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50">
             Cancel
           </button>
           <button
@@ -1053,8 +1064,7 @@ function DeleteUserModal({
             {busy ? 'Deleting…' : 'Delete user + data'}
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -1183,13 +1193,18 @@ function ProviderForm({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
+    <Dialog
+      aria-label={isEdit ? `Edit ${initial?.providerId}` : 'Add OIDC provider'}
+      onClose={onClose}
+      closeOnBackdrop={false}
+      closeDisabled={busy || testing}
+      contentClassName="card w-full max-w-lg"
+    >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold fg-primary">
             {isEdit ? `Edit ${initial?.providerId}` : 'Add OIDC provider'}
           </h2>
-          <button onClick={onClose} className="close-button rounded p-1" aria-label="Close provider dialog">
+          <button type="button" onClick={onClose} disabled={busy || testing} className="close-button rounded p-1 disabled:opacity-50" aria-label="Close provider dialog">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -1274,7 +1289,7 @@ function ProviderForm({
           {err && <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p>}
 
           <div className="flex justify-end gap-2 pt-3">
-            <button type="button" onClick={onClose} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+            <button type="button" onClick={onClose} disabled={busy || testing} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50">
               Cancel
             </button>
             <button type="submit" className="btn-primary" disabled={busy}>
@@ -1282,8 +1297,7 @@ function ProviderForm({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Dialog>
   );
 }
 

@@ -8,7 +8,7 @@
  *   3. Re-exports `ChartTooltip` (Recharts' Tooltip) and ships a
  *      `ChartTooltipContent` that knows how to render a labeled list
  *      of series values, skipping zero-value rows so paid-off
- *      accounts don't clutter the hover.
+ *      accounts don't clutter the hover while preserving negatives.
  *
  * Usage mirrors the shadcn example:
  *
@@ -69,11 +69,13 @@ export function ChartContainer({
   config,
   className,
   style,
+  'aria-hidden': ariaHidden,
   children,
 }: {
   config: ChartConfig;
   className?: string;
   style?: React.CSSProperties;
+  'aria-hidden'?: boolean;
   children: React.ReactNode;
 }) {
   const id = useId().replace(/:/g, '');
@@ -81,6 +83,7 @@ export function ChartContainer({
   return (
     <div
       data-chart={chartId}
+      aria-hidden={ariaHidden}
       style={style}
       className={`card flex justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-[var(--chart-axis)] [&_.recharts-cartesian-grid_line]:stroke-[var(--chart-grid)] [&_.recharts-tooltip-cursor]:stroke-[var(--chart-axis)] ${className ?? ''}`}
     >
@@ -159,10 +162,9 @@ export function ChartTooltipContent({
   hideLabel = false,
 }: ChartTooltipContentProps) {
   if (!active || !payload || payload.length === 0) return null;
-  const items = payload.filter((p) => {
-    const v = typeof p.value === 'number' ? p.value : 0;
-    return v > 0;
-  });
+  const items = payload.filter((p) =>
+    typeof p.value === 'number' && Number.isFinite(p.value) && p.value !== 0,
+  );
   if (items.length === 0) return null;
   const labelText = label !== undefined ? (labelFormatter ? labelFormatter(label) : String(label)) : undefined;
   return (

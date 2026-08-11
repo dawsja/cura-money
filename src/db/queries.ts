@@ -121,7 +121,15 @@ export interface BudgetActivityRow {
   subCategory: string;
   type: 'income' | 'expense';
   actual: number;
-  transactions: Array<{ id: string; date: string; merchant: string; account: string; amount: number }>;
+  transactions: Array<{
+    id: string;
+    date: string;
+    merchant: string;
+    account: string;
+    amount: number;
+    hasSplits: boolean;
+    parentAmount: number;
+  }>;
 }
 
 // ---- First-time user seeding ---------------------------------------------
@@ -1248,7 +1256,7 @@ export async function getAllTransactions(userId: string): Promise<Transaction[]>
         // when no alias is set or the account no longer exists.
         account:
           transactionAccountMeta(r, meta, byName)?.alias || transactionAccountMeta(r, meta, byName)?.name || r.account,
-        accountId: r.accountId ?? undefined,
+        accountId: transactionAccountMeta(r, meta, byName)?.id ?? r.accountId ?? undefined,
         amount: centsToDollars(r.amountCents),
         type: r.type,
         notes: r.notes ?? undefined,
@@ -1310,18 +1318,38 @@ export async function getBudgetActivity(userId: string, yearMonth: string): Prom
   const { meta, byName, excludedIds, excludedNames } = await loadAccountLedgerMeta(userId);
   const [year, month] = yearMonth.split('-').map(Number);
   const toDate = new Date(Date.UTC(year!, month!, 0)).toISOString().slice(0, 10);
-  const parentRows = await db.select().from(transactions).where(and(
-    eq(transactions.userId, userId),
-    eq(transactions.needsReview, false),
-    gte(transactions.date, `${yearMonth}-01`),
-    lte(transactions.date, toDate),
-    ledgerVisibilityCondition(excludedIds, excludedNames),
-  )).orderBy(desc(transactions.date), asc(transactions.merchant), desc(transactions.id));
-  const splits = await loadTransactionSplits(userId, parentRows.map((row) => row.id));
+  const { parentRows, splits } = await db.transaction(async (tx) => {
+    const parentRows = await tx.select().from(transactions).where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.needsReview, false),
+      gte(transactions.date, `${yearMonth}-01`),
+      lte(transactions.date, toDate),
+      ledgerVisibilityCondition(excludedIds, excludedNames),
+    )).orderBy(desc(transactions.date), asc(transactions.merchant), desc(transactions.id));
+    const splitRows = parentRows.length > 0
+      ? await tx
+        .select()
+        .from(transactionSplits)
+        .where(and(
+          eq(transactionSplits.userId, userId),
+          inArray(transactionSplits.transactionId, parentRows.map((row) => row.id)),
+        ))
+        .orderBy(asc(transactionSplits.sortOrder))
+      : [];
+    const splits = new Map<string, typeof splitRows>();
+    for (const split of splitRows) {
+      const rows = splits.get(split.transactionId) ?? [];
+      rows.push(split);
+      splits.set(split.transactionId, rows);
+    }
+    return { parentRows, splits };
+  }, { isolationLevel: 'repeatable read', accessMode: 'read only' });
   const grouped = new Map<string, { row: BudgetActivityRow; cents: number }>();
   for (const parent of parentRows) {
-    const allocations = splits.get(parent.id)?.length
-      ? splits.get(parent.id)!
+    const parentSplits = splits.get(parent.id);
+    const hasSplits = Boolean(parentSplits?.length);
+    const allocations = hasSplits
+      ? parentSplits!
       : [{ amountCents: parent.amountCents, category: parent.category, subCategory: parent.subCategory ?? parent.category, type: parent.type }];
     const transactionAmounts = new Map<string, { category: string; subCategory: string; type: 'income' | 'expense'; cents: number }>();
     for (const allocation of allocations) {
@@ -1345,6 +1373,8 @@ export async function getBudgetActivity(userId: string, yearMonth: string): Prom
         merchant: parent.merchant,
         account: transactionAccountMeta(parent, meta, byName)?.alias || transactionAccountMeta(parent, meta, byName)?.name || parent.account,
         amount: centsToDollars(allocation.cents),
+        hasSplits,
+        parentAmount: centsToDollars(parent.amountCents),
       });
     }
   }
@@ -1634,7 +1664,7 @@ export async function listTransactions(
     subCategoryId: r.subCategoryId ?? undefined,
     account:
       transactionAccountMeta(r, meta, byName)?.alias || transactionAccountMeta(r, meta, byName)?.name || r.account,
-    accountId: r.accountId ?? undefined,
+    accountId: transactionAccountMeta(r, meta, byName)?.id ?? r.accountId ?? undefined,
     amount: centsToDollars(r.amountCents),
     type: r.type,
     notes: r.notes ?? undefined,
@@ -1808,6 +1838,101 @@ export async function editTransaction(
 
   // Rule changes are always explicit. A transaction correction must never
   // mutate a shared rule as a side effect.
+}
+
+export interface BulkTransactionAssignmentInput {
+  ids: string[];
+  expected: {
+    type: TransactionType;
+    category: string;
+    subCategory: string;
+  };
+  type: TransactionType;
+  category: string;
+  subCategory: string;
+}
+
+/** Atomically reassign unsplit, tenant-owned transactions without changing source classification or rules. */
+export async function bulkAssignTransactions(
+  userId: string,
+  input: BulkTransactionAssignmentInput,
+): Promise<number> {
+  return db.transaction(async (tx) => {
+    const assignments = await tx
+      .select({
+        categoryId: categories.id,
+        subCategoryId: subCategories.id,
+        category: categories.name,
+        subCategory: subCategories.name,
+        type: categories.type,
+      })
+      .from(subCategories)
+      .innerJoin(
+        categories,
+        and(eq(categories.id, subCategories.mainCategoryId), eq(categories.userId, subCategories.userId)),
+      )
+      .where(and(
+        eq(categories.userId, userId),
+        eq(categories.name, input.category),
+        eq(subCategories.userId, userId),
+        eq(subCategories.name, input.subCategory),
+      ))
+      .for('update')
+      .limit(2);
+    const assignment = assignments.length === 1 ? assignments[0]! : null;
+
+    const ownedRows = await tx
+      .select({
+        id: transactions.id,
+        type: transactions.type,
+        category: transactions.category,
+        subCategory: transactions.subCategory,
+      })
+      .from(transactions)
+      .where(and(eq(transactions.userId, userId), inArray(transactions.id, input.ids)))
+      .for('update');
+    if (ownedRows.length !== input.ids.length) {
+      throw Object.assign(new Error('One or more transactions not found'), { status: 404 });
+    }
+    if (ownedRows.some((row) =>
+      row.type !== input.expected.type
+      || row.category !== input.expected.category
+      || row.subCategory !== input.expected.subCategory
+    )) {
+      throw Object.assign(new Error('One or more transaction assignments changed'), { status: 409 });
+    }
+
+    const splitRows = await tx
+      .select({ transactionId: transactionSplits.transactionId })
+      .from(transactionSplits)
+      .where(and(
+        eq(transactionSplits.userId, userId),
+        inArray(transactionSplits.transactionId, input.ids),
+      ))
+      .limit(1);
+    if (splitRows.length > 0) {
+      throw Object.assign(new Error('Transactions with splits cannot be reassigned'), { status: 409 });
+    }
+    if (!assignment || (assignment.type !== input.type && input.category !== 'Pay down goals')) {
+      throw Object.assign(new Error('transaction must use a valid category, subCategory, and matching type'), {
+        status: 400,
+      });
+    }
+
+    const updated = await tx
+      .update(transactions)
+      .set({
+        type: input.type,
+        category: assignment.category,
+        subCategory: assignment.subCategory,
+        categoryId: assignment.categoryId,
+        subCategoryId: assignment.subCategoryId,
+        needsReview: false,
+      })
+      .where(and(eq(transactions.userId, userId), inArray(transactions.id, input.ids)))
+      .returning({ id: transactions.id });
+    return updated.length;
+  });
 }
 
 export async function deleteTransaction(userId: string, id: string): Promise<void> {
@@ -2344,6 +2469,37 @@ export async function pendingReviewCount(userId: string): Promise<number> {
   return countRows[0]?.count ?? 0;
 }
 
+export interface PendingReviewNotificationState {
+  count: number;
+  latestIdentity?: string;
+}
+
+/**
+ * Count pending reviews and identify the most recently created pending row.
+ * Import time, rather than posting date, ensures a newly arriving backdated
+ * transaction makes a previously cleared notification visible again.
+ */
+export async function pendingReviewNotificationState(userId: string): Promise<PendingReviewNotificationState> {
+  const { excludedIds, excludedNames } = await loadAccountLedgerMeta(userId);
+  const conds = [eq(transactions.userId, userId), eq(transactions.needsReview, true)];
+  const visible = ledgerVisibilityCondition(excludedIds, excludedNames);
+  if (visible) conds.push(visible);
+  const rows = await db
+    .select({
+      id: transactions.id,
+      createdAt: transactions.createdAt,
+      count: sql<number>`COUNT(*) OVER()::int`,
+    })
+    .from(transactions)
+    .where(and(...conds))
+    .orderBy(desc(transactions.createdAt), desc(transactions.id))
+    .limit(1);
+  const latest = rows[0];
+  return latest
+    ? { count: latest.count, latestIdentity: `${latest.createdAt.toISOString()}|${latest.id}` }
+    : { count: 0 };
+}
+
 /**
  * List of the user's transactions awaiting review. Same row shape as
  * `getAllTransactions` (alias-aware account display). Ordered newest
@@ -2381,7 +2537,7 @@ export async function listReviewQueue(userId: string, opts: { limit?: number } =
     subCategoryId: r.subCategoryId ?? undefined,
     account:
       transactionAccountMeta(r, meta, byName)?.alias || transactionAccountMeta(r, meta, byName)?.name || r.account,
-    accountId: r.accountId ?? undefined,
+    accountId: transactionAccountMeta(r, meta, byName)?.id ?? r.accountId ?? undefined,
     amount: centsToDollars(r.amountCents),
     type: r.type,
     notes: r.notes ?? undefined,
@@ -2398,7 +2554,7 @@ export async function listReviewQueue(userId: string, opts: { limit?: number } =
  * Atomic SQL UPDATE with `user_id` predicate so a malicious caller
  * can't mark someone else's transaction reviewed. Returns the
  * refreshed row in the same shape as `getAllTransactions`, or null
- * if the row didn't exist / didn't belong to the user.
+ * if the row didn't exist, didn't belong to the user, or was already reviewed.
  */
 export async function markTransactionReviewed(
   userId: string,
@@ -2412,7 +2568,11 @@ export async function markTransactionReviewed(
   const [existing] = await db
     .select()
     .from(transactions)
-    .where(and(eq(transactions.userId, userId), eq(transactions.id, id)))
+    .where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.id, id),
+      eq(transactions.needsReview, true),
+    ))
     .limit(1);
   if (!existing) return null;
 
@@ -2442,7 +2602,7 @@ export async function markTransactionReviewed(
       ),
     )
     .limit(1);
-  await db
+  const updated = await db
     .update(transactions)
     .set({
       needsReview: false,
@@ -2452,7 +2612,13 @@ export async function markTransactionReviewed(
       subCategoryId: changesAssignment ? assignment!.subCategoryId : existing.subCategoryId,
       type: patch.type ?? existing.type,
     })
-    .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
+    .where(and(
+      eq(transactions.userId, userId),
+      eq(transactions.id, id),
+      eq(transactions.needsReview, true),
+    ))
+    .returning({ id: transactions.id });
+  if (updated.length === 0) return null;
   return {
     id: existing.id,
     date: existing.date,
@@ -4392,6 +4558,89 @@ export interface RecurringCharge {
   lastDate: string;
   category: string;
   account: string;
+  accountId?: string;
+}
+
+export interface RecurringTransactionMetadata {
+  merchant: string;
+  amount: number;
+  account: string;
+  accountId?: string;
+  lastDate: string;
+  category: string;
+}
+
+interface RecurringTransactionIdentity {
+  merchant: string;
+  amount: number;
+  account?: string;
+  accountId?: string;
+  type?: TransactionType;
+}
+
+/** Resolve the latest matching occurrence and its stable account identity. */
+export async function resolveRecurringTransactionMetadata(
+  userId: string,
+  identity: RecurringTransactionIdentity,
+): Promise<RecurringTransactionMetadata | null> {
+  const { meta, byName } = await loadAccountLedgerMeta(userId);
+  const conditions = [
+    eq(transactions.userId, userId),
+    sql`lower(${transactions.merchant}) = lower(${identity.merchant})`,
+    eq(transactions.amountCents, dollarsToCents(identity.amount)),
+  ];
+  if (identity.type) conditions.push(eq(transactions.type, identity.type));
+
+  const rows = await db
+    .select()
+    .from(transactions)
+    .where(and(...conditions))
+    .orderBy(desc(transactions.date), desc(transactions.createdAt), desc(transactions.id));
+
+  const accountLabel = identity.account?.toLowerCase();
+  for (const row of rows) {
+    const accountMeta = transactionAccountMeta(row, meta, byName);
+    const stableAccountId = accountMeta?.id ?? row.accountId ?? undefined;
+    if (identity.accountId && stableAccountId !== identity.accountId) continue;
+    if (!identity.accountId && accountLabel) {
+      const labels = [row.account, accountMeta?.name, accountMeta?.alias]
+        .filter((label): label is string => !!label)
+        .map((label) => label.toLowerCase());
+      if (!labels.includes(accountLabel)) continue;
+    }
+    return {
+      merchant: row.merchant,
+      amount: centsToDollars(row.amountCents),
+      account: accountMeta?.alias || accountMeta?.name || row.account,
+      accountId: stableAccountId,
+      lastDate: row.date,
+      category: row.category,
+    };
+  }
+  return null;
+}
+
+/** Resolve a transaction-based mark without trusting UI-supplied metadata. */
+export async function getRecurringTransactionMetadata(
+  userId: string,
+  transactionId: string,
+): Promise<RecurringTransactionMetadata | null> {
+  const [source] = await db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.id, transactionId)))
+    .limit(1);
+  if (!source) return null;
+
+  const { meta, byName } = await loadAccountLedgerMeta(userId);
+  const accountMeta = transactionAccountMeta(source, meta, byName);
+  return resolveRecurringTransactionMetadata(userId, {
+    merchant: source.merchant,
+    amount: centsToDollars(source.amountCents),
+    account: accountMeta?.alias || accountMeta?.name || source.account,
+    accountId: accountMeta?.id ?? source.accountId ?? undefined,
+    type: source.type,
+  });
 }
 
 const CADENCE_PERIODS: {
@@ -4452,13 +4701,16 @@ export async function getRecurringCharges(userId: string): Promise<RecurringChar
       dates: string[];
       category: string;
       account: string;
+      accountId?: string;
     }
   >();
 
   for (const r of rows) {
     const accountMeta = transactionAccountMeta(r, meta, byName);
     if (isLedgerExcluded(accountMeta)) continue;
-    const key = `${r.merchant.toLowerCase()}|${r.amountCents}`;
+    const stableAccountId = accountMeta?.id ?? r.accountId ?? undefined;
+    const accountIdentity = stableAccountId ?? r.account.toLowerCase();
+    const key = `${r.merchant.toLowerCase()}|${r.amountCents}|${accountIdentity}`;
     const existing = groups.get(key);
     if (existing) {
       existing.dates.push(r.date);
@@ -4469,6 +4721,7 @@ export async function getRecurringCharges(userId: string): Promise<RecurringChar
         dates: [r.date],
         category: r.category,
         account: accountMeta?.alias || accountMeta?.name || r.account,
+        accountId: stableAccountId,
       });
     }
   }
@@ -4520,6 +4773,7 @@ export async function getRecurringCharges(userId: string): Promise<RecurringChar
       lastDate: last,
       category: g.category,
       account: g.account,
+      accountId: g.accountId,
     });
   }
 

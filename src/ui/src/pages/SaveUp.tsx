@@ -18,6 +18,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } from 'motion/react';
 import { api } from '../lib/api';
 import { formatMoney } from '../lib/format';
+import { Dialog } from '../components/ui/dialog';
 import {
   PiggyBank,
   Plus,
@@ -521,14 +522,19 @@ function GoalModal({
   const sharedWith = goals.filter((other) => other.id !== goal?.id && other.accountId === accountId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="card max-h-[calc(100vh-2rem)] w-full max-w-sm overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <Dialog
+      aria-label={isEdit ? 'Edit goal' : 'New goal'}
+      onClose={onClose}
+      closeDisabled={save.isPending || del.isPending}
+      contentClassName="card w-full max-w-sm"
+    >
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold fg-primary">
             {isEdit ? 'Edit goal' : 'New goal'}
           </h3>
           <button
             onClick={onClose}
+            disabled={save.isPending || del.isPending}
             className="close-button rounded-lg p-2"
             aria-label="Close"
           >
@@ -621,7 +627,7 @@ function GoalModal({
           )}
 
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+            <button type="button" onClick={onClose} disabled={save.isPending || del.isPending} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50">
               Cancel
             </button>
             <button type="submit" disabled={!canSave || save.isPending} className="btn-primary flex items-center gap-1">
@@ -653,6 +659,7 @@ function GoalModal({
                   <button
                     type="button"
                     onClick={() => setConfirmingDelete(false)}
+                    disabled={del.isPending}
                     className="flex-1 px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
                   >
                     Keep
@@ -675,7 +682,6 @@ function GoalModal({
             )}
           </div>
         )}
-      </div>
-    </div>
+    </Dialog>
   );
 }

@@ -185,6 +185,22 @@
   --chart-total: #25292e;
   --chart-baseline: #116329;
   --chart-orange: #bc4c00;
+  --chart-income: #116329;
+  --chart-expense: #b4232b;
+  --chart-net: #765000;
+  --chart-comparison: #53606b;
+  --chart-merchant: #8250df;
+  --chart-net-worth-positive: #765000;
+  --chart-net-worth-negative: #b4232b;
+  --chart-category-1: #765000;
+  --chart-category-2: #116329;
+  --chart-category-3: #b4232b;
+  --chart-category-4: #0550ae;
+  --chart-category-5: #8250df;
+  --chart-category-6: #953800;
+  --chart-category-7: #0a6b6b;
+  --chart-category-8: #53606b;
+  --chart-excluded: #657783;
 
   /* Semantic surfaces / text / borders */
   --fg-primary: #20262c;
@@ -196,7 +212,54 @@
   --bg-page: #d9e0e5;
   --border-default: #b8c3cb;
   --border-strong: #96a5b0;
+  --border-control: #657783;
+  --focus-ring: #116329;
   --coffee-accent: #8b5e34;
+}
+
+/* Portal dialogs sit outside #root so the application can be inert while a
+ * modal remains interactive. Insets account for notches and home indicators. */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left));
+  background: rgb(0 0 0 / 0.4);
+}
+
+.dialog-overlay--centered {
+  align-items: center;
+  justify-content: center;
+}
+
+.dialog-overlay--bottom-sheet {
+  align-items: flex-end;
+  justify-content: center;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: 0;
+  padding-left: env(safe-area-inset-left);
+}
+
+.dialog-content {
+  max-height: calc(100dvh - max(1rem, env(safe-area-inset-top)) - max(1rem, env(safe-area-inset-bottom)) - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dialog-overlay--bottom-sheet > .dialog-content {
+  max-height: calc(100dvh - max(1rem, env(safe-area-inset-top)));
+}
+
+.dialog-overlay--dim {
+  background: rgb(0 0 0 / 0.6);
+}
+
+.dialog-overlay--onboarding {
+  background: rgb(0 0 0 / 0.7);
 }
 
 /* Dark palette preserves the original GitHub Dark-inspired visual state. */
@@ -260,16 +323,34 @@
   --chart-total: #c9d1d9;
   --chart-baseline: #22c55e;
   --chart-orange: #ffa657;
+  --chart-income: #56d364;
+  --chart-expense: #ff6e64;
+  --chart-net: #d29922;
+  --chart-comparison: #8b949e;
+  --chart-merchant: #d2a8ff;
+  --chart-net-worth-positive: #d29922;
+  --chart-net-worth-negative: #ff6e64;
+  --chart-category-1: #d29922;
+  --chart-category-2: #56d364;
+  --chart-category-3: #ff6e64;
+  --chart-category-4: #58a6ff;
+  --chart-category-5: #d2a8ff;
+  --chart-category-6: #ffa657;
+  --chart-category-7: #39c5cf;
+  --chart-category-8: #afb8c1;
+  --chart-excluded: #68737f;
 
   --fg-primary: #c9d1d9;
   --fg-secondary: #8b949e;
-  --fg-tertiary: #6e7681;
-  --fg-muted: #484f58;
+  --fg-tertiary: #afb8c1;
+  --fg-muted: #8b949e;
   --bg-surface: #21262d;
   --bg-canvas-subtle: #161b22;
   --bg-page: #0d1117;
   --border-default: #30363d;
   --border-strong: #484f58;
+  --border-control: #68737f;
+  --focus-ring: #4ade80;
   --coffee-accent: #c58b5a;
 }
 
@@ -423,6 +504,30 @@ input[type='number'] {
 .bg-page { background-color: var(--bg-page); }
 .bg-canvas-subtle { background-color: var(--bg-canvas-subtle); }
 .border-default { border-color: var(--border-default); }
+.border-control { border-color: var(--border-control); }
+
+:where(button, a, [role='button']).border-default {
+  border-color: var(--border-control);
+}
+input:not([type='checkbox']):not([type='radio']):not([type='range']),
+select,
+textarea {
+  border-color: var(--border-control);
+}
+:where(
+  button,
+  a,
+  summary,
+  [role='button'],
+  [tabindex]:not([tabindex='-1']),
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea,
+  .focus-ring
+):not([tabindex='-1']):not([class*='focus-visible:outline-none']):not([class*='focus-visible:ring-']):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
 
 .close-button {
   color: var(--fg-secondary);
@@ -435,7 +540,7 @@ input[type='number'] {
 .close-button:focus-visible {
   color: var(--fg-primary);
   background-color: var(--bg-canvas-subtle);
-  outline: 2px solid var(--mp-amber-500);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -456,7 +561,7 @@ input[type='number'] {
 .dark .edit-icon-button:hover { color: var(--mp-amber-300); }
 .save-icon-button:focus-visible,
 .edit-icon-button:focus-visible {
-  outline: 2px solid var(--mp-amber-500);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -483,22 +588,6 @@ input[type='number'] {
     max-height: calc(100dvh - var(--app-header-height) - var(--app-tab-height) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 1.5rem);
     overflow-y: auto;
     border-radius: 1rem;
-  }
-
-  [class~='fixed'][class~='inset-0'][class~='z-50']:not(.app-toast) {
-    align-items: flex-end;
-    padding: 0;
-    padding-top: env(safe-area-inset-top, 0px);
-  }
-
-  [class~='fixed'][class~='inset-0'][class~='z-50']:not(.app-toast) > .card {
-    width: 100%;
-    max-width: none;
-    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 0.75rem);
-    overflow-y: auto;
-    border-bottom: 0;
-    border-radius: 1.5rem 1.5rem 0 0;
-    padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
   }
 
   input:not([type='checkbox']):not([type='radio']):not([type='range']),

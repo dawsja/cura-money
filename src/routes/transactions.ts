@@ -40,6 +40,7 @@ import {
   deleteTransaction,
   replaceTransactionSplits,
   categoryAssignmentExists,
+  bulkAssignTransactions,
 } from '@/db/queries';
 import { userId, routeParam } from '@/lib/tenant';
 import { badRequest, safe } from '@/lib/errors';
@@ -113,6 +114,20 @@ const ReplaceSplitsSchema = z.object({
     subCategory: z.string().min(1).max(120),
     type: TxType,
   })).max(100),
+});
+const BulkAssignmentSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(100).refine(
+    (ids) => new Set(ids).size === ids.length,
+    'ids must not contain duplicates',
+  ),
+  expected: z.object({
+    type: TxType,
+    category: z.string().min(1).max(120),
+    subCategory: z.string().min(1).max(120),
+  }),
+  type: TxType,
+  category: z.string().min(1).max(120),
+  subCategory: z.string().min(1).max(120),
 });
 
 /**
@@ -306,6 +321,16 @@ transactionRoutes.post(
     }
     const tx = await addTransaction(userId(c), parsed.data);
     return c.json(tx, 201);
+  }),
+);
+
+transactionRoutes.patch(
+  '/bulk-assignment',
+  safe(async (c) => {
+    const parsed = BulkAssignmentSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
+    const updated = await bulkAssignTransactions(userId(c), parsed.data);
+    return c.json({ updated });
   }),
 );
 

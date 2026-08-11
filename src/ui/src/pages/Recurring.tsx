@@ -20,6 +20,7 @@ interface RecurringCharge {
   lastDate: string;
   category: string;
   account: string;
+  accountId?: string;
 }
 
 const FREQUENCY_LABEL: Record<string, string> = {
@@ -48,8 +49,8 @@ function annualCost(c: RecurringCharge): number {
   return c.amount;
 }
 
-function recurringKey(merchant: string, amount: number): string {
-  return `${merchant.toLowerCase()}|${Math.round(amount * 100) / 100}`;
+function recurringKey(merchant: string, amount: number, account: string): string {
+  return `${merchant.toLowerCase()}|${Math.round(amount * 100) / 100}|${account.toLowerCase()}`;
 }
 
 export function Recurring() {
@@ -60,16 +61,16 @@ export function Recurring() {
   });
 
   const dismiss = useMutation({
-    mutationFn: (charge: { merchant: string; amount: number }) =>
+    mutationFn: (charge: { merchant: string; amount: number; account: string; accountId?: string }) =>
       api.post('/api/recurring/dismiss', charge),
     onMutate: async (charge) => {
       await qc.cancelQueries({ queryKey: ['recurring'] });
       const prev = qc.getQueryData<RecurringCharge[]>(['recurring']);
       if (prev) {
-        const key = recurringKey(charge.merchant, charge.amount);
+        const key = recurringKey(charge.merchant, charge.amount, charge.accountId ?? charge.account);
         qc.setQueryData<RecurringCharge[]>(
           ['recurring'],
-          prev.filter((c) => recurringKey(c.merchant, c.amount) !== key),
+          prev.filter((c) => recurringKey(c.merchant, c.amount, c.accountId ?? c.account) !== key),
         );
       }
       return { prev };
@@ -149,7 +150,7 @@ export function Recurring() {
         <div className="grid grid-cols-1 gap-3">
           {data?.map((charge) => (
             <div
-              key={`${charge.merchant}-${charge.amount}`}
+              key={recurringKey(charge.merchant, charge.amount, charge.accountId ?? charge.account)}
               className="rounded-xl bg-surface border border-default p-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:border-amber-500/40 transition-colors"
             >
               {/* Left: merchant + meta */}
@@ -197,7 +198,12 @@ export function Recurring() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => dismiss.mutate({ merchant: charge.merchant, amount: charge.amount })}
+                  onClick={() => dismiss.mutate({
+                    merchant: charge.merchant,
+                    amount: charge.amount,
+                    account: charge.account,
+                    accountId: charge.accountId,
+                  })}
                   disabled={dismiss.isPending}
                   className="flex h-11 w-11 items-center justify-center rounded-lg fg-tertiary hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors disabled:opacity-50"
                   aria-label={`Dismiss ${charge.merchant}`}

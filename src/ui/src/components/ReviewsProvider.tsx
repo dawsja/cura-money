@@ -5,7 +5,7 @@
  *   - One tiny polling query for the count (`['reviews', 'count']`).
  *     Drives the bell badge with low bandwidth — refreshes every 30s.
  *   - The full queue (`['reviews', 'queue']`) only fetches when the
- *     modal is open. Re-opens reuse the cached data.
+ *     modal is open. Every open refreshes it before establishing progress.
  *   - Decisions drop rows optimistically, roll back on failure, and only
  *     celebrate after the server confirms the final queued item.
  *   - The modal is mounted as a child so it renders inside the
@@ -54,6 +54,8 @@ const ReviewsContext = createContext<ReviewsContextValue | null>(null);
 export function ReviewsProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
+  const [isFreshLoading, setIsFreshLoading] = useState(false);
+  const [modalCompleted, setModalCompleted] = useState(0);
   // Bumped every time we want to celebrate (so the toast effect fires
   // even when the previous one is still on screen).
   const [celebratedKey, setCelebratedKey] = useState<number | null>(null);
@@ -67,23 +69,32 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   });
-  const count = countQ.data ?? 0;
-
   // Full queue — only fetched when the modal is open.
   const queueQ = useQuery({
     queryKey: ['reviews', 'queue'],
     queryFn: () => fetchReviewQueue(100),
     enabled: isOpen,
     staleTime: 60_000,
+    refetchInterval: isOpen ? 30_000 : false,
   });
 
+  // While open, the queue response is the canonical source because it is
+  // fetched at the decision endpoint's scope and includes the true total,
+  // even when only the first 100 rows are loaded.
+  const count = isOpen && queueQ.data ? queueQ.data.count : countQ.data ?? 0;
+
+  useEffect(() => {
+    if (!isOpen || queueQ.isFetching || !queueQ.data) return;
+    qc.setQueryData(['reviews', 'count'], queueQ.data.count);
+    setIsFreshLoading(false);
+  }, [isOpen, qc, queueQ.data, queueQ.isFetching]);
+
   const openModal = useCallback(() => {
-    if (count === 0 && !isOpen) {
-      // Still allow opening an empty queue so the user can confirm
-      // "nothing to review" — keeps the UX predictable.
-    }
+    setModalCompleted(0);
+    setIsFreshLoading(true);
+    qc.removeQueries({ queryKey: ['reviews', 'queue'], exact: true });
     setIsOpen(true);
-  }, [count, isOpen]);
+  }, [qc]);
 
   const closeModal = useCallback(() => setIsOpen(false), []);
   const refetchCount = countQ.refetch;
@@ -127,16 +138,19 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
       if (typeof ctx?.prevCount === 'number') {
         qc.setQueryData(['reviews', 'count'], ctx.prevCount);
       }
+      qc.invalidateQueries({ queryKey: ['reviews', 'queue'], exact: true });
+      qc.invalidateQueries({ queryKey: ['reviews', 'count'], exact: true });
     },
-    onSuccess: (_data, _vars, context) => {
+    onSuccess: async () => {
       qc.invalidateQueries({ queryKey: ['reviews', 'count'] });
-      qc.invalidateQueries({ queryKey: ['reviews', 'queue'] });
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
       qc.invalidateQueries({ queryKey: ['budget'] });
       qc.invalidateQueries({ queryKey: ['reports'] });
       qc.invalidateQueries({ queryKey: ['notifications'] });
-      if (context?.prevCount === 1) setCelebratedKey(Date.now());
+      setModalCompleted((current) => current + 1);
+      const refreshed = await queueQ.refetch();
+      if (!refreshed.isError && refreshed.data?.count === 0) setCelebratedKey(Date.now());
     },
   });
 
@@ -153,22 +167,28 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
       await qc.cancelQueries({ queryKey: ['reviews'] });
       const prevQueue = qc.getQueryData<{ count: number; rows: ReviewTransaction[] }>(['reviews', 'queue']);
       const prevCount = qc.getQueryData<number>(['reviews', 'count']);
+      const completedDelta = prevQueue?.count ?? prevCount ?? 0;
       qc.setQueryData(['reviews', 'queue'], { count: 0, rows: [] });
       qc.setQueryData(['reviews', 'count'], 0);
-      return { prevQueue, prevCount };
+      setModalCompleted((current) => current + completedDelta);
+      return { prevQueue, prevCount, completedDelta };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prevQueue) qc.setQueryData(['reviews', 'queue'], ctx.prevQueue);
       if (typeof ctx?.prevCount === 'number') qc.setQueryData(['reviews', 'count'], ctx.prevCount);
+      if (ctx?.completedDelta) {
+        setModalCompleted((current) => Math.max(0, current - ctx.completedDelta));
+      }
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['reviews'] });
+    onSuccess: async () => {
+      qc.invalidateQueries({ queryKey: ['reviews', 'count'] });
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
       qc.invalidateQueries({ queryKey: ['budget'] });
       qc.invalidateQueries({ queryKey: ['reports'] });
       qc.invalidateQueries({ queryKey: ['notifications'] });
-      setCelebratedKey(Date.now());
+      const refreshed = await queueQ.refetch();
+      if (!refreshed.isError && refreshed.data?.count === 0) setCelebratedKey(Date.now());
     },
   });
 
@@ -193,8 +213,12 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
       {children}
       {isOpen && (
         <ReviewCarouselModal
-          queue={queueQ.data?.rows ?? []}
-          isLoading={queueQ.isLoading && !queueQ.data}
+          queue={isFreshLoading ? [] : queueQ.data?.rows ?? []}
+          pendingCount={queueQ.data?.count ?? count}
+          completedCount={modalCompleted}
+          isLoading={isFreshLoading}
+          queueError={queueQ.error instanceof Error ? queueQ.error.message : queueQ.isError ? 'Could not load the review queue' : null}
+          onRetryQueue={async () => { await queueQ.refetch(); }}
           onClose={closeModal}
           onDecide={onDecide}
           onSkipAll={onSkipAll}

@@ -1,6 +1,7 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useId, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, LoaderCircle } from 'lucide-react';
 import { Button } from './button';
+import { Dialog } from './dialog';
 
 interface ConfirmDialogProps {
   title: string;
@@ -21,53 +22,9 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const titleId = useId();
   const descriptionId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  const pendingRef = useRef(pending);
-  const onCloseRef = useRef(onClose);
-  pendingRef.current = pending;
-  onCloseRef.current = onClose;
-
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    cancelRef.current?.focus();
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        if (!pendingRef.current) onCloseRef.current();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-
-      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-      );
-      if (!focusable?.length) {
-        event.preventDefault();
-        dialogRef.current?.focus();
-        return;
-      }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      previouslyFocused?.focus();
-    };
-  }, []);
-
   const confirm = async () => {
     setPending(true);
     setError('');
@@ -81,22 +38,17 @@ export function ConfirmDialog({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !pending) onClose();
-      }}
+    <Dialog
+      role="alertdialog"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      aria-busy={pending}
+      initialFocusRef={cancelRef}
+      closeDisabled={pending}
+      onClose={onClose}
+      overlayClassName="dialog-overlay--dim"
+      contentClassName="w-full max-w-md rounded-xl border border-default bg-surface p-5 shadow-2xl"
     >
-      <div
-        ref={dialogRef}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-        aria-busy={pending}
-        tabIndex={-1}
-        className="w-full max-w-md rounded-xl border border-default bg-surface p-5 shadow-2xl"
-      >
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">
             <AlertTriangle className="h-5 w-5" aria-hidden="true" />
@@ -129,7 +81,6 @@ export function ConfirmDialog({
             {pending ? 'Working…' : confirmLabel}
           </Button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

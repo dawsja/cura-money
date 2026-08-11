@@ -101,7 +101,7 @@ reviewRoutes.post(
 
     const result = await markTransactionReviewed(uid, id, patch);
     if (!result) {
-      return notFound(c, 'transaction not found');
+      return notFound(c, 'pending review not found');
     }
     logger.info(
       {

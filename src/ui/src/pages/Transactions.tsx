@@ -26,6 +26,7 @@ import {
   pageWindow,
 } from '../components/ui/pagination';
 import { DatePicker } from '../components/ui/date-picker';
+import { Dialog } from '../components/ui/dialog';
 import { useReviews } from '../components/ReviewsProvider';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import clsx from 'clsx';
@@ -75,6 +76,7 @@ const TX_TYPES: TxType[] = ['income', 'expense', 'transfer'];
 
 /** Rows per page. Tuned to fit a comfortable full table on a 13" laptop. */
 const PAGE_SIZE = 25;
+const DESKTOP_QUERY = '(min-width: 768px)';
 
 interface Transaction {
   id: string; date: string; merchant: string;
@@ -596,6 +598,18 @@ export function Transactions() {
   // Mobile detail modal — tapping a row on small screens opens a
   // read-only detail sheet showing all fields.
   const [detailTx, setDetailTx] = useState<Transaction | null>(null);
+  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_QUERY).matches);
+
+  useEffect(() => {
+    const media = window.matchMedia(DESKTOP_QUERY);
+    const onChange = () => {
+      setIsDesktop(media.matches);
+      if (media.matches) setDetailTx(null);
+    };
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
 
   // Action modal — opened by the triple-dot button on each row.
   // Allows editing posting date and marking as recurring.
@@ -622,7 +636,7 @@ export function Transactions() {
   });
 
   const markRecurring = useMutation({
-    mutationFn: (input: { merchant: string; amount: number; frequency: 'monthly' | 'yearly' }) =>
+    mutationFn: (input: { transactionId: string; frequency: 'monthly' | 'yearly' }) =>
       api.post('/api/recurring/mark', input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['recurring'] });
@@ -631,7 +645,7 @@ export function Transactions() {
   });
 
   const dismissRecurring = useMutation({
-    mutationFn: (input: { merchant: string; amount: number }) =>
+    mutationFn: (input: { merchant: string; amount: number; account: string; accountId?: string }) =>
       api.post('/api/recurring/dismiss', input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['recurring'] });
@@ -917,7 +931,7 @@ export function Transactions() {
                       </td>
                     </tr>
                   )}
-                  <tr className="border-b border-default md:cursor-default cursor-pointer" onClick={() => { if (window.innerWidth < 768) setDetailTx(t); }}>
+                  <tr className="border-b border-default md:cursor-default cursor-pointer" onClick={() => { if (!isDesktop) setDetailTx(t); }}>
                     <td className="py-2 whitespace-nowrap fg-secondary hidden md:table-cell">{formatDate(t.date)}</td>
                     <td className="py-2 fg-primary">{t.merchant}</td>
                     {/* Type select auto-fires on selection and PATCHes
@@ -1207,7 +1221,7 @@ export function Transactions() {
         />
       )}
 
-      {detailTx && (
+      {detailTx && !isDesktop && (
         <TransactionDetailModal
           transaction={detailTx}
           categories={cats.data ?? []}
@@ -1229,11 +1243,17 @@ export function Transactions() {
           onUpdateDate={async (id, date) => {
             await updateTxDate.mutateAsync({ id, date });
           }}
-          onSetRecurring={async (merchant, amount, frequency) => {
+          onSetRecurring={async (frequency) => {
+            const identity = {
+              merchant: actionTx.merchant,
+              amount: actionTx.amount,
+              account: actionTx.account,
+              accountId: actionTx.accountId,
+            };
             if (frequency === 'none') {
-              await dismissRecurring.mutateAsync({ merchant, amount });
+              await dismissRecurring.mutateAsync(identity);
             } else {
-              await markRecurring.mutateAsync({ merchant, amount, frequency });
+              await markRecurring.mutateAsync({ transactionId: actionTx.id, frequency });
             }
           }}
           onDelete={() => setDeleteTx(actionTx)}
@@ -1302,14 +1322,6 @@ function TransactionDetailModal({
   onActions: () => void;
   onDelete: (id: string) => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); onClose(); }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const rowCats = categories.filter((c) => c.type === t.type || c.name === 'Pay down goals');
   const categoryValue = (() => {
     const category = rowCats.find((c) => c.name === t.category);
@@ -1318,18 +1330,18 @@ function TransactionDetailModal({
   })();
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <Dialog
       aria-label="Transaction details"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 md:hidden"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClose={onClose}
+      closeDisabled={isPending}
+      variant="bottom-sheet"
+      overlayClassName="md:hidden"
+      contentClassName="mobile-sheet card w-full rounded-b-none rounded-t-3xl border-b-0"
     >
-      <div className="mobile-sheet card w-full overflow-y-auto rounded-b-none rounded-t-3xl border-b-0">
         <div className="mx-auto -mt-1 mb-4 h-1.5 w-10 rounded-full bg-slate-600" aria-hidden="true" />
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold fg-primary">Transaction Details</h3>
-          <button type="button" onClick={onClose} className="close-button flex h-11 w-11 items-center justify-center rounded-full" aria-label="Close">
+          <button type="button" onClick={onClose} disabled={isPending} className="close-button flex h-11 w-11 items-center justify-center rounded-full disabled:opacity-50" aria-label="Close">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -1426,7 +1438,8 @@ function TransactionDetailModal({
           <button
             type="button"
             onClick={() => onDelete(t.id)}
-            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 px-3 py-2 text-sm font-medium hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-colors"
+            disabled={isPending}
+            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 px-3 py-2 text-sm font-medium hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-colors disabled:opacity-50"
           >
             <Trash2 className="h-3.5 w-3.5" />
             Delete
@@ -1434,13 +1447,13 @@ function TransactionDetailModal({
           <button
             type="button"
             onClick={onActions}
-            className="btn-primary inline-flex items-center justify-center"
+            disabled={isPending}
+            className="btn-primary inline-flex items-center justify-center disabled:opacity-50"
           >
             More actions
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -1882,18 +1895,6 @@ function AddTransactionModal({
     setCategoryPick('');
   }, [type]);
 
-  // Escape closes the modal. Bound only while mounted.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const onSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     const catName = parsedCat?.category ?? '';
@@ -1924,21 +1925,18 @@ function AddTransactionModal({
     && !isPending;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <Dialog
       aria-label="Add transaction"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      onClose={onClose}
+      closeDisabled={isPending}
+      contentClassName="card w-full max-w-lg flex flex-col"
     >
-      <div className="card w-full max-w-lg flex flex-col">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold fg-primary">Add transaction</h3>
           <button
             type="button"
             onClick={onClose}
+            disabled={isPending}
             className="close-button rounded-lg p-2"
             aria-label="Close"
           >
@@ -2103,8 +2101,7 @@ function AddTransactionModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -2147,7 +2144,6 @@ function EditTransactionModal({
   onSubmit: (parent: EditableTransaction, splits: Omit<TransactionSplit, 'id'>[]) => Promise<void>;
 }) {
   const titleId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
   const merchantRef = useRef<HTMLInputElement>(null);
   const [date, setDate] = useState(t.date);
   const [merchant, setMerchant] = useState(t.merchant);
@@ -2167,37 +2163,6 @@ function EditTransactionModal({
     while (existing.length < 2) existing.push(emptySplit(t.type));
     return existing;
   });
-
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    merchantRef.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isPending) {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-      );
-      if (!focusable?.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      previouslyFocused?.focus();
-    };
-  }, [isPending, onClose]);
 
   const selectedCategory = parseCategoryValue(categoryPick);
   const selectedAccount = accounts.find((account) => account.id === accountId);
@@ -2250,18 +2215,15 @@ function EditTransactionModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onMouseDown={(event) => { if (event.target === event.currentTarget && !isPending) onClose(); }}
+    <Dialog
+      aria-labelledby={titleId}
+      aria-busy={isPending}
+      onClose={onClose}
+      closeDisabled={isPending}
+      initialFocusRef={merchantRef}
+      overlayClassName="dialog-overlay--dim"
+      contentClassName="card w-full max-w-3xl"
     >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-busy={isPending}
-        className="card max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto"
-      >
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 id={titleId} className="text-lg font-semibold fg-primary">Edit transaction</h2>
           <button type="button" onClick={onClose} disabled={isPending} className="close-button rounded-lg p-2 disabled:opacity-50" aria-label="Close edit transaction">
@@ -2381,8 +2343,7 @@ function EditTransactionModal({
             <button type="submit" disabled={!canSubmit} className="btn-primary disabled:cursor-not-allowed disabled:opacity-50">{isPending ? 'Saving…' : 'Save transaction'}</button>
           </div>
         </form>
-      </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -2409,7 +2370,7 @@ function TransactionActionModal({
   onEdit: () => void;
   editDisabled: boolean;
   onUpdateDate: (id: string, date: string) => Promise<void>;
-  onSetRecurring: (merchant: string, amount: number, frequency: RecurringPick) => Promise<void>;
+  onSetRecurring: (frequency: RecurringPick) => Promise<void>;
   onDelete: () => void;
   isPending: boolean;
 }) {
@@ -2421,28 +2382,26 @@ function TransactionActionModal({
   // Hydrate current mark from the recurring list when the modal opens.
   const recurringQ = useQuery({
     queryKey: ['recurring'],
-    queryFn: () => api.get<{ merchant: string; amount: number; frequency: string }[]>('/api/recurring'),
+    queryFn: () => api.get<{
+      merchant: string;
+      amount: number;
+      frequency: string;
+      account: string;
+      accountId?: string;
+    }[]>('/api/recurring'),
   });
   useEffect(() => {
     if (!recurringQ.data) return;
-    const key = `${t.merchant.toLowerCase()}|${Math.round(t.amount * 100) / 100}`;
+    const key = `${t.merchant.toLowerCase()}|${Math.round(t.amount * 100) / 100}|${(t.accountId ?? t.account).toLowerCase()}`;
     const match = recurringQ.data.find(
-      (c) => `${c.merchant.toLowerCase()}|${Math.round(c.amount * 100) / 100}` === key,
+      (c) => `${c.merchant.toLowerCase()}|${Math.round(c.amount * 100) / 100}|${(c.accountId ?? c.account).toLowerCase()}` === key,
     );
     if (match && (match.frequency === 'monthly' || match.frequency === 'yearly')) {
       setFrequency(match.frequency);
     } else {
       setFrequency('none');
     }
-  }, [recurringQ.data, t.merchant, t.amount]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); onClose(); }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [recurringQ.data, t.merchant, t.amount, t.account, t.accountId]);
 
   const onSaveDate = async () => {
     if (date === t.date) return;
@@ -2454,7 +2413,7 @@ function TransactionActionModal({
     if (next === frequency || isPending || recurringBusy) return;
     setRecurringBusy(true);
     try {
-      await onSetRecurring(t.merchant, t.amount, next);
+      await onSetRecurring(next);
       setFrequency(next);
     } finally {
       setRecurringBusy(false);
@@ -2462,17 +2421,15 @@ function TransactionActionModal({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <Dialog
       aria-label="Transaction actions"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClose={onClose}
+      closeDisabled={isPending || recurringBusy}
+      contentClassName="card w-full max-w-md flex flex-col"
     >
-      <div className="card w-full max-w-md flex flex-col">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold fg-primary">Transaction Actions</h3>
-          <button type="button" onClick={onClose} className="close-button rounded-lg p-2" aria-label="Close">
+          <button type="button" onClick={onClose} disabled={isPending || recurringBusy} className="close-button rounded-lg p-2 disabled:opacity-50" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -2494,7 +2451,7 @@ function TransactionActionModal({
             <DatePicker
               value={date}
               onChange={(ymd) => { setDate(ymd); setDateChanged(false); }}
-              disabled={isPending}
+              disabled={isPending || recurringBusy}
               className="flex-1 min-w-0"
               aria-label="Posting date"
             />
@@ -2543,7 +2500,7 @@ function TransactionActionModal({
           <button
             type="button"
             onClick={onDelete}
-            disabled={isPending}
+            disabled={isPending || recurringBusy}
             className="inline-flex items-center gap-1.5 rounded-lg bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 px-3 py-2 text-sm font-medium hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -2553,7 +2510,7 @@ function TransactionActionModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={isPending}
+              disabled={isPending || recurringBusy}
               className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
             >
               Close
@@ -2561,7 +2518,7 @@ function TransactionActionModal({
             <button
               type="button"
               onClick={onEdit}
-              disabled={isPending || editDisabled}
+              disabled={isPending || recurringBusy || editDisabled}
               title={editDisabled ? 'Categories and accounts must load before editing.' : undefined}
               className="btn-primary inline-flex items-center gap-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -2569,7 +2526,6 @@ function TransactionActionModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

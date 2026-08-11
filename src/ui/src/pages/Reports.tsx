@@ -16,7 +16,7 @@
  * Transfers and hidden accounts are filtered out at the server (Hard
  * Rule #14) so every chart agrees with the Dashboard's totals.
  */
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -28,6 +28,7 @@ import {
   formatShortMoney,
   type ChartConfig,
 } from '../components/ui/chart';
+import { Dialog } from '../components/ui/dialog';
 import {
   Area,
   AreaChart,
@@ -144,14 +145,14 @@ function transactionUrl(filters: { from: string; to: string; types?: 'income' | 
  * as data changes.
  */
 const SLICE_PALETTE = [
-  '#f59e0b', // amber-500
-  '#10b981', // emerald-500
-  '#ef4444', // rose-500
-  '#0ea5e9', // sky-500
-  '#8b5cf6', // violet-500
-  '#64748b', // slate-500
-  '#475569', // slate-600
-  '#94a3b8', // slate-400
+  'var(--chart-category-1)',
+  'var(--chart-category-2)',
+  'var(--chart-category-3)',
+  'var(--chart-category-4)',
+  'var(--chart-category-5)',
+  'var(--chart-category-6)',
+  'var(--chart-category-7)',
+  'var(--chart-category-8)',
 ];
 
 export function Reports() {
@@ -399,48 +400,18 @@ function ExportModal({
   onClose: () => void;
 }) {
   const titleId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
   const firstLinkRef = useRef<HTMLAnchorElement>(null);
-
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    firstLinkRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-        'a[href], button:not(:disabled), [tabindex]:not([tabindex="-1"])',
-      );
-      if (!focusable?.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      previouslyFocused?.focus();
-    };
-  }, [onClose]);
 
   const download = () => window.setTimeout(onClose, 0);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    <Dialog
+      aria-labelledby={titleId}
+      onClose={onClose}
+      initialFocusRef={firstLinkRef}
+      overlayClassName="dialog-overlay--dim"
+      contentClassName="card w-full max-w-lg"
     >
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} className="card w-full max-w-lg">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id={titleId} className="text-lg font-semibold fg-primary">Export your data</h2>
@@ -485,8 +456,7 @@ function ExportModal({
           )}
           {retention && <p>{retention.description}</p>}
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -563,6 +533,43 @@ function DrilldownDetails({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ChartDataDetails({
+  summary,
+  caption,
+  headers,
+  rows,
+}: {
+  summary: string;
+  caption: string;
+  headers: string[];
+  rows: Array<{ key: string; cells: React.ReactNode[] }>;
+}) {
+  return (
+    <details className="mt-3 border-t border-default pt-3">
+      <summary className="focus-ring cursor-pointer text-xs font-medium fg-secondary">{summary}</summary>
+      <div className="mt-2 max-h-64 overflow-auto">
+        <table className="w-full min-w-max text-left text-xs">
+          <caption className="sr-only">{caption}</caption>
+          <thead className="fg-muted">
+            <tr className="border-b border-default">
+              {headers.map((header, index) => <th key={header} scope="col" className={clsx('py-2 font-medium', index === 0 ? 'pr-3' : 'px-3 text-right')}>{header}</th>)}
+            </tr>
+          </thead>
+          <tbody className="fg-secondary">
+            {rows.map((row) => (
+              <tr key={row.key} className="border-b border-default last:border-0">
+                {row.cells.map((cell, index) => index === 0
+                  ? <th key={index} scope="row" className="py-2 pr-3 font-medium fg-primary">{cell}</th>
+                  : <td key={index} className="px-3 py-2 text-right tabular-nums">{cell}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
 function DrilldownButton({ label, onClick }: { label: string; onClick: () => void }) {
   return <button type="button" onClick={onClick} className="min-h-11 rounded-md border border-default px-2.5 py-1.5 text-xs fg-secondary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500">{label}</button>;
 }
@@ -581,23 +588,23 @@ function CashFlowChart({ data, loading, error, onRetry, onDrilldown }: { data: C
   if (!hasAnyActivity) return <EmptyState message="No income or expenses in this range." />;
 
   const config: ChartConfig = {
-    income: { label: 'Income', color: '#10b981' },
-    expense: { label: 'Expense', color: '#ef4444' },
-    net: { label: 'Net', color: '#f59e0b' },
+    income: { label: 'Income', color: 'var(--chart-income)' },
+    expense: { label: 'Expense', color: 'var(--chart-expense)' },
+    net: { label: 'Net', color: 'var(--chart-net)' },
   };
 
   return (
     <>
-    <ChartContainer config={config} className="h-[280px]">
+    <ChartContainer config={config} className="h-[280px]" aria-hidden={true}>
       <AreaChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="cf-income-grad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
-            <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
+            <stop offset="0%" stopColor="var(--chart-income)" stopOpacity={0.4} />
+            <stop offset="100%" stopColor="var(--chart-income)" stopOpacity={0.05} />
           </linearGradient>
           <linearGradient id="cf-expense-grad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ef4444" stopOpacity={0.4} />
-            <stop offset="100%" stopColor="#ef4444" stopOpacity={0.05} />
+            <stop offset="0%" stopColor="var(--chart-expense)" stopOpacity={0.4} />
+            <stop offset="100%" stopColor="var(--chart-expense)" stopOpacity={0.05} />
           </linearGradient>
         </defs>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -626,7 +633,7 @@ function CashFlowChart({ data, loading, error, onRetry, onDrilldown }: { data: C
         <Area
           type="monotone"
           dataKey="income"
-          stroke="#10b981"
+          stroke="var(--chart-income)"
           strokeWidth={2}
           fill="url(#cf-income-grad)"
           stackId="1"
@@ -634,13 +641,19 @@ function CashFlowChart({ data, loading, error, onRetry, onDrilldown }: { data: C
         <Area
           type="monotone"
           dataKey="expense"
-          stroke="#ef4444"
+          stroke="var(--chart-expense)"
           strokeWidth={2}
           fill="url(#cf-expense-grad)"
           stackId="2"
         />
       </AreaChart>
     </ChartContainer>
+    <ChartDataDetails
+      summary="View cash flow data"
+      caption="Monthly income, expenses, and signed net cash flow"
+      headers={['Month', 'Income', 'Expense', 'Net cash flow']}
+      rows={data.map((point) => ({ key: point.month, cells: [monthYear(point.month), formatMoney(point.income), formatMoney(point.expense), formatMoney(point.net)] }))}
+    />
     <DrilldownDetails>
       {data.flatMap((point) => {
         const bounds = monthBounds(point.month);
@@ -661,54 +674,62 @@ function NetWorthChart({ data, loading, error, onRetry }: { data: NetWorthPoint[
   if (data.length === 0) return <EmptyState message="No accounts yet. Add an account to track net worth." />;
 
   const config: ChartConfig = {
-    netWorth: { label: 'Net worth', color: '#0ea5e9' },
+    netWorth: { label: 'Net worth', color: 'var(--chart-net-worth-positive)' },
   };
 
-  // Split the area at zero — a clean emerald fill above 0, rose below —
-  // so the user sees at a glance whether they're in the red.
-  const allPositive = data.every((p) => p.netWorth >= 0);
+  const minimum = Math.min(...data.map((point) => point.netWorth));
+  const maximum = Math.max(...data.map((point) => point.netWorth));
+  const hasNegative = minimum < 0;
+  const hasPositive = maximum > 0;
+  const zeroOffset = hasNegative && hasPositive ? (maximum / (maximum - minimum)) * 100 : hasNegative ? 0 : 100;
 
   return (
-    <ChartContainer config={config} className="h-[280px]">
-      <AreaChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-        <defs>
-          <linearGradient id="nw-grad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={allPositive ? '#0ea5e9' : '#10b981'} stopOpacity={0.4} />
-            <stop offset="100%" stopColor={allPositive ? '#0ea5e9' : '#10b981'} stopOpacity={0.05} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid vertical={false} strokeDasharray="3 3" />
-        <XAxis
-          dataKey="month"
-          tickFormatter={monthShort}
-          tickLine={false}
-          axisLine={false}
-          tickMargin={8}
-          interval="preserveStartEnd"
-        />
-        <YAxis
-          tickFormatter={formatShortMoney}
-          tickLine={false}
-          axisLine={false}
-          width={56}
-        />
-        <ChartTooltip
-          content={
-            <ChartTooltipContent
-              config={config}
-              labelFormatter={(l) => monthYear(String(l))}
-            />
-          }
-        />
-        <Area
-          type="monotone"
-          dataKey="netWorth"
-          stroke={allPositive ? '#0ea5e9' : '#10b981'}
-          strokeWidth={2}
-          fill="url(#nw-grad)"
-        />
-      </AreaChart>
-    </ChartContainer>
+    <>
+      <div aria-hidden="true">
+          <ChartContainer config={config} className="h-[280px]" aria-hidden={true}>
+          <AreaChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="nw-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset={`${zeroOffset}%`} stopColor="var(--chart-net-worth-positive)" stopOpacity={0.4} />
+                <stop offset={`${zeroOffset}%`} stopColor="var(--chart-net-worth-negative)" stopOpacity={0.4} />
+                <stop offset="100%" stopColor="var(--chart-net-worth-negative)" stopOpacity={0.05} />
+              </linearGradient>
+              <linearGradient id="nw-stroke" x1="0" y1="0" x2="0" y2="1">
+                <stop offset={`${zeroOffset}%`} stopColor="var(--chart-net-worth-positive)" />
+                <stop offset={`${zeroOffset}%`} stopColor="var(--chart-net-worth-negative)" />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+            <XAxis dataKey="month" tickFormatter={monthShort} tickLine={false} axisLine={false} tickMargin={8} interval="preserveStartEnd" />
+            <YAxis tickFormatter={formatShortMoney} tickLine={false} axisLine={false} width={56} />
+            <ChartTooltip content={<ChartTooltipContent config={config} labelFormatter={(l) => monthYear(String(l))} />} />
+            <Area type="monotone" dataKey="netWorth" stroke="url(#nw-stroke)" strokeWidth={2} fill="url(#nw-fill)" />
+          </AreaChart>
+        </ChartContainer>
+      </div>
+      <details className="mt-3 border-t border-default pt-3">
+        <summary className="cursor-pointer text-xs font-medium fg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500">View net worth data</summary>
+        <div className="mt-2 max-h-64 overflow-auto">
+          <table className="w-full text-left text-xs">
+            <caption className="sr-only">Estimated net worth by month</caption>
+            <thead className="fg-muted">
+              <tr className="border-b border-default">
+                <th scope="col" className="py-2 pr-3 font-medium">Month</th>
+                <th scope="col" className="py-2 pl-3 text-right font-medium">Estimated net worth</th>
+              </tr>
+            </thead>
+            <tbody className="fg-secondary">
+              {data.map((point) => (
+                <tr key={point.month} className="border-b border-default last:border-0">
+                  <th scope="row" className="py-2 pr-3 font-medium fg-primary">{monthYear(point.month)}</th>
+                  <td className={clsx('py-2 pl-3 text-right tabular-nums', point.netWorth < 0 && 'text-rose-600 dark:text-rose-400')}>{formatMoney(point.netWorth)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </>
   );
 }
 
@@ -723,7 +744,7 @@ function SpendingTrendsChart({ data, loading, error, onRetry, onDrilldown }: { d
   });
   return (
     <div className="space-y-3">
-      <ChartContainer config={config} className="h-[300px]">
+       <ChartContainer config={config} className="h-[300px]" aria-hidden={true}>
         <BarChart data={data.series} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
           <CartesianGrid vertical={false} strokeDasharray="3 3" />
           <XAxis dataKey="month" tickFormatter={monthShort} tickLine={false} axisLine={false} tickMargin={8} interval="preserveStartEnd" />
@@ -733,7 +754,16 @@ function SpendingTrendsChart({ data, loading, error, onRetry, onDrilldown }: { d
             <Bar key={category.key} dataKey={category.key} stackId="spending" fill={SLICE_PALETTE[index % SLICE_PALETTE.length]} />
           ))}
         </BarChart>
-      </ChartContainer>
+       </ChartContainer>
+       <ChartDataDetails
+         summary="View spending trend data"
+         caption="Monthly spending by category"
+         headers={['Month', ...data.categories.map((category) => category.name)]}
+         rows={data.series.map((point) => {
+           const month = String(point.month);
+           return { key: month, cells: [monthYear(month), ...data.categories.map((category) => formatMoney(Number(point[category.key] ?? 0)))] };
+         })}
+       />
       <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
         {data.categories.map((category, index) => (
           <li key={category.key} className="flex items-center gap-1.5 text-xs fg-secondary">
@@ -761,13 +791,13 @@ function SpendingPaceChart({ data, loading, error, onRetry, onDrilldown }: { dat
     return <EmptyState message="No spending or budget is available for this month." />;
   }
   const config: ChartConfig = {
-    current: { label: monthYear(data.month), color: '#ef4444' },
-    previous: { label: monthYear(data.previousMonth), color: '#94a3b8' },
-    budgetPace: { label: 'Budget pace', color: '#22c55e' },
+    current: { label: monthYear(data.month), color: 'var(--chart-expense)' },
+    previous: { label: monthYear(data.previousMonth), color: 'var(--chart-comparison)' },
+    budgetPace: { label: 'Budget pace', color: 'var(--chart-income)' },
   };
   return (
     <>
-    <ChartContainer config={config} className="h-[280px]">
+    <ChartContainer config={config} className="h-[280px]" aria-hidden={true}>
       <LineChart data={data.series} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
         <XAxis dataKey="day" tickFormatter={(day) => `Day ${day}`} tickLine={false} axisLine={false} tickMargin={8} interval="preserveStartEnd" />
@@ -778,6 +808,15 @@ function SpendingPaceChart({ data, loading, error, onRetry, onDrilldown }: { dat
         <Line dataKey="current" type="monotone" stroke="var(--color-current)" strokeWidth={2.5} dot={false} />
       </LineChart>
     </ChartContainer>
+    <ChartDataDetails
+      summary="View spending pace data"
+      caption={`Daily cumulative spending pace for ${monthYear(data.month)} and ${monthYear(data.previousMonth)}`}
+      headers={['Day', monthYear(data.month), monthYear(data.previousMonth), 'Budget pace']}
+      rows={data.series.map((point) => ({
+        key: String(point.day),
+        cells: [`Day ${point.day}`, point.current === null ? 'Not available' : formatMoney(point.current), formatMoney(point.previous), formatMoney(point.budgetPace)],
+      }))}
+    />
     <DrilldownDetails>
       <DrilldownButton label={monthYear(data.month)} onClick={() => onDrilldown({ ...monthBounds(data.month), types: 'expense' })} />
       <DrilldownButton label={monthYear(data.previousMonth)} onClick={() => onDrilldown({ ...monthBounds(data.previousMonth), types: 'expense' })} />
@@ -802,7 +841,7 @@ function SpendingDonut({ data, loading, error, onRetry, month, onDrilldown }: { 
   return (
     <>
     <div className="flex flex-col lg:flex-row gap-4 items-center">
-      <ChartContainer config={config} className="h-[240px] flex-1 min-w-0">
+      <ChartContainer config={config} className="h-[240px] flex-1 min-w-0" aria-hidden={true}>
         <PieChart>
           <ChartTooltip
             content={
@@ -844,6 +883,15 @@ function SpendingDonut({ data, loading, error, onRetry, month, onDrilldown }: { 
         )}
       </ul>
     </div>
+    <ChartDataDetails
+      summary="View category spending data"
+      caption={`Spending by category for ${monthYear(month)}`}
+      headers={['Category', 'Spend', 'Share']}
+      rows={data.map((category) => ({
+        key: category.category,
+        cells: [category.category, formatMoney(category.total), `${((category.total / total) * 100).toFixed(1)}%`],
+      }))}
+    />
     <DrilldownDetails>
       {data.map((category) => <DrilldownButton key={category.category} label={category.category} onClick={() => onDrilldown({ ...monthBounds(month), types: 'expense', category: category.category })} />)}
     </DrilldownDetails>
@@ -859,7 +907,7 @@ function TopMerchantsChart({ data, loading, error, onRetry, bounds, onDrilldown 
   if (data.length === 0) return <EmptyState message="No merchant spending in this range." />;
 
   const config: ChartConfig = {
-    total: { label: 'Spend', color: '#8b5cf6' },
+    total: { label: 'Spend', color: 'var(--chart-merchant)' },
   };
   // Reverse so the largest sits at the top of the horizontal bar chart.
   const reversed = [...data].reverse();
@@ -867,7 +915,7 @@ function TopMerchantsChart({ data, loading, error, onRetry, bounds, onDrilldown 
 
   return (
     <>
-    <ChartContainer config={config} style={{ height }}>
+    <ChartContainer config={config} style={{ height }} aria-hidden={true}>
       <BarChart
         data={reversed}
         layout="vertical"
@@ -898,9 +946,15 @@ function TopMerchantsChart({ data, loading, error, onRetry, bounds, onDrilldown 
             />
           }
         />
-        <Bar dataKey="total" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+        <Bar dataKey="total" fill="var(--chart-merchant)" radius={[0, 4, 4, 0]} />
       </BarChart>
     </ChartContainer>
+    <ChartDataDetails
+      summary="View merchant spending data"
+      caption="Top merchant spending and transaction counts"
+      headers={['Merchant', 'Spend', 'Transactions']}
+      rows={data.map((merchant) => ({ key: merchant.merchant, cells: [merchant.merchant, formatMoney(merchant.total), merchant.count] }))}
+    />
     <DrilldownDetails>
       {data.map((merchant) => <DrilldownButton key={merchant.merchant} label={merchant.merchant} onClick={() => onDrilldown({ ...bounds, types: 'expense', merchant: merchant.merchant })} />)}
     </DrilldownDetails>

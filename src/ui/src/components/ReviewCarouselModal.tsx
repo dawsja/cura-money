@@ -3,8 +3,8 @@
  *
  * One slide per pending transaction. Each slide lets the user pick
  * a category / sub-category / type (matching the inline picker on
- * the Transactions page) and confirm with "Categorize", or bypass
- * the prompt with "Skip".
+ * the Transactions page) and confirm with "Categorize", or accept
+ * the imported suggestion without creating a rule.
  *
  * Internal state:
  *   - `idx`     — current slide index. Auto-advances on a successful
@@ -18,9 +18,8 @@
  *   - `queue.length === 0` from the moment the modal opens: render
  *     an info panel ("nothing to review") with a Close button. This
  *     covers the transient state during the queue fetch.
- *   - `idx >= queue.length` after dispatches: render the "All done"
- *     celebration close-out with the emerald Check icon and a "Done"
- *     primary button. Closes via the close handler.
+ *   - Completion is based on the server's canonical pending count, not
+ *     the loaded row slice or current slide index.
  *
  * Keyboard:
  *   - Escape  → close
@@ -45,6 +44,7 @@ import {
   type ReviewTransaction,
 } from '../lib/reviews';
 import { ConfirmDialog } from './ui/confirm-dialog';
+import { Dialog } from './ui/dialog';
 
 const INPUT_CLS =
   'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
@@ -90,8 +90,12 @@ function defaultEdit(tx: ReviewTransaction): EditState {
 
 export interface ReviewCarouselModalProps {
   queue: ReviewTransaction[];
+  pendingCount: number;
+  completedCount: number;
   isLoading: boolean;
+  queueError: string | null;
   isMutating: boolean;
+  onRetryQueue: () => Promise<void>;
   onClose: () => void;
   onDecide: (
     id: string,
@@ -107,8 +111,12 @@ export interface ReviewCarouselModalProps {
 
 export function ReviewCarouselModal({
   queue,
+  pendingCount,
+  completedCount,
   isLoading,
+  queueError,
   isMutating,
+  onRetryQueue,
   onClose,
   onDecide,
   onSkipAll,
@@ -129,6 +137,7 @@ export function ReviewCarouselModal({
     status: 'pending' | 'error';
     error?: string;
   } | null>(null);
+  const [confirmAcceptAll, setConfirmAcceptAll] = useState(false);
 
   // Categories are a sibling concern — same query as the Transactions
   // page, shared via React Query so the cache is hot as soon as the
@@ -139,39 +148,26 @@ export function ReviewCarouselModal({
     staleTime: 60_000,
   });
 
-  // When the queue shape changes, keep the user's place only if the
-  // current index is still in range. We don't want to reset to 0 on
-  // every optimistic dispatch — that would scroll the user backwards.
-  // A shape change from "queue grew" (a fresh sync added items while
-  // open) keeps idx where it is.
-  const lastQueueLenRef = useRef<number>(queue.length);
+  // Keep the same position when the current row is removed, but clamp to
+  // the new last row when the user accepts the final visible slide.
   useEffect(() => {
     if (queue.length === 0) {
       setIdx(0);
       return;
     }
-    if (lastQueueLenRef.current > queue.length) {
-      // Queue shrank (the user dispatched the current slide). Bump
-      // `idx` to the same position in the new shortened list, which
-      // happens to be the next slide — i.e. auto-advance.
-      setIdx((p) => Math.min(p, queue.length));
-    } else if (idx >= queue.length) {
-      setIdx(Math.max(0, queue.length - 1));
-    }
-    lastQueueLenRef.current = queue.length;
-  }, [queue.length, idx]);
+    setIdx((current) => Math.min(current, queue.length - 1));
+  }, [queue.length]);
 
-  const slide = idx < queue.length ? queue[idx] : null;
+  const currentIdx = Math.min(idx, Math.max(0, queue.length - 1));
+  const slide = queue[currentIdx] ?? null;
   const edit = slide ? edits[slide.id] ?? defaultEdit(slide) : null;
 
-  // Keyboard handlers. Bound only while the modal is mounted.
+  // Arrow navigation is modal-local; Escape and focus containment live in
+  // Overlay so nested confirmation dialogs do not also close this modal.
   useEffect(() => {
+    if (ruleConfirmation || ruleOperation || confirmAcceptAll) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-        return;
-      }
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === 'ArrowLeft') {
         setIdx((p) => Math.max(0, p - 1));
       }
@@ -182,7 +178,7 @@ export function ReviewCarouselModal({
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [idx, queue.length, onClose]);
+  }, [confirmAcceptAll, idx, queue.length, ruleConfirmation, ruleOperation]);
 
   const updateEdit = useCallback(
     (id: string, patch: Partial<EditState>) => {
@@ -200,7 +196,7 @@ export function ReviewCarouselModal({
     try {
       await onDecide(slide.id, { action: 'skip' });
     } catch (caught) {
-      setErr(caught instanceof Error ? caught.message : 'Could not skip');
+      setErr(caught instanceof Error ? caught.message : 'Could not accept the suggestion');
     }
   }, [slide, isMutating, onDecide]);
 
@@ -210,7 +206,8 @@ export function ReviewCarouselModal({
     try {
       await onSkipAll();
     } catch (caught) {
-      setErr(caught instanceof Error ? caught.message : 'Could not skip all');
+      setErr(caught instanceof Error ? caught.message : 'Could not accept all suggestions');
+      throw caught;
     }
   }, [isMutating, queue.length, onSkipAll]);
 
@@ -252,9 +249,9 @@ export function ReviewCarouselModal({
     }
   }, [slide, edit, isMutating, onDecide, rememberRules, createScopedRule]);
 
-  const isLoadingFirst = isLoading && queue.length === 0;
-  const isFinished = !isLoadingFirst && idx >= queue.length && queue.length > 0;
-  const total = queue.length;
+  const isLoadingFirst = isLoading && !queueError;
+  const isFinished = !isLoading && pendingCount === 0 && completedCount > 0 && !isMutating;
+  const total = completedCount + pendingCount;
 
   // Dedupe and filter categories by the current edit's type — the
   // Transactions page renders the same filter (type-scoped groupings).
@@ -266,14 +263,14 @@ export function ReviewCarouselModal({
   // A type change can invalidate the selected leaf, so clear the full
   // assignment rather than leaving a sub-category under the wrong parent.
   useEffect(() => {
-    if (!edit) return;
+    if (!edit || !cats.data) return;
     const valid = visibleCats.some((c) =>
       c.name === edit.category && c.subCategories.some((s) => s.name === edit.subCategory),
     );
     if ((edit.category || edit.subCategory) && !valid) {
       updateEdit(slide!.id, { category: '', subCategory: '' });
     }
-  }, [edit?.type, edit?.category, edit?.subCategory, edit, slide, updateEdit, visibleCats]);
+  }, [cats.data, edit?.type, edit?.category, edit?.subCategory, edit, slide, updateEdit, visibleCats]);
 
   // ----- Render branches ---------------------------------------------------
 
@@ -302,9 +299,30 @@ export function ReviewCarouselModal({
     );
   }
 
+  if (confirmAcceptAll) {
+    return (
+      <ConfirmDialog
+        title="Accept all suggestions?"
+        confirmLabel={`Accept all ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'}`}
+        onConfirm={async () => {
+          await handleSkipAll();
+          setConfirmAcceptAll(false);
+        }}
+        onClose={() => setConfirmAcceptAll(false)}
+      >
+        <p>
+          This will accept the imported category and type for {pendingCount} pending transaction{pendingCount === 1 ? '' : 's'} without creating rules.
+        </p>
+      </ConfirmDialog>
+    );
+  }
+
   if (ruleOperation) {
     return (
-      <Overlay onClose={() => { if (ruleOperation.status === 'error') setRuleOperation(null); }}>
+      <Overlay
+        onClose={() => { if (ruleOperation.status === 'error') setRuleOperation(null); }}
+        closeDisabled={ruleOperation.status === 'pending'}
+      >
         <div className="card w-full max-w-md space-y-3">
           <h3 className="text-lg font-semibold fg-primary">
             {ruleOperation.status === 'pending' ? 'Creating scoped rule' : 'Rule was not created'}
@@ -345,7 +363,25 @@ export function ReviewCarouselModal({
     );
   }
 
-  if (queue.length === 0) {
+  if (queueError && queue.length === 0) {
+    return (
+      <Overlay onClose={onClose}>
+        <div className="card w-full max-w-lg space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold fg-primary">Review queue unavailable</h3>
+            <CloseButton onClose={onClose} />
+          </div>
+          <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{queueError}</p>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="px-3 py-2 text-sm fg-tertiary">Close</button>
+            <button type="button" onClick={() => void onRetryQueue()} className="btn-primary">Retry</button>
+          </div>
+        </div>
+      </Overlay>
+    );
+  }
+
+  if (queue.length === 0 && pendingCount === 0 && completedCount === 0) {
     return (
       <Overlay onClose={onClose}>
         <div className="card w-full max-w-lg space-y-3">
@@ -377,7 +413,7 @@ export function ReviewCarouselModal({
             <CloseButton onClose={onClose} />
           </div>
           <p className="text-sm fg-secondary">
-            You've reviewed {total} transaction{total === 1 ? '' : 's'}.
+            You've reviewed {completedCount} transaction{completedCount === 1 ? '' : 's'}.
           </p>
           {err && <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p>}
           <div className="flex justify-end">
@@ -395,18 +431,30 @@ export function ReviewCarouselModal({
     );
   }
 
+  if (queue.length === 0) {
+    return (
+      <Overlay onClose={onClose}>
+        <div className="card w-full max-w-lg space-y-3">
+          <div className="text-sm fg-muted">Loading the next pending transactions…</div>
+          {queueError && <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{queueError}</p>}
+          {queueError && <button type="button" onClick={() => void onRetryQueue()} className="btn-primary">Retry</button>}
+        </div>
+      </Overlay>
+    );
+  }
+
   // Active slide.
   return (
-    <Overlay onClose={onClose}>
+    <Overlay onClose={onClose} closeDisabled={isMutating}>
       <div className="card w-full max-w-lg flex flex-col">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold fg-primary">
             Review transactions
             <span className="ml-2 text-xs fg-muted tabular-nums">
-              {Math.min(idx + 1, total)} / {total}
+              {completedCount} completed · {pendingCount} remaining · {total} total
             </span>
           </h3>
-          <CloseButton onClose={onClose} />
+          <CloseButton onClose={onClose} disabled={isMutating} />
         </div>
 
         {slide && edit && (
@@ -501,10 +549,10 @@ export function ReviewCarouselModal({
                     const selected = JSON.parse(e.target.value) as { category: string; subCategory: string };
                     updateEdit(slide.id, selected);
                   }}
-                  disabled={isMutating}
+                  disabled={isMutating || (!cats.data && (cats.isLoading || cats.isError))}
                   className={`mt-1 w-full ${INPUT_CLS}`}
                 >
-                  <option value="">Pick a category…</option>
+                  <option value="">{cats.isLoading ? 'Loading categories…' : 'Pick a category…'}</option>
                   {visibleCats.map((c) => (
                     <optgroup key={c.id} label={c.name}>
                       {c.subCategories.map((s) => (
@@ -518,10 +566,22 @@ export function ReviewCarouselModal({
                     </optgroup>
                   ))}
                 </select>
+                {cats.isError && (
+                  <span className="mt-1 flex items-center justify-between gap-2 text-xs text-rose-600 dark:text-rose-400">
+                    Categories could not be loaded.
+                    <button type="button" onClick={() => void cats.refetch()} className="underline">Retry</button>
+                  </span>
+                )}
               </label>
 
               {err && (
                 <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p>
+              )}
+              {queueError && (
+                <p role="alert" className="flex items-center justify-between gap-2 text-sm text-rose-600 dark:text-rose-400">
+                  {queueError}
+                  <button type="button" onClick={() => void onRetryQueue()} className="underline">Retry queue</button>
+                </p>
               )}
             </div>
 
@@ -530,7 +590,7 @@ export function ReviewCarouselModal({
                 <button
                   type="button"
                   onClick={() => setIdx((p) => Math.max(0, p - 1))}
-                  disabled={idx === 0 || isMutating}
+                  disabled={currentIdx === 0 || isMutating}
                   aria-label="Previous transaction"
                   className="p-2 rounded-lg fg-muted hover:fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
@@ -541,7 +601,7 @@ export function ReviewCarouselModal({
                   onClick={() =>
                     setIdx((p) => Math.min(queue.length - 1, p + 1))
                   }
-                  disabled={idx >= queue.length - 1 || isMutating}
+                  disabled={currentIdx >= queue.length - 1 || isMutating}
                   aria-label="Next transaction"
                   className="p-2 rounded-lg fg-muted hover:fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
@@ -552,11 +612,11 @@ export function ReviewCarouselModal({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleSkipAll}
-                  disabled={isMutating}
+                  onClick={() => setConfirmAcceptAll(true)}
+                  disabled={isMutating || pendingCount === 0}
                   className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
                 >
-                  Skip all
+                  Accept all suggestions
                 </button>
                 <button
                   type="button"
@@ -564,7 +624,7 @@ export function ReviewCarouselModal({
                   disabled={isMutating}
                   className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
                 >
-                  Skip
+                  Accept suggestion
                 </button>
                 <button
                   type="button"
@@ -585,17 +645,17 @@ export function ReviewCarouselModal({
 
         {/* Dots row */}
         <div className="flex items-center justify-center gap-1 mt-4">
-          {Array.from({ length: total }).map((_, i) => (
+          {queue.map((transaction, i) => (
             <button
-              key={i}
+              key={transaction.id}
               type="button"
               onClick={() => setIdx(i)}
               aria-label={`Go to transaction ${i + 1}`}
               className={clsx(
                 'h-1.5 rounded-full transition-all',
-                i === idx
+                i === currentIdx
                   ? 'w-6 bg-amber-500'
-                  : i < idx
+                  : i < currentIdx
                     ? 'w-1.5 bg-amber-300 dark:bg-amber-700'
                     : 'w-1.5 bg-slate-200 dark:bg-slate-700',
               )}
@@ -607,28 +667,26 @@ export function ReviewCarouselModal({
   );
 }
 
-function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function Overlay({ children, onClose, closeDisabled = false }: { children: React.ReactNode; onClose: () => void; closeDisabled?: boolean }) {
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <Dialog
       aria-label="Review transactions"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      onClose={onClose}
+      closeDisabled={closeDisabled}
+      contentClassName="flex w-full max-w-lg justify-center"
     >
       {children}
-    </div>
+    </Dialog>
   );
 }
 
-function CloseButton({ onClose }: { onClose: () => void }) {
+function CloseButton({ onClose, disabled = false }: { onClose: () => void; disabled?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClose}
-      className="close-button rounded-lg p-2"
+      disabled={disabled}
+      className="close-button rounded-lg p-2 disabled:opacity-50"
       aria-label="Close"
     >
       <X className="h-4 w-4" />
