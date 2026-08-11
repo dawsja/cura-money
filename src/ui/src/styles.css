@@ -506,6 +506,16 @@ input[type='number'] {
 .border-default { border-color: var(--border-default); }
 .border-control { border-color: var(--border-control); }
 
+[data-slot='input-group']:focus-within {
+  border-color: var(--focus-ring);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-slot='input-group-input']:focus-visible {
+  outline: none;
+}
+
 :where(button, a, [role='button']).border-default {
   border-color: var(--border-control);
 }

@@ -16,6 +16,11 @@ export interface PollReport {
   usersSkipped: number;
   accountsSynced: number;
   transactionsSynced: number;
+  transactionsReconciled: number;
+  reconciliationAmbiguous: number;
+  pendingTransactions: number;
+  pendingWithoutTimestamp: number;
+  stalePendingTransactions: number;
 }
 
 export async function runSimpleFinPollForAllUsers(): Promise<PollReport> {
@@ -31,6 +36,11 @@ export async function runSimpleFinPollForAllUsers(): Promise<PollReport> {
     usersSkipped: 0,
     accountsSynced: 0,
     transactionsSynced: 0,
+    transactionsReconciled: 0,
+    reconciliationAmbiguous: 0,
+    pendingTransactions: 0,
+    pendingWithoutTimestamp: 0,
+    stalePendingTransactions: 0,
   };
   for (const r of rows) {
     if (!r.value) continue;
@@ -39,6 +49,11 @@ export async function runSimpleFinPollForAllUsers(): Promise<PollReport> {
       const result = await syncSimpleFinToDatabase(r.userId);
       report.accountsSynced += result.accountsSynced;
       report.transactionsSynced += result.transactionsSynced;
+      report.transactionsReconciled += result.transactionsReconciled;
+      report.reconciliationAmbiguous += result.reconciliationAmbiguous;
+      report.pendingTransactions += result.pendingTransactions;
+      report.pendingWithoutTimestamp += result.pendingWithoutTimestamp;
+      report.stalePendingTransactions += result.stalePendingTransactions;
       if (result.errors.length > 0) {
         report.usersFailed++;
         logger.warn({ errorCount: result.errors.length }, 'simplefin-poll: provider reported sync errors');

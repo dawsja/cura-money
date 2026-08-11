@@ -10,6 +10,7 @@ import { BudgetSummaryBox } from '../components/BudgetSummaryBox';
 import { PaydownBudgetSection, type PaydownBudgetRow, type PaydownBudgetMeta, type PlannedCellStatus } from '../components/PaydownBudgetSection';
 import clsx from 'clsx';
 import { Dialog } from '../components/ui/dialog';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '../components/ui/input-group';
 
 interface MainCategory {
   id: string;
@@ -1181,9 +1182,11 @@ function MoveTransactionsDialog({
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-4 sm:p-5">
         <label htmlFor={`${titleId}-category-search`} className="text-sm font-medium fg-secondary">Find a destination</label>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 fg-muted" aria-hidden="true" />
-          <input
+        <InputGroup className="h-11 disabled:cursor-wait">
+          <InputGroupAddon>
+            <Search className="h-4 w-4" aria-hidden="true" />
+          </InputGroupAddon>
+          <InputGroupInput
             ref={searchRef}
             id={`${titleId}-category-search`}
             type="search"
@@ -1192,9 +1195,9 @@ function MoveTransactionsDialog({
             placeholder="Search categories"
             autoComplete="off"
             disabled={isPending}
-            className="h-11 w-full rounded-lg border border-default bg-surface py-2 pl-10 pr-3 text-sm fg-primary placeholder-slate-400 focus:border-amber-500 focus:outline-none disabled:cursor-wait disabled:opacity-60"
+            className="disabled:cursor-wait disabled:opacity-60"
           />
-        </div>
+        </InputGroup>
         <div
           role="radiogroup"
           aria-label="Destination category"

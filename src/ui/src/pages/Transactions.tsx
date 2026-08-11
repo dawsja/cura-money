@@ -12,7 +12,7 @@ import {
 } from '../lib/format';
 import {
   Trash2, Search, Receipt, ArrowLeftRight, Filter, X, Check, ArrowUpRight,
-  BellRing, Plus, TrendingUp, TrendingDown, MoreVertical, Calendar, Download, Pencil,
+  BellRing, Plus, TrendingUp, TrendingDown, MoreVertical, Calendar, Pencil,
 } from 'lucide-react';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '../components/ui/input-group';
 import {
@@ -636,7 +636,7 @@ export function Transactions() {
   });
 
   const markRecurring = useMutation({
-    mutationFn: (input: { transactionId: string; frequency: 'monthly' | 'yearly' }) =>
+    mutationFn: (input: { transactionId: string; frequency: 'weekly' | 'monthly' | 'yearly' }) =>
       api.post('/api/recurring/mark', input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['recurring'] });
@@ -826,23 +826,6 @@ export function Transactions() {
                 />
               )}
             </div>
-
-            <a
-              href="/api/data/transactions.csv"
-              download
-              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-default bg-surface px-2.5 py-1.5 text-xs font-medium fg-secondary transition-colors hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-300 md:min-h-0"
-              aria-label="Download transactions as CSV"
-            >
-              <Download className="h-3.5 w-3.5" /> CSV
-            </a>
-            <a
-              href="/api/data/export.json"
-              download
-              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-default bg-surface px-2.5 py-1.5 text-xs font-medium fg-secondary transition-colors hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-300 md:min-h-0"
-              aria-label="Download full data export as JSON"
-            >
-              <Download className="h-3.5 w-3.5" /> JSON
-            </a>
 
             {/* Add Transaction — primary CTA, amber pill on the
                 right end of the toolbar. Same height as the other
@@ -2350,10 +2333,11 @@ function EditTransactionModal({
 /**
  * TransactionActionModal — opened by the triple-dot button on each
  * transaction row. Allows editing the posting date, marking the
- * transaction's merchant as recurring (monthly or yearly), and
+ * transaction's merchant as recurring (weekly, monthly, or yearly), and
  * deleting the transaction.
  */
-type RecurringPick = 'none' | 'monthly' | 'yearly';
+type RecurringPick = 'none' | 'weekly' | 'monthly' | 'yearly';
+type RecurringState = RecurringPick | 'quarterly';
 
 function TransactionActionModal({
   transaction: t,
@@ -2375,7 +2359,7 @@ function TransactionActionModal({
   isPending: boolean;
 }) {
   const [date, setDate] = useState(t.date);
-  const [frequency, setFrequency] = useState<RecurringPick>('none');
+  const [frequency, setFrequency] = useState<RecurringState>('none');
   const [dateChanged, setDateChanged] = useState(false);
   const [recurringBusy, setRecurringBusy] = useState(false);
 
@@ -2396,7 +2380,12 @@ function TransactionActionModal({
     const match = recurringQ.data.find(
       (c) => `${c.merchant.toLowerCase()}|${Math.round(c.amount * 100) / 100}|${(c.accountId ?? c.account).toLowerCase()}` === key,
     );
-    if (match && (match.frequency === 'monthly' || match.frequency === 'yearly')) {
+    if (match && (
+      match.frequency === 'weekly'
+      || match.frequency === 'monthly'
+      || match.frequency === 'quarterly'
+      || match.frequency === 'yearly'
+    )) {
       setFrequency(match.frequency);
     } else {
       setFrequency('none');
@@ -2474,6 +2463,7 @@ function TransactionActionModal({
           <div className="flex gap-1.5">
             {([
               { value: 'none', label: 'None' },
+              { value: 'weekly', label: 'Weekly' },
               { value: 'monthly', label: 'Monthly' },
               { value: 'yearly', label: 'Yearly' },
             ] as const).map((opt) => (

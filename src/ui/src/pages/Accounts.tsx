@@ -108,7 +108,14 @@ export function Accounts() {
   });
   const sync = useMutation({
     mutationFn: () =>
-      api.post<{ accountsSynced: number; transactionsSynced: number; errors: string[] }>(
+      api.post<{
+        accountsSynced: number;
+        transactionsSynced: number;
+        transactionsReconciled: number;
+        reconciliationAmbiguous: number;
+        stalePendingTransactions: number;
+        errors: string[];
+      }>(
         '/api/simplefin/sync',
         {},
       ),
@@ -299,6 +306,19 @@ export function Accounts() {
             {sync.data && (
               <p className="text-xs fg-muted">
                 Synced {sync.data.accountsSynced} account(s), {sync.data.transactionsSynced} transaction(s).
+                {sync.data.transactionsReconciled > 0 && ` Reconciled ${sync.data.transactionsReconciled} pending charge(s).`}
+              </p>
+            )}
+            {sync.data && sync.data.reconciliationAmbiguous > 0 && (
+              <p className="text-xs text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3 shrink-0" />
+                {sync.data.reconciliationAmbiguous} pending charge(s) need manual duplicate review.
+              </p>
+            )}
+            {sync.data && sync.data.stalePendingTransactions > 0 && (
+              <p className="text-xs text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3 shrink-0" />
+                {sync.data.stalePendingTransactions} pending charge(s) have not been seen for at least 7 days.
               </p>
             )}
             {sync.data?.errors && sync.data.errors.length > 0 && (

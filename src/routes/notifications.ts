@@ -6,7 +6,7 @@
  *                            the bell (does NOT bulk-skip reviews)
  *
  * Upcoming charges are derived from recurring detection (lastDate +
- * frequency). Lead windows are monthly 7d, quarterly 14d, and yearly 30d;
+ * frequency). Lead windows are weekly 2d, monthly 7d, quarterly 14d, and yearly 30d;
  * recently overdue charges remain visible for 7d.
  */
 import { Hono } from 'hono';
@@ -50,8 +50,14 @@ async function getDismissed(uid: string): Promise<DismissedState> {
   }
 }
 
-function estimateNextCharge(lastDate: string, frequency: 'monthly' | 'quarterly' | 'yearly'): string {
+type RecurringFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+
+function estimateNextCharge(lastDate: string, frequency: RecurringFrequency): string {
   const [year, month, day] = lastDate.split('-').map(Number) as [number, number, number];
+  if (frequency === 'weekly') {
+    const d = new Date(Date.UTC(year, month - 1, day + 7, 12));
+    return d.toISOString().slice(0, 10);
+  }
   const months = frequency === 'monthly' ? 1 : frequency === 'quarterly' ? 3 : 12;
   const targetMonth = month - 1 + months;
   const targetYear = year + Math.floor(targetMonth / 12);
@@ -68,8 +74,9 @@ function daysUntil(nextDate: string, now = new Date()): number {
   return (next - today) / 86_400_000;
 }
 
-function isInNotifyWindow(days: number, frequency: 'monthly' | 'quarterly' | 'yearly'): boolean {
+function isInNotifyWindow(days: number, frequency: RecurringFrequency): boolean {
   if (days < -OVERDUE_NOTIFY_WINDOW_DAYS) return false;
+  if (frequency === 'weekly') return days <= 2;
   if (days > 30 && frequency === 'yearly') return false;
   if (frequency === 'monthly') return days <= 7;
   if (frequency === 'quarterly') return days <= 14;
@@ -80,7 +87,7 @@ export interface UpcomingNotification {
   key: string;
   merchant: string;
   amount: number;
-  frequency: 'monthly' | 'quarterly' | 'yearly';
+  frequency: RecurringFrequency;
   nextDate: string;
   daysUntil: number;
 }

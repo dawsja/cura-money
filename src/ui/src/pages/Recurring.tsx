@@ -2,7 +2,7 @@
  * Recurring — automatic detection of recurring charges.
  *
  * Scans past transactions for charges from the same merchant at the
- * same amount repeated across multiple months. Surfaces subscriptions,
+ * same amount repeated on a regular schedule. Surfaces subscriptions,
  * memberships, and recurring bills to help users stay on top of
  * recurring charges, catch fraud, or cancel unused services.
  */
@@ -15,7 +15,7 @@ import clsx from 'clsx';
 interface RecurringCharge {
   merchant: string;
   amount: number;
-  frequency: 'monthly' | 'quarterly' | 'yearly';
+  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
   occurrences: number;
   lastDate: string;
   category: string;
@@ -24,12 +24,14 @@ interface RecurringCharge {
 }
 
 const FREQUENCY_LABEL: Record<string, string> = {
+  weekly: 'Weekly',
   monthly: 'Monthly',
   quarterly: 'Quarterly',
   yearly: 'Yearly',
 };
 
 const FREQUENCY_BADGE: Record<string, string> = {
+  weekly: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
   monthly: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
   quarterly: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
   yearly: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
@@ -37,6 +39,7 @@ const FREQUENCY_BADGE: Record<string, string> = {
 
 /** Normalize any frequency to a monthly burn rate. */
 function monthlyBurn(c: RecurringCharge): number {
+  if (c.frequency === 'weekly') return c.amount * 52 / 12;
   if (c.frequency === 'monthly') return c.amount;
   if (c.frequency === 'quarterly') return c.amount / 3;
   return c.amount / 12;
@@ -44,6 +47,7 @@ function monthlyBurn(c: RecurringCharge): number {
 
 /** Annual cost for a single charge. */
 function annualCost(c: RecurringCharge): number {
+  if (c.frequency === 'weekly') return c.amount * 52;
   if (c.frequency === 'monthly') return c.amount * 12;
   if (c.frequency === 'quarterly') return c.amount * 4;
   return c.amount;
@@ -84,7 +88,7 @@ export function Recurring() {
     },
   });
 
-  // Monthly = equivalent monthly burn of every charge (mo + qtr/3 + yr/12).
+  // Monthly = equivalent monthly burn of every charge (wk x 52/12 + mo + qtr/3 + yr/12).
   // Yearly = sum of annualized costs — always monthlyTotal * 12 (within float).
   const monthlyTotal = data?.reduce((sum, c) => sum + monthlyBurn(c), 0) ?? 0;
   const yearlyEstimate = data?.reduce((sum, c) => sum + annualCost(c), 0) ?? 0;
@@ -112,7 +116,7 @@ export function Recurring() {
       <div data-onboarding-target="recurring-summary">
         <h1 className="text-2xl font-bold fg-primary">Recurring</h1>
         <p className="text-sm fg-secondary mt-1">
-          Automatically detected charges that repeat across months. Review these to catch unused subscriptions or unexpected charges.
+          Automatically detected charges that repeat on a regular schedule. Review these to catch unused subscriptions or unexpected charges.
         </p>
       </div>
       {dismiss.isError && (

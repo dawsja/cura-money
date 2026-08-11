@@ -13,6 +13,7 @@ import {
   setSetting,
   upsertAccount,
   addTransactionWithExternalId,
+  countStaleSimpleFinPending,
   deleteImportedTransactionsForAccount,
   getAllCategories,
   listRulesForMatching,
@@ -341,6 +342,11 @@ export interface SimpleFinSyncResult {
   transactionsSynced: number;
   transactionsInserted: number;
   transactionsUpdated: number;
+  transactionsReconciled: number;
+  reconciliationAmbiguous: number;
+  pendingTransactions: number;
+  pendingWithoutTimestamp: number;
+  stalePendingTransactions: number;
   errors: string[];
   // Newly-upserted accounts with their inferred types. The UI uses
   // this to open a post-sync review carousel so the user can correct
@@ -457,6 +463,10 @@ async function performSimpleFinSync(
   let transactionsSynced = 0;
   let transactionsInserted = 0;
   let transactionsUpdated = 0;
+  let transactionsReconciled = 0;
+  let reconciliationAmbiguous = 0;
+  let pendingTransactions = 0;
+  let pendingWithoutTimestamp = 0;
   const imported: ImportedAccount[] = [];
   const storedAccountMap = await getSetting(userId, 'simplefin_account_id_map');
   const legacyMigrationComplete = await getSetting(userId, 'simplefin_legacy_account_migration_complete') === 'true';
@@ -567,7 +577,12 @@ async function performSimpleFinSync(
     }
 
     if (sAcc.transactions && Array.isArray(sAcc.transactions)) {
-      for (const sTx of sAcc.transactions) {
+      const orderedTransactions = [...sAcc.transactions].sort((a, b) => {
+        const aPending = a.pending === true || a.posted === 0;
+        const bPending = b.pending === true || b.posted === 0;
+        return Number(bPending) - Number(aPending);
+      });
+      for (const sTx of orderedTransactions) {
         let signedAmountCents: number;
         try {
           signedAmountCents = simpleFinAmountToCents(sTx.amount);
@@ -575,9 +590,12 @@ async function performSimpleFinSync(
           throw new SimpleFinError('SimpleFIN returned an invalid transaction amount.', 'invalid_amount');
         }
         const merchant = sTx.payee || sTx.description || 'Unknown Merchant';
-        // SimpleFIN uses posted=0 for pending entries. Prefer its optional
-        // purchase timestamp before falling back to the sync date.
-        const transactionTimestamp = sTx.posted || sTx.transacted_at;
+        const sourcePending = sTx.pending === true || sTx.posted === 0;
+        if (sourcePending) pendingTransactions++;
+        if (sourcePending && !sTx.transacted_at && !sTx.posted) pendingWithoutTimestamp++;
+        // The purchase date is stable across pending and posted versions.
+        // Preserve the first-seen date when the provider supplies no timestamp.
+        const transactionTimestamp = sTx.transacted_at || sTx.posted;
         const transactionTimestampMs = transactionTimestamp ? transactionTimestamp * 1000 : now;
         const dateStr = formatSimpleFinDate(transactionTimestampMs);
         const isIncome = signedAmountCents > 0;
@@ -623,21 +641,28 @@ async function performSimpleFinSync(
           account: sAcc.name,
           amountCents: absAmountCents,
           type: txType,
-          notes: sTx.memo || (sTx.pending ? 'Pending Transaction' : undefined),
+          notes: sTx.memo || (sourcePending ? 'Pending Transaction' : undefined),
           externalId,
           legacyExternalId: `sf-${sTx.id}`,
           needsReview: !ruleMatch?.subCategory,
+          sourcePending,
+          sourceTransactedAt: sTx.transacted_at,
+          sourceLastSeenAt: new Date(now),
+          preserveSourceDate: !transactionTimestamp,
         });
         if (result) {
           transactionsSynced++;
           if (result.action === 'inserted') transactionsInserted++;
+          else if (result.action === 'reconciled') transactionsReconciled++;
           else transactionsUpdated++;
+          if (result.reconciliationAmbiguous) reconciliationAmbiguous++;
         }
       }
     }
   }
 
   const errorList = [...errors];
+  const stalePendingTransactions = await countStaleSimpleFinPending(userId);
   await setSetting(userId, 'simplefin_last_error', errorList.join('\n'));
   await setSetting(userId, 'simplefin_legacy_account_migration_complete', 'true');
   if (errorList.length === 0) {
@@ -649,6 +674,11 @@ async function performSimpleFinSync(
     transactionsSynced,
     transactionsInserted,
     transactionsUpdated,
+    transactionsReconciled,
+    reconciliationAmbiguous,
+    pendingTransactions,
+    pendingWithoutTimestamp,
+    stalePendingTransactions,
     errors: errorList,
     imported,
   };

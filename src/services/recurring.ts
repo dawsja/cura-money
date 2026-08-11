@@ -21,7 +21,7 @@ export const recurringIdentitySchema = z.object({
 
 export const markedRecurringSchema = recurringIdentitySchema.extend({
   account: z.string().min(1),
-  frequency: z.enum(['monthly', 'yearly']),
+  frequency: z.enum(['weekly', 'monthly', 'yearly']),
   lastDate: z.string().date(),
   category: z.string().min(1),
 });
@@ -29,11 +29,11 @@ export const markedRecurringSchema = recurringIdentitySchema.extend({
 const legacyMarkedRecurringSchema = z.object({
   merchant: z.string().min(1),
   amount: z.number().finite(),
-  frequency: z.enum(['monthly', 'yearly']),
+  frequency: z.enum(['weekly', 'monthly', 'yearly']),
 });
 const transactionMarkRequestSchema = z.object({
   transactionId: z.string().min(1),
-  frequency: z.enum(['monthly', 'yearly']),
+  frequency: z.enum(['weekly', 'monthly', 'yearly']),
 });
 const legacyMarkRequestSchema = legacyMarkedRecurringSchema.extend({
   account: z.string().min(1).optional(),

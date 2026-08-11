@@ -15,6 +15,7 @@ import { categories } from './schema/categories';
 import { subCategories } from './schema/sub_categories';
 import { transactions } from './schema/transactions';
 import { transactionSplits } from './schema/transaction_splits';
+import { simpleFinTransactionAliases } from './schema/simplefin_transaction_aliases';
 import { monthlyBudgets } from './schema/monthly_budgets';
 import { settings } from './schema/settings';
 import { goals } from './schema/goals';
@@ -2272,8 +2273,16 @@ export async function addTransactionWithExternalId(
     externalId?: string;
     legacyExternalId?: string;
     needsReview?: boolean;
+    sourcePending?: boolean;
+    sourceTransactedAt?: number;
+    sourceLastSeenAt?: Date;
+    preserveSourceDate?: boolean;
   },
-): Promise<{ transaction: Transaction; action: 'inserted' | 'updated' } | null> {
+): Promise<{
+  transaction: Transaction;
+  action: 'inserted' | 'updated' | 'reconciled';
+  reconciliationAmbiguous?: boolean;
+} | null> {
   if (!Number.isSafeInteger(tx.amountCents) || tx.amountCents < 0) {
     throw new Error('amount cents must be a non-negative safe integer');
   }
@@ -2292,13 +2301,35 @@ export async function addTransactionWithExternalId(
   // SimpleFIN transaction IDs are only unique within an account. New imports
   // use an account-scoped ID; migrate a matching legacy ID in place so an
   // upgrade does not duplicate already-imported transactions.
+  let reconciliationAmbiguous = false;
+  let reconciled = false;
   let [existing] = tx.externalId
     ? await db
-        .select()
-        .from(transactions)
-        .where(and(eq(transactions.userId, userId), eq(transactions.externalId, tx.externalId)))
+        .select({ transaction: transactions })
+        .from(simpleFinTransactionAliases)
+        .innerJoin(
+          transactions,
+          and(
+            eq(transactions.userId, simpleFinTransactionAliases.userId),
+            eq(transactions.id, simpleFinTransactionAliases.transactionId),
+          ),
+        )
+        .where(
+          and(
+            eq(simpleFinTransactionAliases.userId, userId),
+            eq(simpleFinTransactionAliases.externalId, tx.externalId),
+          ),
+        )
         .limit(1)
+        .then((rows) => rows.map((row) => row.transaction))
     : [];
+  if (!existing && tx.externalId) {
+    [existing] = await db
+      .select()
+      .from(transactions)
+      .where(and(eq(transactions.userId, userId), eq(transactions.externalId, tx.externalId)))
+      .limit(1);
+  }
   if (!existing && tx.legacyExternalId) {
     [existing] = await db
       .select()
@@ -2316,6 +2347,236 @@ export async function addTransactionWithExternalId(
       .limit(1);
   }
 
+  if (existing && tx.sourcePending === true && existing.sourcePending === false) {
+    if (tx.externalId) {
+      await db
+        .insert(simpleFinTransactionAliases)
+        .values({ userId, externalId: tx.externalId, transactionId: existing.id, lastSeenAt: tx.sourceLastSeenAt })
+        .onConflictDoUpdate({
+          target: [simpleFinTransactionAliases.userId, simpleFinTransactionAliases.externalId],
+          set: { lastSeenAt: tx.sourceLastSeenAt ?? new Date() },
+        });
+    }
+    return {
+      action: 'updated',
+      transaction: {
+        id: existing.id,
+        date: existing.date,
+        merchant: existing.merchant,
+        sourceCategory: existing.sourceCategory,
+        sourceSubCategory: existing.sourceSubCategory ?? undefined,
+        sourceType: existing.sourceType,
+        sourceClassificationTrusted: existing.sourceClassificationTrusted,
+        category: existing.category,
+        subCategory: existing.subCategory ?? undefined,
+        categoryId: existing.categoryId ?? undefined,
+        subCategoryId: existing.subCategoryId ?? undefined,
+        accountId: existing.accountId ?? undefined,
+        account: existing.account,
+        amount: centsToDollars(existing.amountCents),
+        type: existing.type,
+        notes: existing.notes ?? undefined,
+        splits: [],
+      },
+    };
+  }
+
+  const exactPendingUpdate = existing?.sourcePending === true && existing.externalId === tx.externalId;
+  if (tx.externalId && tx.sourcePending === false && tx.sourceType === 'expense' && !exactPendingUpdate) {
+    const candidates = await db
+      .select({ transaction: transactions })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.accountId, account.id),
+          eq(transactions.sourcePending, true),
+          eq(transactions.sourceType, tx.sourceType),
+          sql`lower(regexp_replace(btrim(${transactions.merchant}), '\\s+', ' ', 'g')) = ${normalizeMerchant(tx.merchant)}`,
+          sql`abs(${tx.amountCents} - ${transactions.amountCents}) <= 10000`,
+          or(
+            tx.sourceTransactedAt == null
+              ? sql`false`
+              : and(
+                  eq(transactions.sourceTransactedAt, tx.sourceTransactedAt),
+                  sql`${tx.amountCents} * 2 <= ${transactions.amountCents} * 3`,
+                  sql`${tx.amountCents} * 2 >= ${transactions.amountCents}`,
+                ),
+            and(
+              tx.sourceTransactedAt == null ? sql`true` : isNull(transactions.sourceTransactedAt),
+              lte(transactions.amountCents, tx.amountCents),
+              sql`${tx.amountCents} * 10 <= ${transactions.amountCents} * 13`,
+              sql`${tx.date}::date BETWEEN coalesce(${transactions.sourceDate}, ${transactions.date}) - 1 AND coalesce(${transactions.sourceDate}, ${transactions.date}) + 1`,
+            ),
+          ),
+        ),
+      );
+    const usableCandidates: typeof candidates = [];
+    for (const candidate of candidates) {
+      if (existing && candidate.transaction.id === existing.id) {
+        usableCandidates.push(candidate);
+        continue;
+      }
+      const candidateDateOverridden = candidate.transaction.dateUserModified
+        && candidate.transaction.sourceDate != null
+        && candidate.transaction.date !== candidate.transaction.sourceDate;
+      const existingDateOverridden = existing?.dateUserModified === true
+        && existing.sourceDate != null
+        && existing.date !== existing.sourceDate;
+      const categoryConflict = existing?.categoryUserModified === true
+        && candidate.transaction.categoryUserModified
+        && (
+          existing.categoryId !== candidate.transaction.categoryId
+          || existing.subCategoryId !== candidate.transaction.subCategoryId
+          || existing.type !== candidate.transaction.type
+        );
+      const dateConflict = existingDateOverridden
+        && candidateDateOverridden
+        && existing!.date !== candidate.transaction.date;
+      const candidateNote = candidate.transaction.notes === 'Pending Transaction'
+        ? null
+        : candidate.transaction.notes;
+      const existingNote = existing?.notes === 'Pending Transaction' ? null : existing?.notes;
+      const noteConflict = !!candidateNote && !!existingNote && candidateNote !== existingNote;
+      if (categoryConflict || dateConflict || noteConflict) continue;
+      const splitOwners = existing
+        ? [candidate.transaction.id, existing.id]
+        : [candidate.transaction.id];
+      const [split] = await db
+        .select({ id: transactionSplits.id })
+        .from(transactionSplits)
+        .where(
+          and(
+            eq(transactionSplits.userId, userId),
+            inArray(transactionSplits.transactionId, splitOwners),
+          ),
+        )
+        .limit(1);
+      if (!split) usableCandidates.push(candidate);
+    }
+    if (usableCandidates.length === 1) {
+      const candidate = usableCandidates[0]!.transaction;
+      if (!existing || existing.id !== candidate.id) {
+        const existingId = existing?.id;
+        const merged = await db.transaction(async (databaseTx) => {
+          const lockedRows = await databaseTx
+            .select()
+            .from(transactions)
+            .where(
+              and(
+                eq(transactions.userId, userId),
+                inArray(transactions.id, existingId ? [candidate.id, existingId] : [candidate.id]),
+              ),
+            )
+            .orderBy(asc(transactions.id))
+            .for('update');
+          const lockedCandidate = lockedRows.find((row) => row.id === candidate.id);
+          const lockedExisting = existingId ? lockedRows.find((row) => row.id === existingId) : undefined;
+          if (!lockedCandidate || (existingId && !lockedExisting)) return false;
+
+          if (lockedExisting) {
+            const candidateDateOverridden = lockedCandidate.dateUserModified
+              && lockedCandidate.sourceDate != null
+              && lockedCandidate.date !== lockedCandidate.sourceDate;
+            const existingDateOverridden = lockedExisting.dateUserModified
+              && lockedExisting.sourceDate != null
+              && lockedExisting.date !== lockedExisting.sourceDate;
+            const categoryConflict = lockedExisting.categoryUserModified
+              && lockedCandidate.categoryUserModified
+              && (
+                lockedExisting.categoryId !== lockedCandidate.categoryId
+                || lockedExisting.subCategoryId !== lockedCandidate.subCategoryId
+                || lockedExisting.type !== lockedCandidate.type
+              );
+            const candidateNote = lockedCandidate.notes === 'Pending Transaction' ? null : lockedCandidate.notes;
+            const existingNote = lockedExisting.notes === 'Pending Transaction' ? null : lockedExisting.notes;
+            if (
+              categoryConflict
+              || (candidateDateOverridden && existingDateOverridden && lockedCandidate.date !== lockedExisting.date)
+              || (!!candidateNote && !!existingNote && candidateNote !== existingNote)
+            ) {
+              return false;
+            }
+            const [split] = await databaseTx
+              .select({ id: transactionSplits.id })
+              .from(transactionSplits)
+              .where(
+                and(
+                  eq(transactionSplits.userId, userId),
+                  inArray(transactionSplits.transactionId, [lockedCandidate.id, lockedExisting.id]),
+                ),
+              )
+              .limit(1);
+            if (split) return false;
+
+            if (lockedExisting.categoryUserModified && !lockedCandidate.categoryUserModified) {
+              await databaseTx
+                .update(transactions)
+                .set({
+                  category: lockedExisting.category,
+                  subCategory: lockedExisting.subCategory,
+                  categoryId: lockedExisting.categoryId,
+                  subCategoryId: lockedExisting.subCategoryId,
+                  categoryUserModified: true,
+                  type: lockedExisting.type,
+                })
+                .where(and(eq(transactions.userId, userId), eq(transactions.id, lockedCandidate.id)));
+            }
+            await databaseTx
+              .update(transactions)
+              .set({
+                ...(existingDateOverridden && !candidateDateOverridden
+                  ? { date: lockedExisting.date, dateUserModified: true }
+                  : {}),
+                ...(existingNote && lockedCandidate.notes === 'Pending Transaction' ? { notes: existingNote } : {}),
+                needsReview: lockedCandidate.needsReview && lockedExisting.needsReview,
+              })
+              .where(and(eq(transactions.userId, userId), eq(transactions.id, lockedCandidate.id)));
+            await databaseTx
+              .update(simpleFinTransactionAliases)
+              .set({ transactionId: lockedCandidate.id, lastSeenAt: tx.sourceLastSeenAt ?? new Date() })
+              .where(
+                and(
+                  eq(simpleFinTransactionAliases.userId, userId),
+                  eq(simpleFinTransactionAliases.transactionId, lockedExisting.id),
+                ),
+              );
+            await databaseTx
+              .update(transactions)
+              .set({ externalId: null })
+              .where(and(eq(transactions.userId, userId), eq(transactions.id, lockedExisting.id)));
+            await databaseTx
+              .delete(transactions)
+              .where(and(eq(transactions.userId, userId), eq(transactions.id, lockedExisting.id)));
+          }
+          await databaseTx
+            .insert(simpleFinTransactionAliases)
+            .values({
+              userId,
+              externalId: tx.externalId!,
+              transactionId: candidate.id,
+              lastSeenAt: tx.sourceLastSeenAt,
+            })
+            .onConflictDoUpdate({
+              target: [simpleFinTransactionAliases.userId, simpleFinTransactionAliases.externalId],
+              set: { transactionId: candidate.id, lastSeenAt: tx.sourceLastSeenAt ?? new Date() },
+            });
+          return true;
+        });
+        if (merged) {
+          [existing] = await db
+            .select()
+            .from(transactions)
+            .where(and(eq(transactions.userId, userId), eq(transactions.id, candidate.id)))
+            .limit(1);
+          reconciled = true;
+        }
+      }
+    } else if (usableCandidates.length > 1) {
+      reconciliationAmbiguous = true;
+    }
+  }
+
   if (existing) {
     return db.transaction(async (databaseTx) => {
       const [current] = await databaseTx
@@ -2331,14 +2592,15 @@ export async function addTransactionWithExternalId(
         .from(transactionSplits)
         .where(and(eq(transactionSplits.userId, userId), eq(transactionSplits.transactionId, current.id)))
         .orderBy(asc(transactionSplits.sortOrder));
-      const effectiveDate = current.dateUserModified ? current.date : tx.date;
+      const incomingSourceDate = tx.preserveSourceDate && current.sourceDate ? current.sourceDate : tx.date;
+      const effectiveDate = current.dateUserModified ? current.date : incomingSourceDate;
       const effectiveNotes = current.notes === 'Pending Transaction' ? (tx.notes ?? null) : current.notes;
       const amountChanged = current.amountCents !== tx.amountCents;
       await databaseTx
         .update(transactions)
         .set({
           date: effectiveDate,
-          sourceDate: tx.date,
+          sourceDate: incomingSourceDate,
            merchant: tx.merchant,
            sourceCategory: tx.sourceCategory,
            sourceSubCategory: tx.sourceSubCategory ?? null,
@@ -2348,6 +2610,9 @@ export async function addTransactionWithExternalId(
           account: account.name,
           amountCents: tx.amountCents,
           externalId: tx.externalId ?? current.externalId,
+          sourcePending: tx.sourcePending ?? current.sourcePending,
+          sourceTransactedAt: tx.sourceTransactedAt ?? current.sourceTransactedAt,
+          sourceLastSeenAt: tx.sourceLastSeenAt ?? current.sourceLastSeenAt,
            // Existing assignments are user-owned. Sync refreshes source
            // metadata, but historical categorization changes require Run.
           // A changed source amount invalidates explicit allocations. Return
@@ -2363,8 +2628,23 @@ export async function addTransactionWithExternalId(
           .delete(transactionSplits)
           .where(and(eq(transactionSplits.userId, userId), eq(transactionSplits.transactionId, current.id)));
       }
+      if (tx.externalId) {
+        await databaseTx
+          .insert(simpleFinTransactionAliases)
+          .values({
+            userId,
+            externalId: tx.externalId,
+            transactionId: current.id,
+            lastSeenAt: tx.sourceLastSeenAt,
+          })
+          .onConflictDoUpdate({
+            target: [simpleFinTransactionAliases.userId, simpleFinTransactionAliases.externalId],
+            set: { transactionId: current.id, lastSeenAt: tx.sourceLastSeenAt ?? new Date() },
+          });
+      }
       return {
-        action: 'updated' as const,
+        action: reconciled ? 'reconciled' as const : 'updated' as const,
+        reconciliationAmbiguous,
         transaction: {
            id: current.id,
            date: effectiveDate,
@@ -2424,6 +2704,9 @@ export async function addTransactionWithExternalId(
       type: tx.type,
       notes: tx.notes ?? null,
       externalId: tx.externalId ?? null,
+      sourcePending: tx.sourcePending ?? null,
+      sourceTransactedAt: tx.sourceTransactedAt ?? null,
+      sourceLastSeenAt: tx.sourceLastSeenAt ?? null,
       // SimpleFIN imports land in the review queue by default so the
       // user can confirm the smart categoriser. When a user rule already
       // covers the merchant, the importer passes needsReview: false so
@@ -2435,8 +2718,15 @@ export async function addTransactionWithExternalId(
     })
     .returning({ id: transactions.id });
   if (inserted.length === 0) return null;
+  if (tx.externalId) {
+    await db
+      .insert(simpleFinTransactionAliases)
+      .values({ userId, externalId: tx.externalId, transactionId: id, lastSeenAt: tx.sourceLastSeenAt })
+      .onConflictDoNothing();
+  }
   return {
     action: 'inserted',
+    reconciliationAmbiguous,
     transaction: {
       id,
       date: tx.date,
@@ -4493,12 +4783,27 @@ export async function getBudgetVsActual(userId: string, yearMonth: string): Prom
   return out;
 }
 
+export async function countStaleSimpleFinPending(userId: string): Promise<number> {
+  const cutoff = new Date(Date.now() - 7 * 86_400_000);
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        eq(transactions.sourcePending, true),
+        lte(transactions.sourceLastSeenAt, cutoff),
+      ),
+    );
+  return row?.count ?? 0;
+}
+
 // ---- Recurring charges detection ----------------------------------------
 
 export interface RecurringCharge {
   merchant: string;
   amount: number;
-  frequency: 'monthly' | 'quarterly' | 'yearly';
+  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
   occurrences: number;
   lastDate: string;
   category: string;
@@ -4589,9 +4894,10 @@ export async function getRecurringTransactionMetadata(
 }
 
 const CADENCE_PERIODS: {
-  frequency: 'monthly' | 'quarterly' | 'yearly';
+  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
   period: number;
 }[] = [
+  { frequency: 'weekly', period: 7 },
   { frequency: 'monthly', period: 30.44 },
   { frequency: 'quarterly', period: 91.31 },
   { frequency: 'yearly', period: 365.25 },
@@ -4616,8 +4922,8 @@ function todayYmdUtc(): string {
  * Detect recurring charges: same merchant + amount (¢-rounded), with a
  * regular cadence. Gates (all must pass for a candidate frequency):
  *   - ≥ 3 distinct posting dates
- *   - mean gap within 25% of the period (monthly 30.44d / quarterly
- *     91.31d / yearly 365.25d)
+ *   - mean gap within 25% of the period (weekly 7d / monthly 30.44d /
+ *     quarterly 91.31d / yearly 365.25d)
  *   - coefficient of variation of gaps ≤ 0.35
  *   - span (last − first) ≥ 1.5 × period
  *   - last charge within 2 × period of today (drops stale patterns)
@@ -4698,7 +5004,7 @@ export async function getRecurringCharges(userId: string): Promise<RecurringChar
     const age = daysBetweenYmd(last, today);
 
     let best: {
-      frequency: 'monthly' | 'quarterly' | 'yearly';
+      frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
       score: number;
     } | null = null;
     for (const { frequency, period } of CADENCE_PERIODS) {

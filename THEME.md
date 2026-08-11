@@ -152,6 +152,8 @@ still use labels, tooltips, and accessible data tables rather than color alone.
    preventing a second indicator from being layered over component-owned rings.
 9. If either page canvas changes, update the pre-paint script's `theme-color`
    values and the applicable static manifest color.
+10. Composite inputs place the focus outline on their shared wrapper so icons
+    and text fields receive one continuous focus indicator.
 
 ## Verification
 

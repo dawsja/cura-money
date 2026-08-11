@@ -15,7 +15,7 @@
  *     <InputGroupAddon align="inline-end">12 results</InputGroupAddon>
  *   </InputGroup>
  *
- * Focus handling: the wrapper applies the amber border on
+ * Focus handling: the wrapper applies the focus border and outline on
  * `focus-within` so the visual focus cue follows whichever descendant
  * (typically the input) is actually focused. Individual children
  * strip their own border + outline so there's no double border or
@@ -40,11 +40,10 @@ export function InputGroup({
       data-slot="input-group"
       className={clsx(
         // Visible border + background live on the wrapper so addons
-        // and the input read as one control. focus-within promotes
-        // the same amber border the existing INPUT_CLS uses; the
-        // inner input strips its own outline to avoid double-stacking.
+        // and the input read as one control. The inner input strips its
+        // own outline so focus-within can highlight this full wrapper.
         'flex items-stretch w-full rounded-lg border border-default bg-surface',
-        'transition-colors focus-within:border-amber-500',
+        'transition-colors',
         'has-[>input:disabled]:opacity-50 has-[>input:disabled]:cursor-not-allowed',
         className,
       )}
@@ -68,23 +67,23 @@ export function InputGroupAddon({
   align = 'inline-start',
   className,
   children,
-}: {
+  ...props
+}: React.HTMLAttributes<HTMLDivElement> & {
   align?: 'inline-start' | 'inline-end';
-  className?: string;
-  children: React.ReactNode;
 }) {
   return (
-<div
-        data-slot="input-group-addon"
-        data-align={align}
-        className={clsx(
-          'flex items-center fg-muted text-sm shrink-0',
-          align === 'inline-start' ? 'pl-3' : 'pr-3',
-          className,
-        )}
-      >
-        {children}
-      </div>
+    <div
+      data-slot="input-group-addon"
+      data-align={align}
+      className={clsx(
+        'flex items-center fg-muted text-sm shrink-0',
+        align === 'inline-start' ? 'pl-3' : 'pr-3',
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -106,7 +105,7 @@ export const InputGroupInput = React.forwardRef<
         'flex-1 min-w-0 bg-transparent border-0 outline-none',
         'fg-primary placeholder-slate-400',
         'px-3 py-2 text-sm rounded-lg',
-        'focus:outline-none focus:ring-0',
+        'focus:outline-none focus-visible:outline-none focus:ring-0',
         className,
       )}
       {...props}
