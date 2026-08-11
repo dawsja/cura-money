@@ -225,6 +225,13 @@
       "when": 1787300000000,
       "tag": "0031_simplefin_reconciliation",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786480307735,
+      "tag": "0032_emoji_default_subcategories",
+      "breakpoints": true
     }
   ]
 }

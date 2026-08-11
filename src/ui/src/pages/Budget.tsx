@@ -627,10 +627,9 @@ function BudgetSection({
                       type="button"
                       onClick={() => onOpenDrilldown({ category: categoryName, subCategory: sub.name, type: isIncome ? 'income' : 'expense' })}
                       title={`View transactions for ${sub.name}`}
-                      className="group inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-left text-sm font-medium fg-primary hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
+                      className="inline-flex min-w-0 cursor-pointer items-center text-left text-sm font-medium fg-primary hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
                     >
                       <span className="truncate">{sub.name}</span>
-                      <ReceiptText className="h-3.5 w-3.5 shrink-0 text-slate-500 group-hover:text-amber-700 dark:text-slate-400 dark:group-hover:text-amber-300" aria-hidden="true" />
                     </button>
                     <span className={clsx(
                       'text-sm font-semibold tabular-nums shrink-0',
@@ -737,10 +736,9 @@ function BudgetSection({
                         type="button"
                         onClick={() => onOpenDrilldown({ category: categoryName, subCategory: sub.name, type: isIncome ? 'income' : 'expense' })}
                         title={`View transactions for ${sub.name}`}
-                        className="group inline-flex cursor-pointer items-center gap-1.5 text-left hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
+                        className="inline-flex cursor-pointer items-center text-left hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
                       >
                         <span>{sub.name}</span>
-                        <ReceiptText className="h-3.5 w-3.5 shrink-0 text-slate-500 group-hover:text-amber-700 dark:text-slate-400 dark:group-hover:text-amber-300" aria-hidden="true" />
                       </button>
                     </td>
                     <td className="py-2 pr-2">

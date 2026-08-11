@@ -71,12 +71,12 @@ export function smartCategorizeMerchant(merchantStr: string, amount: number): Ca
   // transfer pattern is almost always moving money between two of the
   // user's own accounts regardless of which side the bank is showing.
   if (looksLikeTransfer(m)) {
-    // Use a dedicated Transfer / Account Transfer bucket. The UI maps
+    // Use the dedicated Transfer / Account Transfer bucket. The UI maps
     // this through the user's Transfer category (auto-seeded for new
     // users, inserted by migration 0008 for existing ones).
     return {
       category: 'Transfer',
-      subCategory: 'Account Transfer',
+      subCategory: '🔄 Account Transfer',
       type: 'transfer',
     };
   }
@@ -85,15 +85,15 @@ export function smartCategorizeMerchant(merchantStr: string, amount: number): Ca
 
   if (isIncome) {
     if (m.includes('payroll') || m.includes('salary') || m.includes('direct deposit') || m.includes('paycheck') || m.includes('employer')) {
-      return { category: 'Income', subCategory: 'Paychecks' };
+      return { category: 'Income', subCategory: '💵 Paychecks' };
     }
     if (m.includes('freelance') || m.includes('stripe') || m.includes('upwork') || m.includes('client')) {
-      return { category: 'Income', subCategory: 'Business Income' };
+      return { category: 'Income', subCategory: '💼 Business Income' };
     }
     if (m.includes('dividend') || m.includes('interest') || m.includes('yield')) {
-      return { category: 'Income', subCategory: 'Interest' };
+      return { category: 'Income', subCategory: '🏦 Interest' };
     }
-    return { category: 'Income', subCategory: 'Other Income' };
+    return { category: 'Income', subCategory: '💰 Other Income' };
   }
 
   if (
@@ -102,7 +102,7 @@ export function smartCategorizeMerchant(merchantStr: string, amount: number): Ca
     m.includes('aldi') || m.includes('walmart') || m.includes('grocery') ||
     m.includes('supermarket')
   ) {
-    return { category: 'Food & Dining', subCategory: 'Groceries' };
+    return { category: 'Food & Dining', subCategory: '🛒 Groceries' };
   }
 
   if (
@@ -111,7 +111,7 @@ export function smartCategorizeMerchant(merchantStr: string, amount: number): Ca
     m.includes('restaurant') || m.includes('cafe') || m.includes('dunkin') ||
     m.includes('pizza') || m.includes('burger')
   ) {
-    return { category: 'Food & Dining', subCategory: 'Restaurants & Bars' };
+    return { category: 'Food & Dining', subCategory: '🍻 Restaurants & Bars' };
   }
 
   if (
@@ -120,7 +120,7 @@ export function smartCategorizeMerchant(merchantStr: string, amount: number): Ca
     m.includes('fuel') || m.includes('uber') || m.includes('lyft') ||
     m.includes('transit')
   ) {
-    return { category: 'Auto & Transport', subCategory: 'Gas' };
+    return { category: 'Auto & Transport', subCategory: '⛽ Gas' };
   }
 
   if (
@@ -128,7 +128,7 @@ export function smartCategorizeMerchant(merchantStr: string, amount: number): Ca
     m.includes('att') || m.includes('t-mobile') || m.includes('comcast') ||
     m.includes('xfinity') || m.includes('utility') || m.includes('power')
   ) {
-    return { category: 'Bills & Utilities', subCategory: 'Gas & Electric' };
+    return { category: 'Bills & Utilities', subCategory: '⚡ Gas & Electric' };
   }
 
   if (
@@ -136,7 +136,7 @@ export function smartCategorizeMerchant(merchantStr: string, amount: number): Ca
     m.includes('apple') || m.includes('google') || m.includes('prime') ||
     m.includes('disney') || m.includes('cinema') || m.includes('ticketmaster')
   ) {
-    return { category: 'Travel & Lifestyle', subCategory: 'Entertainment & Recreation' };
+    return { category: 'Travel & Lifestyle', subCategory: '🎮 Entertainment & Recreation' };
   }
 
   if (
@@ -144,10 +144,10 @@ export function smartCategorizeMerchant(merchantStr: string, amount: number): Ca
     m.includes('nordstrom') || m.includes('sephora') || m.includes('ebay') ||
     m.includes('apparel')
   ) {
-    return { category: 'Shopping', subCategory: 'Shopping' };
+    return { category: 'Shopping', subCategory: '🛍️ Shopping' };
   }
 
-  return { category: 'Other', subCategory: 'Miscellaneous' };
+  return { category: 'Other', subCategory: '📦 Miscellaneous' };
 }
 
 /** Port of inferAccountType. Used by SimpleFIN sync. */

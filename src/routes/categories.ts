@@ -21,13 +21,17 @@ export const categoryRoutes = new Hono();
 const MAX_MONEY = 90_000_000_000_000;
 
 const TxType = z.enum(['income', 'expense', 'transfer']);
+const MainCategoryName = z.string().trim().min(1).max(120).refine(
+  (name) => !/[\p{Extended_Pictographic}\p{Regional_Indicator}\uFE0F\u20E3]/u.test(name),
+  'Main category names cannot contain emoji',
+);
 
 const AddMainSchema = z.object({
-  name: z.string().min(1).max(120),
+  name: MainCategoryName,
   type: TxType,
   icon: z.string().max(64).optional(),
 });
-const EditMainSchema = z.object({ name: z.string().trim().min(1).max(120) });
+const EditMainSchema = z.object({ name: MainCategoryName });
 const AddSubSchema = z.object({
   mainCategoryId: z.string().min(1),
   name: z.string().min(1).max(120),

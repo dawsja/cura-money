@@ -23,9 +23,14 @@ export const DEMO_EMAIL = 'demo@curamoney.com';
 export const DEMO_PASSWORD = 'demo';
 
 const DEMO_USER_ID = 'demo-user';
+const MAIN_CATEGORY_EMOJI_PREFIX = /^[\p{Extended_Pictographic}\p{Regional_Indicator}\uFE0F\u200D\s]+/u;
+
+function plainMainCategoryName(name: string): string {
+  return name.replace(MAIN_CATEGORY_EMOJI_PREFIX, '');
+}
 
 function demoAssignment(categoryName: string, subCategoryName: string) {
-  const category = INITIAL_CATEGORIES.find((item) => item.name === categoryName);
+  const category = INITIAL_CATEGORIES.find((item) => item.name === plainMainCategoryName(categoryName));
   const subCategory = category?.subCategories.find((item) => item.name === subCategoryName);
   return {
     categoryId: category ? `${DEMO_USER_ID}:${category.id}` : null,
@@ -61,48 +66,48 @@ interface DemoTransaction {
   notes?: string;
 }
 
-const transactionTemplates: DemoTransaction[] = [
-  { id: 'paycheck-1', dayOffset: -2, merchant: 'Acme Design Studio', category: 'Income', subCategory: 'Paychecks', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 325000, type: 'income' },
-  { id: 'groceries-1', dayOffset: -1, merchant: 'Fresh Market', category: 'Food & Dining', subCategory: 'Groceries', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 8642, type: 'expense' },
-  { id: 'coffee-1', dayOffset: -2, merchant: 'Juniper Coffee', category: 'Food & Dining', subCategory: 'Coffee Shops', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 575, type: 'expense' },
-  { id: 'fuel-1', dayOffset: -3, merchant: 'Shell', category: 'Auto & Transport', subCategory: 'Gas', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 4821, type: 'expense' },
-  { id: 'restaurant-1', dayOffset: -4, merchant: 'Green Table Kitchen', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 6730, type: 'expense' },
-  { id: 'restaurant-2', dayOffset: -1, merchant: 'Harbor Ramen', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 4280, type: 'expense' },
-  { id: 'restaurant-3', dayOffset: -2, merchant: 'Copper Oven Pizza', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 5875, type: 'expense' },
-  { id: 'restaurant-4', dayOffset: -3, merchant: 'Oak & Ember', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 3690, type: 'expense' },
-  { id: 'restaurant-5', dayOffset: -5, merchant: 'The Corner Bistro', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 7425, type: 'expense' },
-  { id: 'restaurant-6', dayOffset: -6, merchant: 'Nightjar Bar', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 2960, type: 'expense' },
-  { id: 'restaurant-7', dayOffset: -8, merchant: 'Sunday Brunch Co.', category: 'Food & Dining', subCategory: 'Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 5310, type: 'expense' },
-  { id: 'internet-1', dayOffset: -5, merchant: 'Metro Fiber', category: 'Bills & Utilities', subCategory: 'Internet & Cable', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 7900, type: 'expense' },
-  { id: 'review-1', dayOffset: -6, merchant: 'SQ *NORTHSIDE MARKET', category: 'Other', subCategory: 'Uncategorized', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 2347, type: 'expense', needsReview: true },
-  { id: 'review-2', dayOffset: -7, merchant: 'ACH DEBIT 48392', category: 'Other', subCategory: 'Uncategorized', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 4200, type: 'expense', needsReview: true },
-  { id: 'transfer-save', dayOffset: -8, merchant: 'Transfer to Travel Fund', category: 'Transfer', subCategory: 'Account Transfer', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 30000, type: 'transfer' },
-  { id: 'gym-1', dayOffset: -9, merchant: 'City Fitness', category: 'Health & Wellness', subCategory: 'Fitness', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 4500, type: 'expense' },
-  { id: 'streaming-1', dayOffset: -10, merchant: 'Streambox', category: 'Travel & Lifestyle', subCategory: 'Entertainment & Recreation', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 1599, type: 'expense' },
-  { id: 'password-safe-1', dayOffset: -30, merchant: 'Password Safe', category: 'Bills & Utilities', subCategory: 'Internet & Cable', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 3599, type: 'expense' },
-  { id: 'rent-1', dayOffset: -12, merchant: 'Oak Street Apartments', category: 'Housing', subCategory: 'Rent', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 165000, type: 'expense' },
-  { id: 'electric-1', dayOffset: -14, merchant: 'City Electric', category: 'Bills & Utilities', subCategory: 'Gas & Electric', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 11843, type: 'expense' },
-  { id: 'card-payment-1', dayOffset: -15, merchant: 'Credit Card Payment', category: 'Transfer', subCategory: 'Credit Card Payment', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 65000, type: 'transfer' },
-  { id: 'auto-payment-1', dayOffset: -16, merchant: 'Community Auto Finance', category: 'Auto & Transport', subCategory: 'Auto Payment', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 38500, type: 'expense' },
-  { id: 'shopping-split', dayOffset: -18, merchant: 'Target', category: 'Shopping', subCategory: 'Shopping', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 14238, type: 'expense', notes: 'Household supplies and groceries' },
-  { id: 'paycheck-2', dayOffset: -17, merchant: 'Acme Design Studio', category: 'Income', subCategory: 'Paychecks', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 325000, type: 'income' },
-  { id: 'groceries-2', dayOffset: -21, merchant: 'Fresh Market', category: 'Food & Dining', subCategory: 'Groceries', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 12154, type: 'expense' },
-  { id: 'phone-1', dayOffset: -23, merchant: 'Mobile One', category: 'Bills & Utilities', subCategory: 'Phone', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 6800, type: 'expense' },
-  { id: 'insurance-1', dayOffset: -25, merchant: 'Safe Harbor Insurance', category: 'Financial', subCategory: 'Insurance', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 13200, type: 'expense' },
-  { id: 'interest-1', dayOffset: -27, merchant: 'Savings Interest', category: 'Income', subCategory: 'Interest', accountId: 'demo-emergency', accountName: 'Emergency Savings', amountCents: 1842, type: 'income' },
-  { id: 'paycheck-3', dayOffset: -32, merchant: 'Acme Design Studio', category: 'Income', subCategory: 'Paychecks', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 325000, type: 'income' },
-  { id: 'rent-2', dayOffset: -42, merchant: 'Oak Street Apartments', category: 'Housing', subCategory: 'Rent', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 165000, type: 'expense' },
-  { id: 'groceries-3', dayOffset: -36, merchant: 'Fresh Market', category: 'Food & Dining', subCategory: 'Groceries', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 9764, type: 'expense' },
-  { id: 'travel-1', dayOffset: -40, merchant: 'Pacific Air', category: 'Travel & Lifestyle', subCategory: 'Travel & Vacation', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 42800, type: 'expense' },
-  { id: 'paycheck-4', dayOffset: -48, merchant: 'Acme Design Studio', category: 'Income', subCategory: 'Paychecks', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 325000, type: 'income' },
-  { id: 'rent-3', dayOffset: -72, merchant: 'Oak Street Apartments', category: 'Housing', subCategory: 'Rent', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 165000, type: 'expense' },
-  { id: 'paycheck-5', dayOffset: -63, merchant: 'Acme Design Studio', category: 'Income', subCategory: 'Paychecks', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 325000, type: 'income' },
-  { id: 'groceries-4', dayOffset: -66, merchant: 'Fresh Market', category: 'Food & Dining', subCategory: 'Groceries', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 10891, type: 'expense' },
-  { id: 'streaming-2', dayOffset: -40, merchant: 'Streambox', category: 'Travel & Lifestyle', subCategory: 'Entertainment & Recreation', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 1599, type: 'expense' },
-  { id: 'streaming-3', dayOffset: -70, merchant: 'Streambox', category: 'Travel & Lifestyle', subCategory: 'Entertainment & Recreation', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 1599, type: 'expense' },
-  { id: 'password-safe-2', dayOffset: -395, merchant: 'Password Safe', category: 'Bills & Utilities', subCategory: 'Internet & Cable', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 3599, type: 'expense' },
-  { id: 'password-safe-3', dayOffset: -760, merchant: 'Password Safe', category: 'Bills & Utilities', subCategory: 'Internet & Cable', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 3599, type: 'expense' },
-];
+const transactionTemplates = ([
+  { id: 'paycheck-1', dayOffset: -2, merchant: 'Acme Design Studio', category: '💰 Income', subCategory: '💵 Paychecks', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 325000, type: 'income' },
+  { id: 'groceries-1', dayOffset: -1, merchant: 'Fresh Market', category: '🍽️ Food & Dining', subCategory: '🛒 Groceries', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 8642, type: 'expense' },
+  { id: 'coffee-1', dayOffset: -2, merchant: 'Juniper Coffee', category: '🍽️ Food & Dining', subCategory: '☕ Coffee Shops', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 575, type: 'expense' },
+  { id: 'fuel-1', dayOffset: -3, merchant: 'Shell', category: '🚗 Auto & Transport', subCategory: '⛽ Gas', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 4821, type: 'expense' },
+  { id: 'restaurant-1', dayOffset: -4, merchant: 'Green Table Kitchen', category: '🍽️ Food & Dining', subCategory: '🍻 Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 6730, type: 'expense' },
+  { id: 'restaurant-2', dayOffset: -1, merchant: 'Harbor Ramen', category: '🍽️ Food & Dining', subCategory: '🍻 Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 4280, type: 'expense' },
+  { id: 'restaurant-3', dayOffset: -2, merchant: 'Copper Oven Pizza', category: '🍽️ Food & Dining', subCategory: '🍻 Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 5875, type: 'expense' },
+  { id: 'restaurant-4', dayOffset: -3, merchant: 'Oak & Ember', category: '🍽️ Food & Dining', subCategory: '🍻 Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 3690, type: 'expense' },
+  { id: 'restaurant-5', dayOffset: -5, merchant: 'The Corner Bistro', category: '🍽️ Food & Dining', subCategory: '🍻 Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 7425, type: 'expense' },
+  { id: 'restaurant-6', dayOffset: -6, merchant: 'Nightjar Bar', category: '🍽️ Food & Dining', subCategory: '🍻 Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 2960, type: 'expense' },
+  { id: 'restaurant-7', dayOffset: -8, merchant: 'Sunday Brunch Co.', category: '🍽️ Food & Dining', subCategory: '🍻 Restaurants & Bars', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 5310, type: 'expense' },
+  { id: 'internet-1', dayOffset: -5, merchant: 'Metro Fiber', category: '💡 Bills & Utilities', subCategory: '🌐 Internet & Cable', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 7900, type: 'expense' },
+  { id: 'review-1', dayOffset: -6, merchant: 'SQ *NORTHSIDE MARKET', category: '📦 Other', subCategory: '❓ Uncategorized', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 2347, type: 'expense', needsReview: true },
+  { id: 'review-2', dayOffset: -7, merchant: 'ACH DEBIT 48392', category: '📦 Other', subCategory: '❓ Uncategorized', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 4200, type: 'expense', needsReview: true },
+  { id: 'transfer-save', dayOffset: -8, merchant: 'Transfer to Travel Fund', category: '🔄 Transfer', subCategory: '🔄 Account Transfer', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 30000, type: 'transfer' },
+  { id: 'gym-1', dayOffset: -9, merchant: 'City Fitness', category: '❤️ Health & Wellness', subCategory: '🏋️ Fitness', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 4500, type: 'expense' },
+  { id: 'streaming-1', dayOffset: -10, merchant: 'Streambox', category: '✈️ Travel & Lifestyle', subCategory: '🎮 Entertainment & Recreation', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 1599, type: 'expense' },
+  { id: 'password-safe-1', dayOffset: -30, merchant: 'Password Safe', category: '💡 Bills & Utilities', subCategory: '🌐 Internet & Cable', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 3599, type: 'expense' },
+  { id: 'rent-1', dayOffset: -12, merchant: 'Oak Street Apartments', category: '🏠 Housing', subCategory: '🔑 Rent', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 165000, type: 'expense' },
+  { id: 'electric-1', dayOffset: -14, merchant: 'City Electric', category: '💡 Bills & Utilities', subCategory: '⚡ Gas & Electric', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 11843, type: 'expense' },
+  { id: 'card-payment-1', dayOffset: -15, merchant: 'Credit Card Payment', category: '🔄 Transfer', subCategory: '💳 Credit Card Payment', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 65000, type: 'transfer' },
+  { id: 'auto-payment-1', dayOffset: -16, merchant: 'Community Auto Finance', category: '🚗 Auto & Transport', subCategory: '🚘 Auto Payment', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 38500, type: 'expense' },
+  { id: 'shopping-split', dayOffset: -18, merchant: 'Target', category: '🛍️ Shopping', subCategory: '🛍️ Shopping', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 14238, type: 'expense', notes: 'Household supplies and groceries' },
+  { id: 'paycheck-2', dayOffset: -17, merchant: 'Acme Design Studio', category: '💰 Income', subCategory: '💵 Paychecks', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 325000, type: 'income' },
+  { id: 'groceries-2', dayOffset: -21, merchant: 'Fresh Market', category: '🍽️ Food & Dining', subCategory: '🛒 Groceries', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 12154, type: 'expense' },
+  { id: 'phone-1', dayOffset: -23, merchant: 'Mobile One', category: '💡 Bills & Utilities', subCategory: '📱 Phone', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 6800, type: 'expense' },
+  { id: 'insurance-1', dayOffset: -25, merchant: 'Safe Harbor Insurance', category: '💳 Financial', subCategory: '🛡️ Insurance', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 13200, type: 'expense' },
+  { id: 'interest-1', dayOffset: -27, merchant: 'Savings Interest', category: '💰 Income', subCategory: '🏦 Interest', accountId: 'demo-emergency', accountName: 'Emergency Savings', amountCents: 1842, type: 'income' },
+  { id: 'paycheck-3', dayOffset: -32, merchant: 'Acme Design Studio', category: '💰 Income', subCategory: '💵 Paychecks', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 325000, type: 'income' },
+  { id: 'rent-2', dayOffset: -42, merchant: 'Oak Street Apartments', category: '🏠 Housing', subCategory: '🔑 Rent', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 165000, type: 'expense' },
+  { id: 'groceries-3', dayOffset: -36, merchant: 'Fresh Market', category: '🍽️ Food & Dining', subCategory: '🛒 Groceries', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 9764, type: 'expense' },
+  { id: 'travel-1', dayOffset: -40, merchant: 'Pacific Air', category: '✈️ Travel & Lifestyle', subCategory: '🏖️ Travel & Vacation', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 42800, type: 'expense' },
+  { id: 'paycheck-4', dayOffset: -48, merchant: 'Acme Design Studio', category: '💰 Income', subCategory: '💵 Paychecks', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 325000, type: 'income' },
+  { id: 'rent-3', dayOffset: -72, merchant: 'Oak Street Apartments', category: '🏠 Housing', subCategory: '🔑 Rent', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 165000, type: 'expense' },
+  { id: 'paycheck-5', dayOffset: -63, merchant: 'Acme Design Studio', category: '💰 Income', subCategory: '💵 Paychecks', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 325000, type: 'income' },
+  { id: 'groceries-4', dayOffset: -66, merchant: 'Fresh Market', category: '🍽️ Food & Dining', subCategory: '🛒 Groceries', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 10891, type: 'expense' },
+  { id: 'streaming-2', dayOffset: -40, merchant: 'Streambox', category: '✈️ Travel & Lifestyle', subCategory: '🎮 Entertainment & Recreation', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 1599, type: 'expense' },
+  { id: 'streaming-3', dayOffset: -70, merchant: 'Streambox', category: '✈️ Travel & Lifestyle', subCategory: '🎮 Entertainment & Recreation', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 1599, type: 'expense' },
+  { id: 'password-safe-2', dayOffset: -395, merchant: 'Password Safe', category: '💡 Bills & Utilities', subCategory: '🌐 Internet & Cable', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 3599, type: 'expense' },
+  { id: 'password-safe-3', dayOffset: -760, merchant: 'Password Safe', category: '💡 Bills & Utilities', subCategory: '🌐 Internet & Cable', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 3599, type: 'expense' },
+] satisfies DemoTransaction[]).map((item) => ({ ...item, category: plainMainCategoryName(item.category) }));
 
 export async function resetDemoDatabase(): Promise<{ users: number; transactions: number }> {
   const passwordHash = await hashPassword(DEMO_PASSWORD);
@@ -201,8 +206,8 @@ export async function resetDemoDatabase(): Promise<{ users: number; transactions
       needsReview: item.needsReview ?? false,
     })));
     await tx.insert(transactionSplits).values([
-      { id: 'demo-split-target-grocery', userId: DEMO_USER_ID, transactionId: 'demo-shopping-split', amountCents: 8238, category: 'Food & Dining', subCategory: 'Groceries', ...demoAssignment('Food & Dining', 'Groceries'), type: 'expense', sortOrder: 0 },
-      { id: 'demo-split-target-household', userId: DEMO_USER_ID, transactionId: 'demo-shopping-split', amountCents: 6000, category: 'Shopping', subCategory: 'Furniture & Housewares', ...demoAssignment('Shopping', 'Furniture & Housewares'), type: 'expense', sortOrder: 1 },
+      { id: 'demo-split-target-grocery', userId: DEMO_USER_ID, transactionId: 'demo-shopping-split', amountCents: 8238, category: 'Food & Dining', subCategory: '🛒 Groceries', ...demoAssignment('Food & Dining', '🛒 Groceries'), type: 'expense', sortOrder: 0 },
+      { id: 'demo-split-target-household', userId: DEMO_USER_ID, transactionId: 'demo-shopping-split', amountCents: 6000, category: 'Shopping', subCategory: '🛋️ Furniture & Housewares', ...demoAssignment('Shopping', '🛋️ Furniture & Housewares'), type: 'expense', sortOrder: 1 },
     ]);
 
     const budgets = [
@@ -236,8 +241,8 @@ export async function resetDemoDatabase(): Promise<{ users: number; transactions
       { id: 'demo-goal-travel', userId: DEMO_USER_ID, name: 'Japan trip', target: 5000, startingValue: 500, accountId: 'demo-travel' },
     ]);
     await tx.insert(rules).values([
-      { id: 'demo-rule-market', userId: DEMO_USER_ID, matchValue: 'Fresh Market', accountId: 'demo-credit', sourceType: 'expense', sourceCategory: 'Food & Dining', sourceSubCategory: 'Groceries', category: 'Food & Dining', subCategory: 'Groceries', ...demoAssignment('Food & Dining', 'Groceries'), type: 'expense' },
-      { id: 'demo-rule-coffee', userId: DEMO_USER_ID, matchValue: 'Juniper Coffee', accountId: 'demo-credit', sourceType: 'expense', sourceCategory: 'Food & Dining', sourceSubCategory: 'Coffee Shops', category: 'Food & Dining', subCategory: 'Coffee Shops', ...demoAssignment('Food & Dining', 'Coffee Shops'), type: 'expense' },
+      { id: 'demo-rule-market', userId: DEMO_USER_ID, matchValue: 'Fresh Market', accountId: 'demo-credit', sourceType: 'expense', sourceCategory: 'Food & Dining', sourceSubCategory: '🛒 Groceries', category: 'Food & Dining', subCategory: '🛒 Groceries', ...demoAssignment('Food & Dining', '🛒 Groceries'), type: 'expense' },
+      { id: 'demo-rule-coffee', userId: DEMO_USER_ID, matchValue: 'Juniper Coffee', accountId: 'demo-credit', sourceType: 'expense', sourceCategory: 'Food & Dining', sourceSubCategory: '☕ Coffee Shops', category: 'Food & Dining', subCategory: '☕ Coffee Shops', ...demoAssignment('Food & Dining', '☕ Coffee Shops'), type: 'expense' },
     ]);
     await tx.insert(settings).values([
       { userId: DEMO_USER_ID, key: 'initial_categories_seeded', value: 'true' },

@@ -32,8 +32,8 @@ import { logger } from '@/lib/logger';
  * the Transactions page, so no further data fixup is needed.
  *
  * What this function does:
- *   1. Idempotently insert a "Transfer" main category (with one
- *      "Account Transfer" sub) for any user that doesn't have one.
+ *   1. Idempotently insert the default Transfer main category (with one
+ *      Account Transfer sub) for any user that doesn't have one.
  *   2. Sanity-check: count transactions with the new transfer type
  *      so we can see in the logs that the migration ran.
  */
@@ -58,7 +58,9 @@ async function applyTransferMigration(client: postgres.Sql): Promise<void> {
       LOOP
         IF NOT EXISTS (
           SELECT 1 FROM categories
-          WHERE user_id = uid AND name = 'Transfer' AND type = 'transfer'
+          WHERE user_id = uid
+            AND id = uid || '__cat-transfer'
+            AND type = 'transfer'
         ) THEN
           main_id := uid || '__cat-transfer';
           sub_id := uid || '__sub-account-transfer';
@@ -66,7 +68,7 @@ async function applyTransferMigration(client: postgres.Sql): Promise<void> {
           VALUES (main_id, uid, 'Transfer', 'transfer', 'ArrowLeftRight', 9999, NOW())
           ON CONFLICT (id) DO NOTHING;
           INSERT INTO sub_categories (id, user_id, main_category_id, name, planned, created_at)
-          VALUES (sub_id, uid, main_id, 'Account Transfer', 0, NOW())
+          VALUES (sub_id, uid, main_id, '🔄 Account Transfer', 0, NOW())
           ON CONFLICT (id) DO NOTHING;
           inserted_count := inserted_count + 1;
         END IF;
