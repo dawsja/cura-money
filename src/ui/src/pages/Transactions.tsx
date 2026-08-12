@@ -2376,9 +2376,9 @@ function TransactionActionModal({
   });
   useEffect(() => {
     if (!recurringQ.data) return;
-    const key = `${t.merchant.toLowerCase()}|${Math.round(t.amount * 100) / 100}|${(t.accountId ?? t.account).toLowerCase()}`;
+    const key = `${t.merchant.toLowerCase()}|${(t.accountId ?? t.account).toLowerCase()}`;
     const match = recurringQ.data.find(
-      (c) => `${c.merchant.toLowerCase()}|${Math.round(c.amount * 100) / 100}|${(c.accountId ?? c.account).toLowerCase()}` === key,
+      (c) => `${c.merchant.toLowerCase()}|${(c.accountId ?? c.account).toLowerCase()}` === key,
     );
     if (match && (
       match.frequency === 'weekly'

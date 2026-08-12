@@ -4822,7 +4822,7 @@ export interface RecurringTransactionMetadata {
 
 interface RecurringTransactionIdentity {
   merchant: string;
-  amount: number;
+  amount?: number;
   account?: string;
   accountId?: string;
   type?: TransactionType;
@@ -4837,7 +4837,6 @@ export async function resolveRecurringTransactionMetadata(
   const conditions = [
     eq(transactions.userId, userId),
     sql`lower(${transactions.merchant}) = lower(${identity.merchant})`,
-    eq(transactions.amountCents, dollarsToCents(identity.amount)),
   ];
   if (identity.type) conditions.push(eq(transactions.type, identity.type));
 
@@ -4886,7 +4885,6 @@ export async function getRecurringTransactionMetadata(
   const accountMeta = transactionAccountMeta(source, meta, byName);
   return resolveRecurringTransactionMetadata(userId, {
     merchant: source.merchant,
-    amount: centsToDollars(source.amountCents),
     account: accountMeta?.alias || accountMeta?.name || source.account,
     accountId: accountMeta?.id ?? source.accountId ?? undefined,
     type: source.type,
@@ -4918,15 +4916,68 @@ function todayYmdUtc(): string {
   return `${n.getUTCFullYear()}-${String(n.getUTCMonth() + 1).padStart(2, '0')}-${String(n.getUTCDate()).padStart(2, '0')}`;
 }
 
+interface CadenceFit {
+  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  score: number;
+  lastDate: string;
+  occurrences: number;
+}
+
+/** Fit a sorted unique date series to weekly/monthly/quarterly/yearly. */
+function fitCadence(dates: string[], today: string): CadenceFit | null {
+  const sortedDates = [...new Set(dates)].sort();
+  if (sortedDates.length < 3) return null;
+
+  const gaps: number[] = [];
+  for (let i = 1; i < sortedDates.length; i++) {
+    const gap = daysBetweenYmd(sortedDates[i - 1]!, sortedDates[i]!);
+    if (!Number.isFinite(gap) || gap <= 0) continue;
+    gaps.push(gap);
+  }
+  if (gaps.length < 2) return null;
+
+  const avgGap = gaps.reduce((s, x) => s + x, 0) / gaps.length;
+  if (avgGap <= 0) return null;
+  const variance = gaps.reduce((s, x) => s + (x - avgGap) ** 2, 0) / gaps.length;
+  const cv = Math.sqrt(variance) / avgGap;
+  if (cv > 0.35) return null;
+
+  const first = sortedDates[0]!;
+  const last = sortedDates[sortedDates.length - 1]!;
+  const span = daysBetweenYmd(first, last);
+  const age = daysBetweenYmd(last, today);
+
+  let best: { frequency: CadenceFit['frequency']; score: number } | null = null;
+  for (const { frequency, period } of CADENCE_PERIODS) {
+    const relErr = Math.abs(avgGap - period) / period;
+    if (relErr > 0.25) continue;
+    if (span < 1.5 * period) continue;
+    if (age > 2 * period) continue;
+    if (!best || relErr < best.score) best = { frequency, score: relErr };
+  }
+  if (!best) return null;
+
+  return {
+    frequency: best.frequency,
+    score: best.score,
+    lastDate: last,
+    occurrences: sortedDates.length,
+  };
+}
+
 /**
- * Detect recurring charges: same merchant + amount (¢-rounded), with a
- * regular cadence. Gates (all must pass for a candidate frequency):
+ * Detect recurring charges: same merchant + account, with a regular
+ * cadence. Amount is the latest charge so a price change (Netflix
+ * $15.99 → $19.99) updates the existing row instead of opening a new
+ * one. Gates (all must pass for a candidate frequency):
  *   - ≥ 3 distinct posting dates
  *   - mean gap within 25% of the period (weekly 7d / monthly 30.44d /
  *     quarterly 91.31d / yearly 365.25d)
  *   - coefficient of variation of gaps ≤ 0.35
  *   - span (last − first) ≥ 1.5 × period
  *   - last charge within 2 × period of today (drops stale patterns)
+ * If the full merchant series does not fit (mixed one-offs + a sub),
+ * fall back to the best same-amount cluster on that merchant+account.
  * Best-fitting frequency wins; groups that fit none are dropped.
  */
 export async function getRecurringCharges(userId: string): Promise<RecurringCharge[]> {
@@ -4942,17 +4993,17 @@ export async function getRecurringCharges(userId: string): Promise<RecurringChar
         eq(transactions.needsReview, false),
       ),
     )
-    .orderBy(desc(transactions.date));
+    .orderBy(desc(transactions.date), desc(transactions.createdAt), desc(transactions.id));
 
   const groups = new Map<
     string,
     {
       merchant: string;
       amountCents: number;
-      dates: string[];
       category: string;
       account: string;
       accountId?: string;
+      items: { date: string; amountCents: number; category: string }[];
     }
   >();
 
@@ -4961,18 +5012,19 @@ export async function getRecurringCharges(userId: string): Promise<RecurringChar
     if (isLedgerExcluded(accountMeta)) continue;
     const stableAccountId = accountMeta?.id ?? r.accountId ?? undefined;
     const accountIdentity = stableAccountId ?? r.account.toLowerCase();
-    const key = `${r.merchant.toLowerCase()}|${r.amountCents}|${accountIdentity}`;
+    const key = `${r.merchant.toLowerCase()}|${accountIdentity}`;
     const existing = groups.get(key);
+    const item = { date: r.date, amountCents: r.amountCents, category: r.category };
     if (existing) {
-      existing.dates.push(r.date);
+      existing.items.push(item);
     } else {
       groups.set(key, {
         merchant: r.merchant,
         amountCents: r.amountCents,
-        dates: [r.date],
         category: r.category,
         account: accountMeta?.alias || accountMeta?.name || r.account,
         accountId: stableAccountId,
+        items: [item],
       });
     }
   }
@@ -4981,48 +5033,57 @@ export async function getRecurringCharges(userId: string): Promise<RecurringChar
   const results: RecurringCharge[] = [];
 
   for (const g of groups.values()) {
-    const sortedDates = [...new Set(g.dates)].sort();
-    if (sortedDates.length < 3) continue;
-
-    const gaps: number[] = [];
-    for (let i = 1; i < sortedDates.length; i++) {
-      const gap = daysBetweenYmd(sortedDates[i - 1]!, sortedDates[i]!);
-      if (!Number.isFinite(gap) || gap <= 0) continue;
-      gaps.push(gap);
+    const merchantFit = fitCadence(g.items.map((item) => item.date), today);
+    if (merchantFit) {
+      results.push({
+        merchant: g.merchant,
+        amount: centsToDollars(g.amountCents),
+        frequency: merchantFit.frequency,
+        occurrences: merchantFit.occurrences,
+        lastDate: merchantFit.lastDate,
+        category: g.category,
+        account: g.account,
+        accountId: g.accountId,
+      });
+      continue;
     }
-    if (gaps.length < 2) continue;
 
-    const avgGap = gaps.reduce((s, x) => s + x, 0) / gaps.length;
-    if (avgGap <= 0) continue;
-    const variance = gaps.reduce((s, x) => s + (x - avgGap) ** 2, 0) / gaps.length;
-    const cv = Math.sqrt(variance) / avgGap;
-    if (cv > 0.35) continue;
-
-    const first = sortedDates[0]!;
-    const last = sortedDates[sortedDates.length - 1]!;
-    const span = daysBetweenYmd(first, last);
-    const age = daysBetweenYmd(last, today);
-
-    let best: {
-      frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
-      score: number;
-    } | null = null;
-    for (const { frequency, period } of CADENCE_PERIODS) {
-      const relErr = Math.abs(avgGap - period) / period;
-      if (relErr > 0.25) continue;
-      if (span < 1.5 * period) continue;
-      if (age > 2 * period) continue;
-      if (!best || relErr < best.score) best = { frequency, score: relErr };
+    const byAmount = new Map<number, { dates: string[]; category: string }>();
+    for (const item of g.items) {
+      const cluster = byAmount.get(item.amountCents);
+      if (cluster) {
+        cluster.dates.push(item.date);
+      } else {
+        byAmount.set(item.amountCents, { dates: [item.date], category: item.category });
+      }
     }
-    if (!best) continue;
+
+    let bestCluster: { amountCents: number; fit: CadenceFit; category: string } | null = null;
+    for (const [amountCents, cluster] of byAmount) {
+      const fit = fitCadence(cluster.dates, today);
+      if (!fit) continue;
+      if (
+        !bestCluster
+        || fit.occurrences > bestCluster.fit.occurrences
+        || (fit.occurrences === bestCluster.fit.occurrences && fit.lastDate > bestCluster.fit.lastDate)
+        || (
+          fit.occurrences === bestCluster.fit.occurrences
+          && fit.lastDate === bestCluster.fit.lastDate
+          && amountCents > bestCluster.amountCents
+        )
+      ) {
+        bestCluster = { amountCents, fit, category: cluster.category };
+      }
+    }
+    if (!bestCluster) continue;
 
     results.push({
       merchant: g.merchant,
-      amount: centsToDollars(g.amountCents),
-      frequency: best.frequency,
-      occurrences: sortedDates.length,
-      lastDate: last,
-      category: g.category,
+      amount: centsToDollars(bestCluster.amountCents),
+      frequency: bestCluster.fit.frequency,
+      occurrences: bestCluster.fit.occurrences,
+      lastDate: bestCluster.fit.lastDate,
+      category: bestCluster.category,
       account: g.account,
       accountId: g.accountId,
     });

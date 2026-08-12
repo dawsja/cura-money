@@ -39,8 +39,47 @@ function upcomingDismissKey(merchant: string, amount: number, account: string, n
   return `${recurringKey(merchant, amount, account)}|${nextDate}`;
 }
 
-function legacyUpcomingDismissKey(merchant: string, amount: number, nextDate: string): string {
-  return `${recurringKey(merchant, amount)}|${nextDate}`;
+function parseUpcomingDismissKey(
+  key: string,
+): { merchant: string; amount?: number; account?: string; nextDate: string } | null {
+  const parts = key.split('|');
+  const nextDate = parts[parts.length - 1];
+  if (!nextDate || !/^\d{4}-\d{2}-\d{2}$/.test(nextDate)) return null;
+  if (parts.length === 3) {
+    const amount = Number(parts[1]);
+    if (Number.isFinite(amount)) return { merchant: parts[0]!, amount, nextDate };
+    return { merchant: parts[0]!, account: parts[1], nextDate };
+  }
+  if (parts.length >= 4) {
+    const amount = Number(parts[1]);
+    const account = parts.slice(2, -1).join('|');
+    if (Number.isFinite(amount)) return { merchant: parts[0]!, amount, account, nextDate };
+    return { merchant: parts[0]!, account: parts.slice(1, -1).join('|'), nextDate };
+  }
+  return null;
+}
+
+function isUpcomingDismissed(
+  dismissedUpcoming: Set<string>,
+  merchant: string,
+  amount: number,
+  account: string,
+  nextDate: string,
+): boolean {
+  if (dismissedUpcoming.has(upcomingDismissKey(merchant, amount, account, nextDate))) return true;
+  if (dismissedUpcoming.has(`${recurringKey(merchant, amount)}|${nextDate}`)) return true;
+  const m = merchant.toLowerCase();
+  const a = account.toLowerCase();
+  for (const key of dismissedUpcoming) {
+    const parsed = parseUpcomingDismissKey(key);
+    if (!parsed || parsed.merchant !== m || parsed.nextDate !== nextDate) continue;
+    if (parsed.account) {
+      if (parsed.account === a) return true;
+      continue;
+    }
+    if (parsed.amount === Math.round(amount * 100) / 100) return true;
+  }
+  return false;
 }
 
 async function getDismissed(uid: string): Promise<DismissedState> {
@@ -98,7 +137,7 @@ notificationRoutes.get(
       const { nextDate, daysUntil, comingSoon } = recurringSchedule(ch.lastDate, ch.frequency);
       if (!comingSoon) continue;
       const key = upcomingDismissKey(ch.merchant, ch.amount, ch.accountId ?? ch.account, nextDate);
-      if (dismissedUpcoming.has(key) || dismissedUpcoming.has(legacyUpcomingDismissKey(ch.merchant, ch.amount, nextDate))) {
+      if (isUpcomingDismissed(dismissedUpcoming, ch.merchant, ch.amount, ch.accountId ?? ch.account, nextDate)) {
         continue;
       }
       upcoming.push({

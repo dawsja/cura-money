@@ -93,6 +93,15 @@ export function recurringKey(merchant: string, amount: number, account?: string)
   return account ? `${base}|${account.toLowerCase()}` : base;
 }
 
+function recurringMerchantKey(merchant: string, account?: string): string {
+  const m = merchant.toLowerCase();
+  return account ? `${m}|${account.toLowerCase()}` : m;
+}
+
+function roundedAmount(amount: number): number {
+  return Math.round(amount * 100) / 100;
+}
+
 function markedAccount(marked: PersistedMarkedRecurring): string | undefined {
   return 'account' in marked ? (marked.accountId ?? marked.account) : undefined;
 }
@@ -101,20 +110,68 @@ function chargeAccount(charge: RecurringCharge & { accountId?: string }): string
   return charge.accountId ?? charge.account;
 }
 
+function parseDismissedKey(key: string): { merchant: string; amount?: number; account?: string } | null {
+  const parts = key.split('|');
+  if (parts.length === 2) {
+    const amount = Number(parts[1]);
+    if (Number.isFinite(amount)) return { merchant: parts[0]!, amount };
+    return { merchant: parts[0]!, account: parts[1] };
+  }
+  if (parts.length >= 3) {
+    const amount = Number(parts[1]);
+    const account = parts.slice(2).join('|');
+    if (Number.isFinite(amount)) return { merchant: parts[0]!, amount, account };
+    return { merchant: parts[0]!, account: parts.slice(1).join('|') };
+  }
+  if (parts.length === 1 && parts[0]) return { merchant: parts[0] };
+  return null;
+}
+
+function dismissKeyMatches(key: string, merchant: string, amount: number, account: string): boolean {
+  const parsed = parseDismissedKey(key);
+  if (!parsed || parsed.merchant !== merchant.toLowerCase()) return false;
+  if (parsed.account) return parsed.account === account.toLowerCase();
+  return parsed.amount === roundedAmount(amount);
+}
+
 function isDismissed(preferences: RecurringPreferences, merchant: string, amount: number, account: string): boolean {
-  return preferences.dismissed.has(recurringKey(merchant, amount))
-    || preferences.dismissed.has(recurringKey(merchant, amount, account));
+  for (const key of preferences.dismissed) {
+    if (dismissKeyMatches(key, merchant, amount, account)) return true;
+  }
+  return false;
+}
+
+function removeMatchingDismissed(
+  dismissed: Set<string>,
+  merchant: string,
+  amount: number,
+  account?: string,
+): boolean {
+  let removed = false;
+  for (const key of [...dismissed]) {
+    if (account) {
+      if (dismissKeyMatches(key, merchant, amount, account)) {
+        dismissed.delete(key);
+        removed = true;
+      }
+    } else if (parseDismissedKey(key)?.merchant === merchant.toLowerCase()) {
+      dismissed.delete(key);
+      removed = true;
+    }
+  }
+  return removed;
 }
 
 function sameRecurring(
   item: PersistedMarkedRecurring,
   merchant: string,
-  amount: number,
+  _amount: number,
   account?: string,
 ): boolean {
+  if (item.merchant.toLowerCase() !== merchant.toLowerCase()) return false;
   const itemAccount = markedAccount(item);
-  if (!itemAccount || !account) return recurringKey(item.merchant, item.amount) === recurringKey(merchant, amount);
-  return recurringKey(item.merchant, item.amount, itemAccount) === recurringKey(merchant, amount, account);
+  if (!itemAccount || !account) return true;
+  return itemAccount.toLowerCase() === account.toLowerCase();
 }
 
 function parseJson<T>(raw: string | null, schema: z.ZodType<T>, fallback: T): T {
@@ -143,7 +200,19 @@ export async function getRecurringPreferences(userId: string): Promise<Recurring
 }
 
 function persistedMarkKey(marked: PersistedMarkedRecurring): string {
-  return recurringKey(marked.merchant, marked.amount, markedAccount(marked));
+  return recurringMerchantKey(marked.merchant, markedAccount(marked));
+}
+
+function dedupeMarked(items: PersistedMarkedRecurring[]): PersistedMarkedRecurring[] {
+  const seen = new Set<string>();
+  const out: PersistedMarkedRecurring[] = [];
+  for (const item of items) {
+    const key = persistedMarkKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
 }
 
 async function refreshMarkedRecurring(
@@ -151,32 +220,37 @@ async function refreshMarkedRecurring(
   marked: PersistedMarkedRecurring[],
 ): Promise<PersistedMarkedRecurring[]> {
   // This also upgrades account-less legacy marks before auto-detection has
-  // enough occurrences to produce its own row.
+  // enough occurrences to produce its own row. Lookup is merchant+account
+  // so a price change updates the stored amount.
   const refreshed = await Promise.all(marked.map(async (item) => {
     const metadata = await resolveRecurringTransactionMetadata(userId, {
       merchant: item.merchant,
-      amount: item.amount,
       account: 'account' in item ? item.account : undefined,
       accountId: 'accountId' in item ? item.accountId : undefined,
+      type: 'expense',
     });
     return metadata ? { ...metadata, frequency: item.frequency } satisfies MarkedRecurring : item;
   }));
 
-  if (JSON.stringify(refreshed) !== JSON.stringify(marked)) {
+  const dedupedRefresh = dedupeMarked(refreshed);
+  if (JSON.stringify(refreshed) !== JSON.stringify(marked) || dedupedRefresh.length !== marked.length) {
     const byOriginalKey = new Map(marked.map((item, index) => [persistedMarkKey(item), refreshed[index]!]));
     await mutateRecurringPreferences(userId, (current) => {
       let changed = false;
-      current.marked = current.marked.map((item) => {
+      const nextMarked = current.marked.map((item) => {
         const replacement = byOriginalKey.get(persistedMarkKey(item));
         if (!replacement) return item;
         const next = { ...replacement, frequency: item.frequency };
         if (JSON.stringify(next) !== JSON.stringify(item)) changed = true;
         return next;
       });
+      const deduped = dedupeMarked(nextMarked);
+      if (deduped.length !== nextMarked.length) changed = true;
+      current.marked = deduped;
       return { writeDismissed: false, writeMarked: changed };
     });
   }
-  return refreshed;
+  return dedupedRefresh;
 }
 
 export async function loadActiveRecurringCharges(userId: string): Promise<(RecurringCharge & { accountId?: string })[]> {
@@ -190,13 +264,10 @@ export async function loadActiveRecurringCharges(userId: string): Promise<(Recur
     const account = markedAccount(marked);
     if (account && isDismissed(preferences, marked.merchant, marked.amount, account)) continue;
     const existing = merged.filter((charge) => {
-      if (!account) return recurringKey(charge.merchant, charge.amount) === recurringKey(marked.merchant, marked.amount);
-      const baseMatches = recurringKey(charge.merchant, charge.amount)
-        === recurringKey(marked.merchant, marked.amount);
-      return baseMatches && (
-        account === chargeAccount(charge)
-        || ('account' in marked && marked.account.toLowerCase() === charge.account.toLowerCase())
-      );
+      if (charge.merchant.toLowerCase() !== marked.merchant.toLowerCase()) return false;
+      if (!account) return true;
+      return account === chargeAccount(charge)
+        || ('account' in marked && marked.account.toLowerCase() === charge.account.toLowerCase());
     });
     if (existing.length > 0) {
       for (const charge of existing) {
@@ -205,6 +276,7 @@ export async function loadActiveRecurringCharges(userId: string): Promise<(Recur
           if (marked.lastDate >= charge.lastDate) {
             charge.lastDate = marked.lastDate;
             charge.category = marked.category;
+            charge.amount = marked.amount;
           }
           if (marked.accountId) charge.accountId = marked.accountId;
         }
@@ -297,23 +369,17 @@ export async function restoreRecurring(
   accountId?: string,
 ): Promise<void> {
   await mutateRecurringPreferences(userId, (preferences) => {
-    preferences.dismissed.delete(recurringKey(merchant, amount));
-    if (accountId ?? account) preferences.dismissed.delete(recurringKey(merchant, amount, accountId ?? account));
-    if (account) preferences.dismissed.delete(recurringKey(merchant, amount, account));
-    return { writeDismissed: true, writeMarked: false };
+    const removed = removeMatchingDismissed(preferences.dismissed, merchant, amount, accountId ?? account);
+    return { writeDismissed: removed, writeMarked: false };
   });
 }
 
 export async function markRecurring(userId: string, marked: MarkedRecurring): Promise<void> {
   const account = marked.accountId ?? marked.account;
-  const key = recurringKey(marked.merchant, marked.amount, account);
   await mutateRecurringPreferences(userId, (preferences) => {
     preferences.marked = preferences.marked.filter((item) => !sameRecurring(item, marked.merchant, marked.amount, account));
     preferences.marked.push(marked);
-    const removedAccountId = preferences.dismissed.delete(key);
-    const removedAccount = preferences.dismissed.delete(recurringKey(marked.merchant, marked.amount, marked.account));
-    const removedLegacy = preferences.dismissed.delete(recurringKey(marked.merchant, marked.amount));
-    const wasDismissed = removedAccountId || removedAccount || removedLegacy;
+    const wasDismissed = removeMatchingDismissed(preferences.dismissed, marked.merchant, marked.amount, account);
     return { writeDismissed: wasDismissed, writeMarked: true };
   });
 }
