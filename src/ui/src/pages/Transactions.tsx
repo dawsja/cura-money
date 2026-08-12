@@ -2337,7 +2337,7 @@ function EditTransactionModal({
  * deleting the transaction.
  */
 type RecurringPick = 'none' | 'weekly' | 'monthly' | 'yearly';
-type RecurringState = RecurringPick | 'quarterly';
+type RecurringState = RecurringPick;
 
 function TransactionActionModal({
   transaction: t,
@@ -2383,7 +2383,6 @@ function TransactionActionModal({
     if (match && (
       match.frequency === 'weekly'
       || match.frequency === 'monthly'
-      || match.frequency === 'quarterly'
       || match.frequency === 'yearly'
     )) {
       setFrequency(match.frequency);

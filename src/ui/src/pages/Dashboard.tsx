@@ -44,7 +44,7 @@ interface DashboardActivity {
 interface RecurringCharge {
   merchant: string;
   amount: number;
-  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  frequency: 'weekly' | 'monthly' | 'yearly';
   nextDate: string;
   daysUntil: number;
   comingSoon: boolean;
@@ -102,14 +102,12 @@ const WIDGET_LABELS: Record<WidgetId, string> = {
 const FREQUENCY_LABEL: Record<string, string> = {
   weekly: 'Weekly',
   monthly: 'Monthly',
-  quarterly: 'Quarterly',
   yearly: 'Yearly',
 };
 
 const FREQUENCY_BADGE: Record<string, string> = {
   weekly: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
   monthly: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
-  quarterly: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
   yearly: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
 };
 
@@ -524,16 +522,16 @@ export function Dashboard() {
 
     return (
       <section className="card flex h-full flex-col">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-3">
           <h2 className="text-lg font-semibold fg-primary">Recent transactions</h2>
-          <div className="flex items-center gap-3 text-xs fg-muted">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs fg-muted">
             {transferCount > 0 && (
               <span className="inline-flex items-center gap-1">
-                <ArrowLeftRight className="h-3 w-3" /> {transferCount} transfer{transferCount === 1 ? '' : 's'} (excluded from totals)
+                <ArrowLeftRight className="h-3 w-3 shrink-0" /> {transferCount} transfer{transferCount === 1 ? '' : 's'} (excluded from totals)
               </span>
             )}
             <button onClick={() => navigate('/transactions')} className="text-sm text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1">
-              View all <ArrowRight className="h-3 w-3" />
+              View all <ArrowRight className="h-3 w-3 shrink-0" />
             </button>
           </div>
         </div>

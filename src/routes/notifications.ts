@@ -6,7 +6,7 @@
  *                            the bell (does NOT bulk-skip reviews)
  *
  * Upcoming charges are derived from recurring detection (lastDate +
- * frequency). Lead windows are weekly 2d, monthly 7d, quarterly 14d, and yearly 30d;
+ * frequency). Lead windows are weekly 2d, monthly 7d, and yearly 30d;
  * recently overdue charges remain visible for 7d.
  */
 import { Hono } from 'hono';

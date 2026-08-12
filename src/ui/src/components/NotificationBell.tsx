@@ -17,7 +17,7 @@ interface NotificationsResponse {
     key: string;
     merchant: string;
     amount: number;
-    frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+    frequency: 'weekly' | 'monthly' | 'yearly';
     nextDate: string;
     daysUntil: number;
   }[];

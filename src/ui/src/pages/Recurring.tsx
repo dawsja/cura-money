@@ -16,7 +16,7 @@ import clsx from 'clsx';
 interface RecurringCharge {
   merchant: string;
   amount: number;
-  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  frequency: 'weekly' | 'monthly' | 'yearly';
   occurrences: number;
   lastDate: string;
   category: string;
@@ -30,14 +30,12 @@ interface RecurringCharge {
 const FREQUENCY_LABEL: Record<string, string> = {
   weekly: 'Weekly',
   monthly: 'Monthly',
-  quarterly: 'Quarterly',
   yearly: 'Yearly',
 };
 
 const FREQUENCY_BADGE: Record<string, string> = {
   weekly: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
   monthly: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
-  quarterly: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
   yearly: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
 };
 
@@ -45,7 +43,6 @@ const FREQUENCY_BADGE: Record<string, string> = {
 function monthlyBurn(c: RecurringCharge): number {
   if (c.frequency === 'weekly') return c.amount * 52 / 12;
   if (c.frequency === 'monthly') return c.amount;
-  if (c.frequency === 'quarterly') return c.amount / 3;
   return c.amount / 12;
 }
 
@@ -53,7 +50,6 @@ function monthlyBurn(c: RecurringCharge): number {
 function annualCost(c: RecurringCharge): number {
   if (c.frequency === 'weekly') return c.amount * 52;
   if (c.frequency === 'monthly') return c.amount * 12;
-  if (c.frequency === 'quarterly') return c.amount * 4;
   return c.amount;
 }
 

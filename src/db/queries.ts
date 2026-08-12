@@ -4803,7 +4803,7 @@ export async function countStaleSimpleFinPending(userId: string): Promise<number
 export interface RecurringCharge {
   merchant: string;
   amount: number;
-  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  frequency: 'weekly' | 'monthly' | 'yearly';
   occurrences: number;
   lastDate: string;
   category: string;
@@ -4892,12 +4892,11 @@ export async function getRecurringTransactionMetadata(
 }
 
 const CADENCE_PERIODS: {
-  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  frequency: 'weekly' | 'monthly' | 'yearly';
   period: number;
 }[] = [
   { frequency: 'weekly', period: 7 },
   { frequency: 'monthly', period: 30.44 },
-  { frequency: 'quarterly', period: 91.31 },
   { frequency: 'yearly', period: 365.25 },
 ];
 
@@ -4917,13 +4916,13 @@ function todayYmdUtc(): string {
 }
 
 interface CadenceFit {
-  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  frequency: 'weekly' | 'monthly' | 'yearly';
   score: number;
   lastDate: string;
   occurrences: number;
 }
 
-/** Fit a sorted unique date series to weekly/monthly/quarterly/yearly. */
+/** Fit a sorted unique date series to weekly/monthly/yearly. */
 function fitCadence(dates: string[], today: string): CadenceFit | null {
   const sortedDates = [...new Set(dates)].sort();
   if (sortedDates.length < 3) return null;
@@ -4972,7 +4971,7 @@ function fitCadence(dates: string[], today: string): CadenceFit | null {
  * one. Gates (all must pass for a candidate frequency):
  *   - ≥ 3 distinct posting dates
  *   - mean gap within 25% of the period (weekly 7d / monthly 30.44d /
- *     quarterly 91.31d / yearly 365.25d)
+ *     yearly 365.25d)
  *   - coefficient of variation of gaps ≤ 0.35
  *   - span (last − first) ≥ 1.5 × period
  *   - last charge within 2 × period of today (drops stale patterns)
