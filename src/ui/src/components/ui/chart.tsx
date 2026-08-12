@@ -46,7 +46,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { formatMoney } from '../../lib/format';
+import { currencySymbol, formatMoney } from '../../lib/format';
 
 export interface ChartConfig {
   [seriesKey: string]: {
@@ -211,9 +211,10 @@ export function formatShortMoney(n: number): string {
   if (!Number.isFinite(n)) return '—';
   const abs = Math.abs(n);
   const sign = n < 0 ? '-' : '';
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
-  if (abs >= 10_000) return `${sign}$${(abs / 1_000).toFixed(0)}K`;
-  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
+  const sym = currencySymbol();
+  if (abs >= 1_000_000) return `${sign}${sym}${(abs / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
+  if (abs >= 10_000) return `${sign}${sym}${(abs / 1_000).toFixed(0)}K`;
+  if (abs >= 1_000) return `${sign}${sym}${(abs / 1_000).toFixed(1)}K`;
   return formatMoney(n, true);
 }
 

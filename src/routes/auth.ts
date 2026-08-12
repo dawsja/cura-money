@@ -11,7 +11,8 @@ import { Hono } from 'hono';
 import { getAuth, isLocalAuthDisabled, listActiveProviders } from '@/auth';
 import { safe, unauthorized } from '@/lib/errors';
 import { invalidateSetupCache } from '@/lib/guard';
-import { userHasCredential } from '@/db/queries';
+import { getSetting, userHasCredential } from '@/db/queries';
+import { DISPLAY_CURRENCY_KEY, resolveCurrency } from '@/lib/currency';
 import { env, useSecureAuthCookies } from '@/lib/env';
 import { DEMO_EMAIL, DEMO_PASSWORD } from '@/db/demo-reset';
 
@@ -26,7 +27,10 @@ authRoutes.get(
     // account row. The Settings page uses this to decide whether to
     // show the "Change password" section — OIDC-only users can't
     // change their password here (they don't have one).
-    const hasCredential = await userHasCredential(session.user.id);
+    const [hasCredential, currencyRaw] = await Promise.all([
+      userHasCredential(session.user.id),
+      getSetting(session.user.id, DISPLAY_CURRENCY_KEY),
+    ]);
     return c.json({
       user: {
         id: session.user.id,
@@ -34,6 +38,9 @@ authRoutes.get(
         name: session.user.name,
         role: (session.user as { role?: string }).role ?? 'user',
         hasCredential,
+      },
+      preferences: {
+        currency: resolveCurrency(currencyRaw),
       },
     });
   }),

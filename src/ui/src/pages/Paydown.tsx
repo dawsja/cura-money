@@ -20,7 +20,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { CartesianGrid, Line, LineChart, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { api } from '../lib/api';
-import { formatMoney, currentYearMonth, timeAgo } from '../lib/format';
+import { currencySymbol, formatMoney, currentYearMonth, timeAgo } from '../lib/format';
 import { Dialog } from '../components/ui/dialog';
 import {
   ChartContainer,
@@ -1095,7 +1095,7 @@ function AccountEditModal({
           <label className="block">
             <span className="text-sm fg-secondary">Minimum monthly payment</span>
             <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">$</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
               <input
                 type="number"
                 step="0.01"
@@ -1116,7 +1116,7 @@ function AccountEditModal({
           <label className="block">
             <span className="text-sm fg-secondary">Planned monthly payment <span className="fg-muted font-normal">(optional)</span></span>
             <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">$</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
               <input
                 type="number"
                 step="0.01"

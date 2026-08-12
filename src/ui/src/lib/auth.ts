@@ -14,6 +14,10 @@ export interface Me {
      *  OIDC-only users (they don't have a password to change). */
     hasCredential: boolean;
   };
+  preferences: {
+    /** ISO 4217 display-currency code, e.g. "USD". */
+    currency: string;
+  };
 }
 
 /**

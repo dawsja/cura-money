@@ -1,26 +1,83 @@
 /**
- * Number / date formatters used across pages. Match the locale the user
- * expects from a personal-finance app: USD, mm/dd/yyyy by default.
+ * Number / date formatters used across pages. Amounts render in the
+ * user's chosen display currency (USD by default); dates use mm/dd/yyyy.
+ *
+ * `formatMoney` reads a module-level "active currency" so the hundreds of
+ * call sites don't each need the preference threaded through. The
+ * CurrencyProvider keeps this in sync with the per-user setting and
+ * re-renders the tree whenever it changes, so displayed amounts update.
  *
  * Ledger dates are bare `YYYY-MM-DD` (Postgres `date`). Parsing those
  * with `new Date(iso)` treats them as UTC midnight and shifts the
  * calendar day in western timezones — always go through parseLocalDate.
  */
-const usd = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  maximumFractionDigits: 2,
-});
+export const CURRENCY_STORAGE_KEY = 'cura.currency';
+const DEFAULT_CURRENCY = 'USD';
 
-const usdWhole = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  maximumFractionDigits: 0,
-});
+/** Read the last-known currency synchronously so the very first paint
+ *  after a reload uses the right symbol instead of flashing USD. */
+function readInitialCurrency(): string {
+  try {
+    return localStorage.getItem(CURRENCY_STORAGE_KEY) || DEFAULT_CURRENCY;
+  } catch {
+    return DEFAULT_CURRENCY;
+  }
+}
+
+let activeCurrency = readInitialCurrency();
+
+const formatterCache = new Map<string, Intl.NumberFormat>();
+
+function moneyFormatter(currency: string, whole: boolean): Intl.NumberFormat {
+  const key = `${currency}|${whole ? 'w' : 'f'}`;
+  let formatter = formatterCache.get(key);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: whole ? 0 : 2,
+    });
+    formatterCache.set(key, formatter);
+  }
+  return formatter;
+}
+
+/** Update the currency used by every subsequent `formatMoney` call and
+ *  persist it for the next reload. Invalid codes fall back to USD. */
+export function setActiveCurrency(currency: string): void {
+  activeCurrency = currency || DEFAULT_CURRENCY;
+  try {
+    localStorage.setItem(CURRENCY_STORAGE_KEY, activeCurrency);
+  } catch {
+    // Storage can be unavailable in locked-down browser contexts.
+  }
+}
+
+export function getActiveCurrency(): string {
+  return activeCurrency;
+}
+
+/** The currency symbol for the active (or given) currency, e.g. "$", "€". */
+export function currencySymbol(currency: string = activeCurrency): string {
+  try {
+    const parts = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 0,
+    }).formatToParts(0);
+    return parts.find((p) => p.type === 'currency')?.value ?? '$';
+  } catch {
+    return '$';
+  }
+}
 
 export function formatMoney(n: number, whole = false): string {
   if (!Number.isFinite(n)) return '—';
-  return whole ? usdWhole.format(n) : usd.format(n);
+  try {
+    return moneyFormatter(activeCurrency, whole).format(n);
+  } catch {
+    return moneyFormatter(DEFAULT_CURRENCY, whole).format(n);
+  }
 }
 
 /** Treat `YYYY-MM-DD` as a local calendar date (not UTC midnight). */

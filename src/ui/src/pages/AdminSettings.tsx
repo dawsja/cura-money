@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { Plus, Trash2, Edit3, RefreshCw, ShieldCheck, X, AlertTriangle, Copy, Check, KeyRound, Lock, Users, Eye, EyeOff, KeySquare, ShieldAlert, ShieldOff, Shield, Container } from 'lucide-react';
+import { Plus, Trash2, Edit3, RefreshCw, ShieldCheck, X, AlertTriangle, Copy, Check, KeyRound, Lock, Users, Eye, EyeOff, KeySquare, ShieldAlert, ShieldOff, Shield, Container, Coins } from 'lucide-react';
 import { api } from '../lib/api';
 import { fetchMe, changePassword } from '../lib/auth';
 import { Dialog } from '../components/ui/dialog';
+import { SUPPORTED_CURRENCIES, useCurrency } from '../lib/currency';
+import { formatMoney } from '../lib/format';
 
 interface OidcProvider {
   id: string;
@@ -115,6 +117,7 @@ export function Settings() {
 
       <div className="space-y-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide fg-muted">Personal</h2>
+        <PreferencesSection />
         <PasswordSection
           hasCredential={me.data?.user.hasCredential ?? false}
           email={me.data?.user.email ?? ''}
@@ -630,6 +633,43 @@ function LocalAuthConfirmModal({
           </button>
         </div>
     </Dialog>
+  );
+}
+
+// ============================================================================
+// Preferences — display currency (per-user, applies everywhere amounts show).
+// ============================================================================
+
+function PreferencesSection() {
+  const { currency, setCurrency, saving } = useCurrency();
+  return (
+    <section>
+      <SectionHeader
+        icon={<Coins className="h-4 w-4" />}
+        title="Display currency"
+        subtitle="Controls how amounts are shown throughout the app. Balances are stored numerically; this only changes the currency symbol and formatting."
+      />
+      <div className="card max-w-md space-y-3">
+        <label className="block">
+          <span className="text-sm font-medium fg-secondary">Currency</span>
+          <select
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value)}
+            disabled={saving}
+            className="mt-1 w-full rounded-lg border border-default bg-surface fg-primary px-3 py-2 text-sm focus:border-amber-500 focus:outline-none disabled:opacity-50"
+          >
+            {SUPPORTED_CURRENCIES.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code} — {c.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="text-sm fg-tertiary">
+          Preview: <span className="font-medium fg-primary tabular-nums">{formatMoney(1234.56)}</span>
+        </p>
+      </div>
+    </section>
   );
 }
 

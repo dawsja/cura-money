@@ -17,7 +17,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } from 'motion/react';
 import { api } from '../lib/api';
-import { formatMoney } from '../lib/format';
+import { currencySymbol, formatMoney } from '../lib/format';
 import { Dialog } from '../components/ui/dialog';
 import {
   PiggyBank,
@@ -521,7 +521,7 @@ function GoalModal({
           <label className="block">
             <span className="text-sm fg-secondary">Target amount</span>
             <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">$</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
               <input
                 type="number"
                 step="0.01"
@@ -539,7 +539,7 @@ function GoalModal({
               Starting value <span className="fg-muted font-normal">(optional)</span>
             </span>
             <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">$</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
               <input
                 type="number"
                 step="0.01"

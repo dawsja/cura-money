@@ -18,6 +18,7 @@ import { Rules } from './pages/Rules';
 import { Recurring } from './pages/Recurring';
 import { AsyncQueryState } from './components/ui/AsyncQueryState';
 import { FinancialOnboardingProvider } from './components/FinancialOnboardingProvider';
+import { CurrencyProvider } from './lib/currency';
 
 interface SetupStatus {
   needsSetup: boolean;
@@ -109,6 +110,7 @@ export default function App() {
   }
 
   return (
+    <CurrencyProvider initialCurrency={meQ.data.preferences?.currency ?? 'USD'}>
     <ReviewsProvider>
       <FinancialOnboardingProvider userId={meQ.data.user.id}>
         <Layout>
@@ -129,5 +131,6 @@ export default function App() {
         </Layout>
       </FinancialOnboardingProvider>
     </ReviewsProvider>
+    </CurrencyProvider>
   );
 }

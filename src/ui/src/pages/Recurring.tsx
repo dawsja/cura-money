@@ -7,16 +7,20 @@
  * subscriptions, memberships, and recurring bills to help users stay
  * on top of recurring charges, catch fraud, or cancel unused services.
  */
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { formatMoney, formatDate } from '../lib/format';
-import { RefreshCw, AlertCircle, Calendar, CreditCard, Tag, X } from 'lucide-react';
+import { currencySymbol, formatMoney, formatDate, todayLocalISO } from '../lib/format';
+import { RefreshCw, AlertCircle, Calendar, CreditCard, Tag, X, Plus, Pencil, Trash2, Check } from 'lucide-react';
 import clsx from 'clsx';
+import { Dialog } from '../components/ui/dialog';
+
+type Frequency = 'weekly' | 'monthly' | 'yearly';
 
 interface RecurringCharge {
   merchant: string;
   amount: number;
-  frequency: 'weekly' | 'monthly' | 'yearly';
+  frequency: Frequency;
   occurrences: number;
   lastDate: string;
   category: string;
@@ -25,6 +29,19 @@ interface RecurringCharge {
   nextDate: string;
   daysUntil: number;
   comingSoon: boolean;
+  /** True for user-defined entries (editable/deletable rather than dismissible). */
+  manual?: boolean;
+  /** Stable id for manual entries; absent on auto-detected charges. */
+  id?: string;
+}
+
+interface ManualDraft {
+  merchant: string;
+  amount: string;
+  frequency: Frequency;
+  account: string;
+  category: string;
+  anchorDate: string;
 }
 
 const FREQUENCY_LABEL: Record<string, string> = {
@@ -62,6 +79,28 @@ export function Recurring() {
   const { data, isLoading, error } = useQuery<RecurringCharge[]>({
     queryKey: ['recurring'],
     queryFn: () => api.get('/api/recurring'),
+  });
+
+  // `null` = closed; `'new'` = create; otherwise the manual charge being edited.
+  const [editing, setEditing] = useState<RecurringCharge | 'new' | null>(null);
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['recurring'] });
+    qc.invalidateQueries({ queryKey: ['notifications'] });
+  };
+
+  const saveManual = useMutation({
+    mutationFn: ({ id, body }: { id?: string; body: unknown }) =>
+      id ? api.patch(`/api/recurring/manual/${id}`, body) : api.post('/api/recurring/manual', body),
+    onSuccess: () => {
+      invalidate();
+      setEditing(null);
+    },
+  });
+
+  const deleteManual = useMutation({
+    mutationFn: (id: string) => api.delete(`/api/recurring/manual/${id}`),
+    onSuccess: invalidate,
   });
 
   const dismiss = useMutation({
@@ -119,15 +158,29 @@ export function Recurring() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 md:p-6">
       {/* Header */}
-      <div data-onboarding-target="recurring-summary">
-        <h1 className="text-2xl font-bold fg-primary">Recurring</h1>
-        <p className="text-sm fg-secondary mt-1">
-          Automatically detected charges that repeat on a regular schedule. Review these to catch unused subscriptions or unexpected charges.
-        </p>
+      <div data-onboarding-target="recurring-summary" className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold fg-primary">Recurring</h1>
+          <p className="text-sm fg-secondary mt-1">
+            Automatically detected charges plus any you add yourself. Review these to catch unused subscriptions or unexpected charges.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setEditing('new')}
+          className="btn-primary flex shrink-0 items-center gap-2"
+        >
+          <Plus className="h-4 w-4" /> Add recurring
+        </button>
       </div>
       {dismiss.isError && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300" role="alert">
           Could not dismiss the recurring charge: {dismiss.error.message}
+        </div>
+      )}
+      {deleteManual.isError && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300" role="alert">
+          Could not delete the recurring entry: {deleteManual.error.message}
         </div>
       )}
 
@@ -153,7 +206,7 @@ export function Recurring() {
           <RefreshCw className="h-10 w-10 fg-tertiary mx-auto mb-3" />
           <p className="fg-secondary text-sm">No recurring charges detected yet.</p>
           <p className="fg-tertiary text-xs mt-1">
-            As more transactions come in, recurring patterns will appear here automatically.
+            As more transactions come in, recurring patterns will appear here automatically — or add one manually with <span className="font-semibold">Add recurring</span>.
           </p>
         </div>
       ) : (
@@ -178,6 +231,11 @@ export function Recurring() {
                   >
                     {FREQUENCY_LABEL[charge.frequency]}
                   </span>
+                  {charge.manual && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-canvas-subtle border border-default fg-muted">
+                      Manual
+                    </span>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs fg-tertiary">
                   <span className="inline-flex items-center gap-1">
@@ -192,14 +250,16 @@ export function Recurring() {
                     <Tag className="h-3.5 w-3.5" />
                     {charge.category}
                   </span>
-                  <span className="inline-flex items-center gap-1">
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    {charge.occurrences} times
-                  </span>
+                  {!charge.manual && (
+                    <span className="inline-flex items-center gap-1">
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      {charge.occurrences} times
+                    </span>
+                  )}
                 </div>
               </div>
 
-              {/* Right: amount + dismiss */}
+              {/* Right: amount + actions */}
               <div className="flex items-center gap-3 shrink-0">
                 <div className="text-right">
                   <p className="text-base font-semibold text-rose-600 dark:text-rose-400">
@@ -209,26 +269,235 @@ export function Recurring() {
                     {formatMoney(annualCost(charge))}/yr
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => dismiss.mutate({
-                    merchant: charge.merchant,
-                    amount: charge.amount,
-                    account: charge.account,
-                    accountId: charge.accountId,
-                  })}
-                  disabled={dismiss.isPending}
-                  className="flex h-11 w-11 items-center justify-center rounded-lg fg-tertiary hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors disabled:opacity-50"
-                  aria-label={`Dismiss ${charge.merchant}`}
-                  title="Remove from recurring"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                {charge.manual ? (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setEditing(charge)}
+                      className="edit-icon-button flex h-11 w-11 items-center justify-center rounded-lg"
+                      aria-label={`Edit ${charge.merchant}`}
+                      title="Edit"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => charge.id && deleteManual.mutate(charge.id)}
+                      disabled={deleteManual.isPending}
+                      className="flex h-11 w-11 items-center justify-center rounded-lg fg-tertiary hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors disabled:opacity-50"
+                      aria-label={`Delete ${charge.merchant}`}
+                      title="Delete recurring entry"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => dismiss.mutate({
+                      merchant: charge.merchant,
+                      amount: charge.amount,
+                      account: charge.account,
+                      accountId: charge.accountId,
+                    })}
+                    disabled={dismiss.isPending}
+                    className="flex h-11 w-11 items-center justify-center rounded-lg fg-tertiary hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors disabled:opacity-50"
+                    aria-label={`Dismiss ${charge.merchant}`}
+                    title="Remove from recurring"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
+
+      {editing && (
+        <ManualRecurringModal
+          key={editing === 'new' ? 'new' : editing.id}
+          charge={editing === 'new' ? null : editing}
+          saving={saveManual.isPending}
+          error={saveManual.error?.message ?? null}
+          onClose={() => {
+            if (!saveManual.isPending) {
+              saveManual.reset();
+              setEditing(null);
+            }
+          }}
+          onSave={(draft) => {
+            const id = editing === 'new' ? undefined : editing.id;
+            saveManual.mutate({
+              id,
+              body: {
+                merchant: draft.merchant.trim(),
+                amount: Number(draft.amount),
+                frequency: draft.frequency,
+                account: draft.account.trim(),
+                category: draft.category.trim(),
+                anchorDate: draft.anchorDate,
+              },
+            });
+          }}
+        />
+      )}
     </div>
   );
 }
+
+/**
+ * Create / edit a manual recurring entry. Manual entries cover
+ * subscriptions and bills that don't have matching transactions yet, so
+ * every field is user-supplied. `anchorDate` is any one real occurrence;
+ * the server projects the next due date forward from it.
+ */
+function ManualRecurringModal({
+  charge,
+  saving,
+  error,
+  onClose,
+  onSave,
+}: {
+  charge: RecurringCharge | null;
+  saving: boolean;
+  error: string | null;
+  onClose: () => void;
+  onSave: (draft: ManualDraft) => void;
+}) {
+  const isEdit = charge !== null;
+  const [draft, setDraft] = useState<ManualDraft>({
+    merchant: charge?.merchant ?? '',
+    amount: charge ? String(charge.amount) : '',
+    frequency: charge?.frequency ?? 'monthly',
+    account: charge?.account ?? '',
+    category: charge?.category ?? '',
+    anchorDate: charge?.nextDate ?? todayLocalISO(),
+  });
+
+  const amountNum = Number(draft.amount);
+  const canSave =
+    draft.merchant.trim().length > 0
+    && draft.account.trim().length > 0
+    && draft.category.trim().length > 0
+    && Number.isFinite(amountNum)
+    && amountNum > 0
+    && /^\d{4}-\d{2}-\d{2}$/.test(draft.anchorDate);
+
+  return (
+    <Dialog
+      aria-label={isEdit ? 'Edit recurring entry' : 'Add recurring entry'}
+      onClose={onClose}
+      closeDisabled={saving}
+      contentClassName="card w-full max-w-sm"
+    >
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-lg font-semibold fg-primary">{isEdit ? 'Edit recurring' : 'Add recurring'}</h3>
+        <button type="button" onClick={onClose} disabled={saving} className="close-button rounded-lg p-2 disabled:opacity-50" aria-label="Close">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSave && !saving) onSave(draft);
+        }}
+      >
+        <label className="block">
+          <span className="text-sm fg-secondary">Merchant</span>
+          <input
+            value={draft.merchant}
+            onChange={(e) => setDraft((d) => ({ ...d, merchant: e.target.value }))}
+            placeholder="e.g. Netflix"
+            maxLength={120}
+            className={`mt-1 w-full ${MODAL_INPUT_CLS}`}
+            required
+            autoFocus
+          />
+        </label>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-sm fg-secondary">Amount</span>
+            <div className="relative mt-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={draft.amount}
+                onChange={(e) => setDraft((d) => ({ ...d, amount: e.target.value }))}
+                placeholder="0"
+                className={`w-full ${MODAL_INPUT_CLS} pl-7 pr-3 tabular-nums`}
+                required
+              />
+            </div>
+          </label>
+          <label className="block">
+            <span className="text-sm fg-secondary">Frequency</span>
+            <select
+              value={draft.frequency}
+              onChange={(e) => setDraft((d) => ({ ...d, frequency: e.target.value as Frequency }))}
+              className={`mt-1 w-full ${MODAL_INPUT_CLS}`}
+            >
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </label>
+        </div>
+
+        <label className="block">
+          <span className="text-sm fg-secondary">Next due date</span>
+          <input
+            type="date"
+            value={draft.anchorDate}
+            onChange={(e) => setDraft((d) => ({ ...d, anchorDate: e.target.value }))}
+            className={`mt-1 w-full ${MODAL_INPUT_CLS}`}
+            required
+          />
+          <span className="mt-1 block text-[10px] fg-muted">Any real charge date works — the schedule projects forward from it.</span>
+        </label>
+
+        <label className="block">
+          <span className="text-sm fg-secondary">Account</span>
+          <input
+            value={draft.account}
+            onChange={(e) => setDraft((d) => ({ ...d, account: e.target.value }))}
+            placeholder="e.g. Chase Credit"
+            maxLength={120}
+            className={`mt-1 w-full ${MODAL_INPUT_CLS}`}
+            required
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-sm fg-secondary">Category</span>
+          <input
+            value={draft.category}
+            onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}
+            placeholder="e.g. Subscriptions"
+            maxLength={120}
+            className={`mt-1 w-full ${MODAL_INPUT_CLS}`}
+            required
+          />
+        </label>
+
+        {error && <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onClose} disabled={saving} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50">
+            Cancel
+          </button>
+          <button type="submit" disabled={!canSave || saving} className="btn-primary flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
+            <Check className="h-4 w-4" /> {saving ? 'Saving…' : isEdit ? 'Save' : 'Add'}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+const MODAL_INPUT_CLS = 'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';

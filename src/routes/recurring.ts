@@ -15,14 +15,18 @@ import { getRecurringTransactionMetadata, resolveRecurringTransactionMetadata } 
 import { userId } from '@/lib/tenant';
 import { safe, badRequest } from '@/lib/errors';
 import {
+  addManualRecurring,
+  deleteManualRecurring,
   dismissRecurring,
   loadActiveRecurringCharges,
+  manualRecurringInputSchema,
   markRecurringRequestSchema,
   markRecurring,
   recurringIdentitySchema,
   recurringSchedule,
   restoreRecurring,
   unmarkRecurring,
+  updateManualRecurring,
 } from '@/services/recurring';
 
 export const recurringRoutes = new Hono();
@@ -35,6 +39,46 @@ recurringRoutes.get(
       ...charge,
       ...recurringSchedule(charge.lastDate, charge.frequency),
     })));
+  }),
+);
+
+// ---- Manual recurring entries -------------------------------------------
+//
+// User-defined recurring charges for subscriptions/bills that have no
+// matching transactions yet. Full CRUD so users can add, correct, and
+// cancel them directly from the Recurring page.
+
+recurringRoutes.post(
+  '/manual',
+  safe(async (c) => {
+    const parsed = manualRecurringInputSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
+    const created = await addManualRecurring(userId(c), parsed.data);
+    return c.json(created, 201);
+  }),
+);
+
+recurringRoutes.patch(
+  '/manual/:id',
+  safe(async (c) => {
+    const id = c.req.param('id');
+    if (!id) return badRequest(c, 'missing id');
+    const parsed = manualRecurringInputSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return badRequest(c, parsed.error.issues[0]?.message ?? 'invalid input');
+    const updated = await updateManualRecurring(userId(c), id, parsed.data);
+    if (!updated) return badRequest(c, 'recurring entry not found');
+    return c.json(updated);
+  }),
+);
+
+recurringRoutes.delete(
+  '/manual/:id',
+  safe(async (c) => {
+    const id = c.req.param('id');
+    if (!id) return badRequest(c, 'missing id');
+    const removed = await deleteManualRecurring(userId(c), id);
+    if (!removed) return badRequest(c, 'recurring entry not found');
+    return c.json({ ok: true });
   }),
 );
 

@@ -45,6 +45,7 @@ import { notificationRoutes } from '@/routes/notifications';
 import { dashboardRoutes } from '@/routes/dashboard';
 import { dataRoutes } from '@/routes/data';
 import { onboardingRoutes } from '@/routes/onboarding';
+import { preferenceRoutes } from '@/routes/preferences';
 import type { AppEnv } from '@/lib/tenant';
 
 export const app = new Hono<AppEnv>();
@@ -194,6 +195,7 @@ app.route('/api/notifications', notificationRoutes);
 app.route('/api/dashboard', dashboardRoutes);
 app.route('/api/data', dataRoutes);
 app.route('/api/onboarding', onboardingRoutes);
+app.route('/api/preferences', preferenceRoutes);
 
 // ---- Static SPA ------------------------------------------------------------
 // The Vite-built SPA is baked into ./public at image-build time. Serve the

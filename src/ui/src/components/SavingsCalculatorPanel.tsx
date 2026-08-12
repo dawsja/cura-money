@@ -12,6 +12,7 @@
  */
 import { Calculator } from 'lucide-react';
 import clsx from 'clsx';
+import { currencySymbol } from '../lib/format';
 
 type Method = 'planned' | 'avalanche' | 'snowball';
 
@@ -131,7 +132,7 @@ export function SavingsCalculatorPanel({
           <label className="block">
             <span className="text-xs fg-muted">Additional monthly payment</span>
             <div className="relative mt-1">
-              <span className="absolute left-2 top-1/2 -translate-y-1/2 fg-muted text-sm">$</span>
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
               <input
                 type="number"
                 step="0.01"
@@ -149,7 +150,7 @@ export function SavingsCalculatorPanel({
           <label className="block">
             <span className="text-xs fg-muted">Additional one-time payment</span>
             <div className="relative mt-1">
-              <span className="absolute left-2 top-1/2 -translate-y-1/2 fg-muted text-sm">$</span>
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
               <input
                 type="number"
                 step="0.01"

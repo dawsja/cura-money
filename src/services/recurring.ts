@@ -11,6 +11,7 @@ import {
 
 export const DISMISSED_RECURRING_KEY = 'dismissed_recurring';
 export const MARKED_RECURRING_KEY = 'marked_recurring';
+export const MANUAL_RECURRING_KEY = 'manual_recurring';
 
 export const recurringIdentitySchema = z.object({
   merchant: z.string().min(1),
@@ -50,6 +51,31 @@ type PersistedMarkedRecurring = z.infer<typeof persistedMarkedRecurringSchema>;
 
 export type RecurringFrequency = 'weekly' | 'monthly' | 'yearly';
 
+// ---- Manual recurring entries -------------------------------------------
+//
+// User-defined recurring charges that don't (yet) have matching
+// transactions — e.g. a subscription that hasn't posted, or a bill on an
+// account Cura doesn't sync. Stored as a JSON array in the settings KV
+// under `manual_recurring`, keyed by a stable `id` so they can be edited
+// and deleted individually. `amount` is in dollars (matching the detected
+// RecurringCharge shape); `anchorDate` is any one real occurrence, from
+// which the next due date is projected forward.
+
+/** Fields the client sends when creating/updating a manual entry. */
+export const manualRecurringInputSchema = z.object({
+  merchant: z.string().trim().min(1).max(120),
+  amount: z.number().finite().positive(),
+  frequency: z.enum(['weekly', 'monthly', 'yearly']),
+  account: z.string().trim().min(1).max(120),
+  category: z.string().trim().min(1).max(120),
+  anchorDate: z.string().date(),
+});
+export type ManualRecurringInput = z.infer<typeof manualRecurringInputSchema>;
+
+const manualRecurringSchema = manualRecurringInputSchema.extend({ id: z.string().min(1) });
+export type ManualRecurring = z.infer<typeof manualRecurringSchema>;
+const manualRecurringListSchema = z.array(manualRecurringSchema);
+
 const OVERDUE_NOTIFY_WINDOW_DAYS = 7;
 
 export function recurringSchedule(
@@ -80,6 +106,118 @@ export function recurringSchedule(
     nextDate,
     daysUntil,
     comingSoon: daysUntil >= -OVERDUE_NOTIFY_WINDOW_DAYS && daysUntil <= leadDays,
+  };
+}
+
+function todayYmd(now = new Date()): string {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12)).toISOString().slice(0, 10);
+}
+
+/** Advance a `YYYY-MM-DD` date by one period. Matches `recurringSchedule`
+ *  month/day clamping so manual and detected schedules stay consistent. */
+function addPeriodYmd(ymd: string, frequency: RecurringFrequency, direction: 1 | -1 = 1): string {
+  const [year, month, day] = ymd.split('-').map(Number) as [number, number, number];
+  if (frequency === 'weekly') {
+    return new Date(Date.UTC(year, month - 1, day + 7 * direction, 12)).toISOString().slice(0, 10);
+  }
+  const months = (frequency === 'monthly' ? 1 : 12) * direction;
+  const targetMonthIndex = month - 1 + months;
+  const targetYear = year + Math.floor(targetMonthIndex / 12);
+  const normalizedMonth = ((targetMonthIndex % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(targetYear, normalizedMonth, Math.min(day, lastDay), 12)).toISOString().slice(0, 10);
+}
+
+/**
+ * Given any real occurrence (`anchorDate`), compute the `lastDate` such
+ * that `recurringSchedule(lastDate)` yields the next occurrence that is
+ * still on or after today. Rolls the anchor forward (or back) so the
+ * shared schedule/notification logic treats manual entries exactly like
+ * detected ones.
+ */
+function manualLastDate(anchorDate: string, frequency: RecurringFrequency, now = new Date()): string {
+  const today = todayYmd(now);
+  let next = anchorDate;
+  // Roll forward until the occurrence is on/after today...
+  while (next < today) next = addPeriodYmd(next, frequency, 1);
+  // ...or back down to the first occurrence that is still on/after today,
+  // so a future-dated anchor keeps its own date as the next due date.
+  while (addPeriodYmd(next, frequency, -1) >= today) next = addPeriodYmd(next, frequency, -1);
+  return addPeriodYmd(next, frequency, -1);
+}
+
+function parseManual(raw: string | null): ManualRecurring[] {
+  return parseJson(raw, manualRecurringListSchema, []);
+}
+
+export async function listManualRecurring(userId: string): Promise<ManualRecurring[]> {
+  return parseManual(await getSetting(userId, MANUAL_RECURRING_KEY));
+}
+
+async function mutateManualRecurring<T>(
+  userId: string,
+  mutate: (items: ManualRecurring[]) => { next: ManualRecurring[]; result: T },
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`cura-recurring:${userId}`}))`);
+    const rows = await tx
+      .select({ value: settings.value })
+      .from(settings)
+      .where(and(eq(settings.userId, userId), eq(settings.key, MANUAL_RECURRING_KEY)));
+    const items = parseManual(rows[0]?.value ?? null);
+    const { next, result } = mutate(items);
+    await tx
+      .insert(settings)
+      .values({ userId, key: MANUAL_RECURRING_KEY, value: JSON.stringify(next), updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: [settings.userId, settings.key],
+        set: { value: sql`excluded.value`, updatedAt: new Date() },
+      });
+    return result;
+  });
+}
+
+export async function addManualRecurring(userId: string, input: ManualRecurringInput): Promise<ManualRecurring> {
+  const entry: ManualRecurring = { id: crypto.randomUUID(), ...input };
+  await mutateManualRecurring(userId, (items) => ({ next: [...items, entry], result: entry }));
+  return entry;
+}
+
+export async function updateManualRecurring(
+  userId: string,
+  id: string,
+  input: ManualRecurringInput,
+): Promise<ManualRecurring | null> {
+  return mutateManualRecurring(userId, (items) => {
+    let updated: ManualRecurring | null = null;
+    const next = items.map((item) => {
+      if (item.id !== id) return item;
+      updated = { id, ...input };
+      return updated;
+    });
+    return { next, result: updated };
+  });
+}
+
+export async function deleteManualRecurring(userId: string, id: string): Promise<boolean> {
+  return mutateManualRecurring(userId, (items) => {
+    const next = items.filter((item) => item.id !== id);
+    return { next, result: next.length !== items.length };
+  });
+}
+
+/** Manual entries rendered in the same shape as detected charges. */
+function manualToCharge(entry: ManualRecurring, now = new Date()): RecurringCharge & { manual: true; id: string } {
+  return {
+    merchant: entry.merchant,
+    amount: entry.amount,
+    frequency: entry.frequency,
+    occurrences: 0,
+    lastDate: manualLastDate(entry.anchorDate, entry.frequency, now),
+    category: entry.category,
+    account: entry.account,
+    manual: true,
+    id: entry.id,
   };
 }
 
@@ -253,10 +391,16 @@ async function refreshMarkedRecurring(
   return dedupedRefresh;
 }
 
-export async function loadActiveRecurringCharges(userId: string): Promise<(RecurringCharge & { accountId?: string })[]> {
-  const [charges, preferences] = await Promise.all([getRecurringCharges(userId), getRecurringPreferences(userId)]);
+export async function loadActiveRecurringCharges(
+  userId: string,
+): Promise<(RecurringCharge & { accountId?: string; manual?: boolean; id?: string })[]> {
+  const [charges, preferences, manualEntries] = await Promise.all([
+    getRecurringCharges(userId),
+    getRecurringPreferences(userId),
+    listManualRecurring(userId),
+  ]);
   const markedItems = await refreshMarkedRecurring(userId, preferences.marked);
-  const merged: (RecurringCharge & { accountId?: string })[] = charges.filter(
+  const merged: (RecurringCharge & { accountId?: string; manual?: boolean; id?: string })[] = charges.filter(
     (charge) => !isDismissed(preferences, charge.merchant, charge.amount, chargeAccount(charge)),
   );
 
@@ -293,6 +437,18 @@ export async function loadActiveRecurringCharges(userId: string): Promise<(Recur
         accountId: marked.accountId,
       });
     }
+  }
+
+  // Manual entries are always shown (they represent user intent), but skip
+  // any whose merchant+account already appears as a detected/marked charge
+  // to avoid a duplicate row once real transactions start posting.
+  for (const entry of manualEntries) {
+    const duplicate = merged.some(
+      (charge) => !charge.manual
+        && charge.merchant.toLowerCase() === entry.merchant.toLowerCase()
+        && charge.account.toLowerCase() === entry.account.toLowerCase(),
+    );
+    if (!duplicate) merged.push(manualToCharge(entry));
   }
   return merged;
 }
