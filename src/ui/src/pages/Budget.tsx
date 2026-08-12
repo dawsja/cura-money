@@ -202,6 +202,7 @@ export function Budget() {
     // Apply in-progress paydown live overrides so Left-to-budget tracks edits.
     const snapshotRows = paydownSnapshot.data?.rows ?? [];
     let plannedDebt = 0;
+    const actualDebt = snapshotRows.reduce((sum, r) => sum + r.actual, 0);
     if (snapshotRows.length > 0) {
       plannedDebt = snapshotRows.reduce((sum, r) => sum + (currentPaydownLive.get(r.accountId) ?? r.planned), 0);
     } else {
@@ -217,7 +218,7 @@ export function Budget() {
         plannedDebt += a.plannedPayment > 0 ? a.plannedPayment : a.minPayment ?? 0;
       }
     }
-    return { plannedIncome, earnedIncome, plannedExpense, spentExpense, plannedDebt };
+    return { plannedIncome, earnedIncome, plannedExpense, spentExpense, plannedDebt, actualDebt };
   }, [cats.data, mergedPlanned, earnedMap, spentMap, accounts.data, paydownSnapshot.data, currentPaydownLive]);
 
   const setLiveOverride = useCallback((id: string, value: number) => {
@@ -400,6 +401,7 @@ export function Budget() {
             plannedExpense={totals.plannedExpense}
             spentExpense={totals.spentExpense}
             plannedDebt={totals.plannedDebt}
+            actualDebt={totals.actualDebt}
             loading={false}
             onJumpToPaydown={jumpToPaydown}
           />

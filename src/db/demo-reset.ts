@@ -38,6 +38,23 @@ function demoAssignment(categoryName: string, subCategoryName: string) {
   };
 }
 
+function paydownAssignment(subCategoryName: string) {
+  const subCategoryId = subCategoryName === 'Everyday Rewards Card'
+    ? `${DEMO_USER_ID}:sub-paydown-credit`
+    : subCategoryName === 'Auto Loan'
+      ? `${DEMO_USER_ID}:sub-paydown-auto-loan`
+      : null;
+  return {
+    categoryId: `${DEMO_USER_ID}:cat-paydown-goals`,
+    subCategoryId,
+  };
+}
+
+function demoTransactionAssignment(item: DemoTransaction) {
+  if (item.category === 'Pay down goals') return paydownAssignment(item.subCategory);
+  return demoAssignment(item.category, item.subCategory);
+}
+
 function dateAtOffset(dayOffset: number): string {
   const date = new Date();
   date.setUTCHours(12, 0, 0, 0);
@@ -93,6 +110,7 @@ const transactionTemplates = ([
   { id: 'rent-1', dayOffset: -12, merchant: 'Oak Street Apartments', category: '🏠 Housing', subCategory: '🔑 Rent', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 165000, type: 'expense' },
   { id: 'electric-1', dayOffset: -14, merchant: 'City Electric', category: '💡 Bills & Utilities', subCategory: '⚡ Gas & Electric', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 11843, type: 'expense' },
   { id: 'card-payment-1', dayOffset: -15, merchant: 'Credit Card Payment', category: '🔄 Transfer', subCategory: '💳 Credit Card Payment', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 65000, type: 'transfer' },
+  { id: 'paydown-credit-1', dayOffset: -10, merchant: 'Everyday Rewards Card Payment', category: 'Pay down goals', subCategory: 'Everyday Rewards Card', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 25000, type: 'expense' },
   { id: 'auto-payment-1', dayOffset: -16, merchant: 'Community Auto Finance', category: '🚗 Auto & Transport', subCategory: '🚘 Auto Payment', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 38500, type: 'expense' },
   { id: 'shopping-split', dayOffset: -18, merchant: 'Target', category: '🛍️ Shopping', subCategory: '🛍️ Shopping', accountId: 'demo-credit', accountName: 'Everyday Rewards Card', amountCents: 14238, type: 'expense', notes: 'Household supplies and groceries' },
   { id: 'paycheck-2', dayOffset: -17, merchant: 'Acme Design Studio', category: '💰 Income', subCategory: '💵 Paychecks', accountId: 'demo-checking', accountName: 'Everyday Checking', amountCents: 325000, type: 'income' },
@@ -181,6 +199,20 @@ export async function resetDemoDatabase(): Promise<{ users: number; transactions
       })),
     ));
 
+    const paydownCategoryId = `${DEMO_USER_ID}:cat-paydown-goals`;
+    await tx.insert(categories).values({
+      id: paydownCategoryId,
+      userId: DEMO_USER_ID,
+      name: 'Pay down goals',
+      type: 'transfer',
+      icon: 'CreditCard',
+      sortOrder: INITIAL_CATEGORIES.length,
+    });
+    await tx.insert(subCategories).values([
+      { id: `${DEMO_USER_ID}:sub-paydown-credit`, userId: DEMO_USER_ID, mainCategoryId: paydownCategoryId, name: 'Everyday Rewards Card', planned: 0 },
+      { id: `${DEMO_USER_ID}:sub-paydown-auto-loan`, userId: DEMO_USER_ID, mainCategoryId: paydownCategoryId, name: 'Auto Loan', planned: 0 },
+    ]);
+
     await tx.insert(accounts).values([
       { id: 'demo-checking', userId: DEMO_USER_ID, name: 'Everyday Checking', type: 'checking', balance: 4250.67, institution: 'Community Bank' },
       { id: 'demo-emergency', userId: DEMO_USER_ID, name: 'Emergency Savings', type: 'savings', balance: 8200, institution: 'Community Bank' },
@@ -201,7 +233,7 @@ export async function resetDemoDatabase(): Promise<{ users: number; transactions
       sourceType: item.type,
       category: item.category,
       subCategory: item.subCategory,
-      ...demoAssignment(item.category, item.subCategory),
+      ...demoTransactionAssignment(item),
       accountId: item.accountId,
       account: item.accountName,
       amountCents: item.amountCents,
@@ -216,6 +248,7 @@ export async function resetDemoDatabase(): Promise<{ users: number; transactions
     ]);
 
     const budgets = [
+      ['sub-paychecks', 6500],
       ['sub-rent', 1650], ['sub-groceries', 550], ['sub-restaurants-bars', 180],
       ['sub-coffee-shops', 45], ['sub-gas-fuel', 180], ['sub-auto-payment', 385],
       ['sub-gas-electric', 140], ['sub-internet-cable', 79], ['sub-phone', 68],

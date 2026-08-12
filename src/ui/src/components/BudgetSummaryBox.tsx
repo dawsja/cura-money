@@ -9,6 +9,7 @@ export interface BudgetSummaryBoxProps {
   plannedExpense: number;
   spentExpense: number;
   plannedDebt: number;
+  actualDebt: number;
   loading?: boolean;
   onJumpToPaydown?: () => void;
 }
@@ -19,6 +20,7 @@ export function BudgetSummaryBox({
   plannedExpense,
   spentExpense,
   plannedDebt,
+  actualDebt,
   loading,
   onJumpToPaydown,
 }: BudgetSummaryBoxProps) {
@@ -27,6 +29,15 @@ export function BudgetSummaryBox({
   const balanced = leftToBudget === 0;
   const incomeRemaining = plannedIncome - earnedIncome;
   const expenseRemaining = plannedExpense - spentExpense;
+  const debtRemaining = plannedDebt - actualDebt;
+  const debtPct = plannedDebt > 0 ? Math.min(100, (actualDebt / plannedDebt) * 100) : 0;
+  const debtBarTone = actualDebt > plannedDebt ? 'rose' : actualDebt >= plannedDebt * 0.7 ? 'amber' : 'emerald';
+  const debtRemainingClass = debtRemaining < 0
+    ? 'text-rose-600 dark:text-rose-400'
+    : debtRemaining > 0
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : 'fg-muted';
+  const debtRemainingPrefix = debtRemaining < 0 ? '−' : '';
 
   const headerBg = balanced
     ? 'bg-sky-50 dark:bg-sky-900/20'
@@ -85,12 +96,14 @@ export function BudgetSummaryBox({
             </span>
             <span className="text-xs tabular-nums fg-muted">{formatMoney(plannedDebt, true)} planned</span>
           </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-            <div className="h-full w-0 bg-slate-400 dark:bg-slate-500" />
-          </div>
+          <Progress value={debtPct} tone={debtBarTone} />
           <div className="mt-1.5 flex items-baseline justify-between text-xs">
-            <span className="fg-secondary">Debt payments assigned</span>
-            <span className="tabular-nums fg-muted">{formatMoney(plannedDebt, true)}</span>
+            <span className="fg-secondary">{formatMoney(actualDebt, true)} assigned</span>
+            {plannedDebt > 0 && (
+              <span className={clsx('tabular-nums', debtRemainingClass)}>
+                {debtRemainingPrefix}{formatMoney(Math.abs(debtRemaining), true)} remaining
+              </span>
+            )}
           </div>
         </button>
       </div>
