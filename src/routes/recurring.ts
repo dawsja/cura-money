@@ -1,10 +1,10 @@
 /**
  * /api/recurring — detect recurring charges from transaction history.
  *
- * Analyzes past transactions to find charges from the same merchant at
- * the same amount that repeat across multiple months (subscriptions,
- * memberships, recurring bills). Helps users identify fraud or forgotten
- * subscriptions.
+ * Analyzes past transactions to find charges from the same merchant on
+ * the same account that repeat on a regular cadence (subscriptions,
+ * memberships, recurring bills). Amount uses the latest charge so a
+ * price change updates the existing row instead of opening a new one.
  *
  * Users can dismiss detected charges they don't want to see. Dismissed
  * keys are stored in the per-user settings KV store as a JSON array
@@ -71,9 +71,9 @@ recurringRoutes.post(
       ? await getRecurringTransactionMetadata(uid, parsed.data.transactionId)
       : await resolveRecurringTransactionMetadata(uid, {
           merchant: parsed.data.merchant,
-          amount: parsed.data.amount,
           account: parsed.data.account,
           accountId: parsed.data.accountId,
+          type: 'expense',
         });
     if (!latest) return badRequest(c, 'transaction not found');
     await markRecurring(uid, {

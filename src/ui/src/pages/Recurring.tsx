@@ -1,10 +1,11 @@
 /**
  * Recurring — automatic detection of recurring charges.
  *
- * Scans past transactions for charges from the same merchant at the
- * same amount repeated on a regular schedule. Surfaces subscriptions,
- * memberships, and recurring bills to help users stay on top of
- * recurring charges, catch fraud, or cancel unused services.
+ * Scans past transactions for charges from the same merchant on the
+ * same account repeated on a regular schedule. Amount follows the
+ * latest charge so a price change updates the existing row. Surfaces
+ * subscriptions, memberships, and recurring bills to help users stay
+ * on top of recurring charges, catch fraud, or cancel unused services.
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -37,7 +38,7 @@ const FREQUENCY_BADGE: Record<string, string> = {
   weekly: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
   monthly: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
   quarterly: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
-  yearly: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  yearly: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
 };
 
 /** Normalize any frequency to a monthly burn rate. */
@@ -56,8 +57,8 @@ function annualCost(c: RecurringCharge): number {
   return c.amount;
 }
 
-function recurringKey(merchant: string, amount: number, account: string): string {
-  return `${merchant.toLowerCase()}|${Math.round(amount * 100) / 100}|${account.toLowerCase()}`;
+function recurringKey(merchant: string, account: string): string {
+  return `${merchant.toLowerCase()}|${account.toLowerCase()}`;
 }
 
 export function Recurring() {
@@ -74,10 +75,10 @@ export function Recurring() {
       await qc.cancelQueries({ queryKey: ['recurring'] });
       const prev = qc.getQueryData<RecurringCharge[]>(['recurring']);
       if (prev) {
-        const key = recurringKey(charge.merchant, charge.amount, charge.accountId ?? charge.account);
+        const key = recurringKey(charge.merchant, charge.accountId ?? charge.account);
         qc.setQueryData<RecurringCharge[]>(
           ['recurring'],
-          prev.filter((c) => recurringKey(c.merchant, c.amount, c.accountId ?? c.account) !== key),
+          prev.filter((c) => recurringKey(c.merchant, c.accountId ?? c.account) !== key),
         );
       }
       return { prev };
@@ -163,7 +164,7 @@ export function Recurring() {
         <div className="grid grid-cols-1 gap-3">
           {sortedCharges?.map((charge) => (
             <div
-              key={recurringKey(charge.merchant, charge.amount, charge.accountId ?? charge.account)}
+              key={recurringKey(charge.merchant, charge.accountId ?? charge.account)}
               className={clsx(
                 'rounded-xl bg-surface border p-4 flex flex-col sm:flex-row sm:items-center gap-3 transition-colors',
                 charge.comingSoon ? 'border-sky-500' : 'border-default hover:border-amber-500/40',

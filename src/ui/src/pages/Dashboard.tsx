@@ -1,12 +1,25 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { formatMoney } from '../lib/format';
+import { currentYearMonth, formatMoney } from '../lib/format';
 import { formatAccountBalance, netWorthContribution, isLiability } from '../lib/accounting';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, TrendingUp, TrendingDown, Wallet, ArrowLeftRight, ChevronRight, Check, Pencil, X } from 'lucide-react';
+import {
+  ArrowRight,
+  TrendingUp,
+  TrendingDown,
+  Wallet,
+  ArrowLeftRight,
+  ChevronRight,
+  Check,
+  Pencil,
+  X,
+  Calendar,
+} from 'lucide-react';
 import { SummaryCard } from '../components/SummaryCard';
 import { SortableWidgetList } from '../components/SortableWidgetList';
+import { Progress } from '../components/ui/progress';
+import { GoalProgressBar } from '../components/GoalProgressBar';
 import clsx from 'clsx';
 import { AsyncQueryState } from '../components/ui/AsyncQueryState';
 
@@ -28,16 +41,97 @@ interface DashboardActivity {
   recent: DashboardTransaction[];
 }
 
-const DEFAULT_WIDGET_ORDER = ['summary', 'assets-liabilities', 'accounts', 'recent-transactions'] as const;
+interface RecurringCharge {
+  merchant: string;
+  amount: number;
+  frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  nextDate: string;
+  daysUntil: number;
+  comingSoon: boolean;
+  account: string;
+  accountId?: string;
+}
+
+interface Goal {
+  id: string;
+  name: string;
+  target: number;
+  startingValue: number;
+  accountId: string | null;
+  accountBalance: number | null;
+  accountName: string | null;
+}
+
+interface MainCategory {
+  id: string;
+  name: string;
+  type: 'income' | 'expense' | 'transfer';
+  subCategories: { id: string; name: string; planned: number }[];
+}
+
+interface BudgetRow { subCategoryId: string; planned: number; }
+interface BudgetActivityRow {
+  category: string;
+  subCategory: string;
+  type: 'income' | 'expense';
+  actual: number;
+}
+
+const DEFAULT_WIDGET_ORDER = [
+  'summary',
+  'assets-liabilities',
+  'budget',
+  'coming-up',
+  'save-up',
+  'accounts',
+  'recent-transactions',
+] as const;
 type WidgetId = (typeof DEFAULT_WIDGET_ORDER)[number];
 interface DashboardLayout { order: WidgetId[]; hidden: WidgetId[]; }
 
 const WIDGET_LABELS: Record<WidgetId, string> = {
   summary: 'Summary',
+  budget: 'This month',
+  'coming-up': 'Coming up',
+  'save-up': 'Save up',
   'assets-liabilities': 'Assets & Liabilities',
   accounts: 'Accounts',
   'recent-transactions': 'Recent transactions',
 };
+
+const FREQUENCY_LABEL: Record<string, string> = {
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+  quarterly: 'Quarterly',
+  yearly: 'Yearly',
+};
+
+const FREQUENCY_BADGE: Record<string, string> = {
+  weekly: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  monthly: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+  quarterly: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
+  yearly: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+};
+
+const actualKey = (category: string, subCategory?: string) => `${category}\0${subCategory ?? category}`;
+
+function withAllWidgets(order: WidgetId[]): WidgetId[] {
+  const next = order.filter((id) => (DEFAULT_WIDGET_ORDER as readonly string[]).includes(id));
+  for (const id of DEFAULT_WIDGET_ORDER) {
+    if (next.includes(id)) continue;
+    const defaultIdx = DEFAULT_WIDGET_ORDER.indexOf(id);
+    let insertAt = next.length;
+    for (let i = defaultIdx - 1; i >= 0; i--) {
+      const prevPos = next.indexOf(DEFAULT_WIDGET_ORDER[i]!);
+      if (prevPos !== -1) {
+        insertAt = prevPos + 1;
+        break;
+      }
+    }
+    next.splice(insertAt, 0, id);
+  }
+  return next;
+}
 
 /** Visual styling for a transaction type — kept in one place so the
  *  Dashboard "Recent" list, the Transactions table, and anywhere else
@@ -46,6 +140,13 @@ function txTypeStyle(type: DashboardTransaction['type']): { sign: string; amount
   if (type === 'income') return { sign: '+', amount: 'text-emerald-600 dark:text-emerald-400' };
   if (type === 'expense') return { sign: '−', amount: 'text-rose-600 dark:text-rose-400' };
   return { sign: '⇄', amount: 'text-slate-600 dark:text-slate-400' };
+}
+
+function daysLabel(days: number): string {
+  if (days < 0) return `${Math.abs(days)}d overdue`;
+  if (days === 0) return 'today';
+  if (days === 1) return 'tomorrow';
+  return `in ${days} days`;
 }
 
 export function Dashboard() {
@@ -70,6 +171,27 @@ export function Dashboard() {
     queryKey: ['dashboard', 'layout'],
     queryFn: () => api.get<DashboardLayout>('/api/dashboard/layout'),
   });
+  const ym = currentYearMonth();
+  const recurring = useQuery({
+    queryKey: ['recurring'],
+    queryFn: () => api.get<RecurringCharge[]>('/api/recurring'),
+  });
+  const goals = useQuery({
+    queryKey: ['goals'],
+    queryFn: () => api.get<Goal[]>('/api/goals'),
+  });
+  const cats = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => api.get<MainCategory[]>('/api/categories'),
+  });
+  const budgets = useQuery({
+    queryKey: ['budget', ym],
+    queryFn: () => api.get<BudgetRow[]>(`/api/budget/${ym}`),
+  });
+  const budgetActivity = useQuery({
+    queryKey: ['budget', 'activity', ym],
+    queryFn: () => api.get<{ yearMonth: string; rows: BudgetActivityRow[] }>(`/api/budget/${ym}/activity`),
+  });
   const saveLayout = useMutation({
     mutationFn: (next: DashboardLayout) => api.put<DashboardLayout>('/api/dashboard/layout', next),
     onSuccess: (saved) => {
@@ -78,8 +200,8 @@ export function Dashboard() {
     },
   });
 
-  const savedOrder = layout.data?.order ?? [...DEFAULT_WIDGET_ORDER];
-  const savedHidden = layout.data?.hidden ?? [];
+  const savedOrder = withAllWidgets(layout.data?.order ?? [...DEFAULT_WIDGET_ORDER]);
+  const savedHidden = (layout.data?.hidden ?? []).filter((id) => (DEFAULT_WIDGET_ORDER as readonly string[]).includes(id));
   const startEditing = () => {
     setDraftOrder([...savedOrder]);
     setDraftHidden([...savedHidden]);
@@ -95,6 +217,54 @@ export function Dashboard() {
   const toggleHidden = (widget: WidgetId) => {
     setDraftHidden((current) => current.includes(widget) ? current.filter((id) => id !== widget) : [...current, widget]);
   };
+
+  const monthBudget = useMemo(() => {
+    const plannedBySub = new Map<string, number>();
+    for (const c of cats.data ?? []) {
+      for (const s of c.subCategories) plannedBySub.set(s.id, s.planned);
+    }
+    for (const b of budgets.data ?? []) plannedBySub.set(b.subCategoryId, b.planned);
+
+    const spentByKey = new Map<string, number>();
+    for (const row of budgetActivity.data?.rows ?? []) {
+      if (row.type !== 'expense') continue;
+      spentByKey.set(actualKey(row.category, row.subCategory), row.actual);
+    }
+
+    let plannedExpense = 0;
+    let spentExpense = 0;
+    const categories: { key: string; name: string; planned: number; spent: number }[] = [];
+    for (const c of cats.data ?? []) {
+      if (c.type !== 'expense') continue;
+      for (const s of c.subCategories) {
+        const planned = plannedBySub.get(s.id) ?? s.planned;
+        const spent = spentByKey.get(actualKey(c.name, s.name)) ?? 0;
+        plannedExpense += planned;
+        spentExpense += spent;
+        if (planned > 0) categories.push({ key: s.id, name: s.name, planned, spent });
+      }
+    }
+    categories.sort((a, b) => (b.spent / b.planned) - (a.spent / a.planned) || b.spent - a.spent);
+    return {
+      plannedExpense,
+      spentExpense,
+      remaining: plannedExpense - spentExpense,
+      hotspots: categories.slice(0, 3),
+    };
+  }, [cats.data, budgets.data, budgetActivity.data]);
+
+  const upcomingCharges = useMemo(() => {
+    const charges = recurring.data ?? [];
+    const soon = charges.filter((c) => c.comingSoon).sort((a, b) => a.daysUntil - b.daysUntil);
+    if (soon.length > 0) return soon.slice(0, 4);
+    return [...charges].sort((a, b) => a.daysUntil - b.daysUntil).slice(0, 4);
+  }, [recurring.data]);
+
+  const goalRows = useMemo(() => {
+    const list = goals.data ?? [];
+    const active = list.filter((goal) => goal.accountBalance === null || goal.accountBalance < goal.target);
+    return (active.length > 0 ? active : list).slice(0, 3);
+  }, [goals.data]);
 
   if (accounts.isLoading || activity.isLoading) {
     return (
@@ -153,6 +323,147 @@ export function Dashboard() {
       );
     }
 
+    if (widget === 'budget') {
+      const budgetLoading = cats.isLoading || budgets.isLoading || budgetActivity.isLoading;
+      const budgetError = cats.isError || budgets.isError || budgetActivity.isError;
+      const pct = monthBudget.plannedExpense > 0
+        ? (monthBudget.spentExpense / monthBudget.plannedExpense) * 100
+        : 0;
+      const over = monthBudget.remaining < 0;
+      return (
+        <section className="card">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold fg-primary">This month</h2>
+            <button type="button" onClick={() => navigate('/budget')} className="text-sm text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1">
+              Budget <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+          {budgetLoading ? (
+            <p className="py-4 text-sm fg-muted text-center">Loading this month's budget...</p>
+          ) : budgetError ? (
+            <p className="py-4 text-sm text-rose-600 dark:text-rose-400 text-center">Could not load this month's budget.</p>
+          ) : monthBudget.plannedExpense <= 0 && monthBudget.spentExpense <= 0 ? (
+            <p className="py-4 text-sm fg-muted text-center">No expense budget this month.</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-wider fg-muted">Left to spend</p>
+                  <p className={clsx('text-2xl font-bold tabular-nums', over ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
+                    {over ? '−' : ''}{formatMoney(Math.abs(monthBudget.remaining))}
+                  </p>
+                </div>
+                <div className="text-right text-xs fg-muted tabular-nums">
+                  {formatMoney(monthBudget.spentExpense)} of {formatMoney(monthBudget.plannedExpense)}
+                </div>
+              </div>
+              <Progress
+                value={pct}
+                tone={over ? 'rose' : monthBudget.spentExpense >= monthBudget.plannedExpense * 0.7 ? 'amber' : 'emerald'}
+              />
+              {monthBudget.hotspots.length > 0 && (
+                <ul className="divide-y divide-slate-100 dark:divide-slate-700">
+                  {monthBudget.hotspots.map((row) => {
+                    const rowOver = row.spent > row.planned;
+                    return (
+                      <li key={row.key} className="flex items-center justify-between gap-3 py-2 text-sm">
+                        <span className="truncate fg-primary">{row.name}</span>
+                        <span className={clsx('shrink-0 tabular-nums', rowOver ? 'text-rose-600 dark:text-rose-400' : 'fg-secondary')}>
+                          {formatMoney(row.spent)} / {formatMoney(row.planned)}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+        </section>
+      );
+    }
+
+    if (widget === 'coming-up') {
+      return (
+        <section className="card flex h-full flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold fg-primary">Coming up</h2>
+            <button type="button" onClick={() => navigate('/recurring')} className="text-sm text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1">
+              Recurring <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+          {recurring.isLoading ? (
+            <p className="py-4 text-sm fg-muted text-center">Loading upcoming charges…</p>
+          ) : recurring.isError ? (
+            <p className="py-4 text-sm text-rose-600 dark:text-rose-400 text-center">Could not load upcoming charges.</p>
+          ) : upcomingCharges.length === 0 ? (
+            <p className="py-4 text-sm fg-muted text-center">No upcoming charges.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100 dark:divide-slate-700">
+              {upcomingCharges.map((charge) => (
+                <li key={`${charge.merchant}|${charge.accountId ?? charge.account}|${charge.nextDate}`} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium fg-primary truncate">{charge.merchant}</span>
+                      <span className={clsx('inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0', FREQUENCY_BADGE[charge.frequency])}>
+                        {FREQUENCY_LABEL[charge.frequency]}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1 text-xs fg-muted">
+                      <Calendar className="h-3 w-3" />
+                      {daysLabel(charge.daysUntil)}
+                    </div>
+                  </div>
+                  <div className="shrink-0 font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+                    {formatMoney(charge.amount)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      );
+    }
+
+    if (widget === 'save-up') {
+      return (
+        <section className="card flex h-full flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold fg-primary">Save up</h2>
+            <button type="button" onClick={() => navigate('/saveup')} className="text-sm text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1">
+              Goals <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+          {goals.isLoading ? (
+            <p className="py-4 text-sm fg-muted text-center">Loading savings goals…</p>
+          ) : goals.isError ? (
+            <p className="py-4 text-sm text-rose-600 dark:text-rose-400 text-center">Could not load savings goals.</p>
+          ) : goalRows.length === 0 ? (
+            <p className="py-4 text-sm fg-muted text-center">No savings goals yet.</p>
+          ) : (
+            <ul className="space-y-3">
+              {goalRows.map((goal) => {
+                const current = goal.accountBalance ?? 0;
+                const hasAccount = goal.accountBalance !== null;
+                const pct = hasAccount && goal.target > 0 ? Math.min(100, (Math.max(0, current) / goal.target) * 100) : 0;
+                const reached = hasAccount && current >= goal.target;
+                return (
+                  <li key={goal.id}>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="font-medium fg-primary truncate">{goal.name}</span>
+                      <span className={clsx('shrink-0 tabular-nums', reached ? 'text-emerald-600 dark:text-emerald-400' : 'fg-secondary')}>
+                        {hasAccount ? `${formatMoney(current)} / ${formatMoney(goal.target)}` : 'No account'}
+                      </span>
+                    </div>
+                    <GoalProgressBar className="mt-1.5" value={pct} />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      );
+    }
+
     if (widget === 'assets-liabilities') {
       return (
         <section className="card">
@@ -185,7 +496,7 @@ export function Dashboard() {
 
     if (widget === 'accounts') {
       return (
-        <section className="card">
+        <section className="card flex h-full flex-col">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold fg-primary">Accounts</h2>
             <button onClick={() => navigate('/accounts')} className="text-sm text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1">
@@ -196,12 +507,12 @@ export function Dashboard() {
             {accounts.data?.slice(0, 4).map((a) => {
               const balance = formatAccountBalance(a, formatMoney);
               return (
-                <li key={a.id} className="flex justify-between py-2 text-sm">
-                  <div>
-                    <div className="font-medium fg-primary">{a.name}</div>
-                    <div className="text-xs fg-muted">{a.institution ?? a.type}</div>
+                <li key={a.id} className="flex justify-between gap-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <div className="font-medium fg-primary truncate">{a.name}</div>
+                    <div className="text-xs fg-muted truncate">{a.institution ?? a.type}</div>
                   </div>
-                  <div className={clsx('font-semibold tabular-nums', balance.colorClass)}>{balance.text}</div>
+                  <div className={clsx('shrink-0 font-semibold tabular-nums', balance.colorClass)}>{balance.text}</div>
                 </li>
               );
             })}
@@ -212,7 +523,7 @@ export function Dashboard() {
     }
 
     return (
-      <section className="card">
+      <section className="card flex h-full flex-col">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold fg-primary">Recent transactions</h2>
           <div className="flex items-center gap-3 text-xs fg-muted">
@@ -230,15 +541,15 @@ export function Dashboard() {
           {activity.data?.recent.map((t) => {
             const style = txTypeStyle(t.type);
             return (
-              <li key={t.id} className="flex justify-between py-2 text-sm">
-                <div>
+              <li key={t.id} className="flex justify-between gap-3 py-2 text-sm">
+                <div className="min-w-0">
                   <div className="font-medium flex items-center gap-1.5 fg-primary">
-                    {t.type === 'transfer' && <ArrowLeftRight className="h-3 w-3 fg-muted" />}
-                    {t.merchant}
+                    {t.type === 'transfer' && <ArrowLeftRight className="h-3 w-3 shrink-0 fg-muted" />}
+                    <span className="truncate">{t.merchant}</span>
                   </div>
-                  <div className="text-xs fg-muted">{t.date} · {t.category}{t.subCategory ? ` › ${t.subCategory}` : ''} · {t.account}</div>
+                  <div className="text-xs fg-muted truncate">{t.date} · {t.category}{t.subCategory ? ` › ${t.subCategory}` : ''} · {t.account}</div>
                 </div>
-                <div className={clsx('font-semibold tabular-nums', style.amount)}>{style.sign}{formatMoney(t.amount)}</div>
+                <div className={clsx('shrink-0 font-semibold tabular-nums', style.amount)}>{style.sign}{formatMoney(t.amount)}</div>
               </li>
             );
           })}
@@ -246,6 +557,24 @@ export function Dashboard() {
         </ul>
       </section>
     );
+  };
+
+  const displayedOrder = editing ? draftOrder : savedOrder;
+  const displayedHidden = new Set(editing ? draftHidden : savedHidden);
+  const visibleDisplayedOrder = displayedOrder.filter((widget) => !displayedHidden.has(widget));
+  const PAIR_NEIGHBOR: Partial<Record<WidgetId, WidgetId>> = {
+    'coming-up': 'save-up',
+    'save-up': 'coming-up',
+    accounts: 'recent-transactions',
+    'recent-transactions': 'accounts',
+  };
+  const dashboardItemClass = (widget: WidgetId) => {
+    const neighbor = PAIR_NEIGHBOR[widget];
+    if (!neighbor) return 'flex flex-col md:col-span-2';
+    const index = visibleDisplayedOrder.indexOf(widget);
+    return visibleDisplayedOrder[index - 1] === neighbor || visibleDisplayedOrder[index + 1] === neighbor
+      ? 'flex flex-col min-h-0'
+      : 'flex flex-col md:col-span-2';
   };
 
   return (
@@ -273,12 +602,14 @@ export function Dashboard() {
       {saveLayout.isError && <p className="text-sm text-rose-600 dark:text-rose-400">Could not save the dashboard layout. Please try again.</p>}
 
       <SortableWidgetList
-        order={editing ? draftOrder : savedOrder}
+        order={displayedOrder}
         labels={WIDGET_LABELS}
         editing={editing}
         onReorder={setDraftOrder}
         renderWidget={renderWidget}
-        hidden={new Set(editing ? draftHidden : savedHidden)}
+        className="grid gap-6 md:grid-cols-2"
+        itemClassName={dashboardItemClass}
+        hidden={displayedHidden}
         onToggleHidden={editing ? toggleHidden : undefined}
       />
     </div>

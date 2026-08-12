@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { AsyncQueryState } from '../components/ui/AsyncQueryState';
+import { GoalProgressBar } from '../components/GoalProgressBar';
 
 interface Goal {
   id: string;
@@ -353,7 +354,7 @@ function GoalCard({
       </div>
 
       {hasAccount ? (
-        <GoalXpBar value={pct} reached={reached} celebrate={celebrate} />
+        <GoalProgressBar className="mt-3" value={pct} celebrate={celebrate} />
       ) : (
         <div className="mt-3 flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400">
           <Link2Off className="h-3.5 w-3.5" /> Pick an account to track this goal.
@@ -420,49 +421,6 @@ function progressTextClass(value: number, reached: boolean): string {
   if (value >= 50) return 'text-amber-700 dark:text-amber-300';
   if (value >= 25) return 'text-sky-700 dark:text-sky-300';
   return 'text-violet-600';
-}
-
-function GoalXpBar({
-  value,
-  reached,
-  celebrate,
-}: {
-  value: number;
-  reached: boolean;
-  celebrate: boolean;
-}) {
-  const reduceMotion = useReducedMotion();
-
-  return (
-    <div className="mt-3">
-      <div
-        className="relative h-3 rounded-full bg-slate-200 dark:bg-slate-700"
-        role="progressbar"
-        aria-label="Goal progress"
-        aria-valuenow={Math.round(value)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-      >
-        <motion.div
-          className="goal-progress-gradient absolute inset-0 overflow-hidden rounded-full"
-          initial={reduceMotion ? false : { clipPath: 'inset(0 100% 0 0)' }}
-          animate={{ clipPath: `inset(0 ${100 - value}% 0 0)` }}
-          transition={reduceMotion ? { duration: 0 } : { duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-        >
-          {!reduceMotion && (
-            <motion.div
-              key={`${Math.round(value)}-${celebrate}`}
-              className="absolute inset-y-0 w-1/4 -skew-x-12 bg-white/30"
-              initial={{ x: '-120%' }}
-              animate={{ x: '500%' }}
-              transition={{ duration: 0.75, delay: 0.55, ease: 'easeInOut' }}
-            />
-          )}
-        </motion.div>
-
-      </div>
-    </div>
-  );
 }
 
 // ---- Goal modal ---------------------------------------------------------
