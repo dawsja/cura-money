@@ -313,7 +313,7 @@ export function Dashboard() {
   const renderWidget = (widget: WidgetId) => {
     if (widget === 'summary') {
       return (
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <SummaryCard label="Net worth" sub="Sum of all accounts" tone={totalBalance >= 0 ? 'slate' : 'rose'} icon={<Wallet className="h-4 w-4" />} value={formatMoney(totalBalance)} />
           <SummaryCard label="Income (30d)" sub="Deposits (transfers excluded)" tone="emerald" icon={<TrendingUp className="h-4 w-4" />} value={formatMoney(income)} />
           <SummaryCard label="Spending (30d)" sub="Out-of-pocket expenses" tone="rose" icon={<TrendingDown className="h-4 w-4" />} value={formatMoney(expense)} />
@@ -466,7 +466,7 @@ export function Dashboard() {
       return (
         <section className="card">
           <h2 className="text-lg font-semibold fg-primary mb-4">Assets & Liabilities</h2>
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-semibold fg-primary">Assets</span>
@@ -568,11 +568,11 @@ export function Dashboard() {
   };
   const dashboardItemClass = (widget: WidgetId) => {
     const neighbor = PAIR_NEIGHBOR[widget];
-    if (!neighbor) return 'flex flex-col md:col-span-2';
+    if (!neighbor) return 'flex flex-col min-w-0 md:col-span-2';
     const index = visibleDisplayedOrder.indexOf(widget);
     return visibleDisplayedOrder[index - 1] === neighbor || visibleDisplayedOrder[index + 1] === neighbor
-      ? 'flex flex-col min-h-0'
-      : 'flex flex-col md:col-span-2';
+      ? 'flex flex-col min-w-0 min-h-0'
+      : 'flex flex-col min-w-0 md:col-span-2';
   };
 
   return (
@@ -605,7 +605,7 @@ export function Dashboard() {
         editing={editing}
         onReorder={setDraftOrder}
         renderWidget={renderWidget}
-        className="grid gap-6 md:grid-cols-2"
+        className="grid grid-cols-1 gap-6 md:grid-cols-2"
         itemClassName={dashboardItemClass}
         hidden={displayedHidden}
         onToggleHidden={editing ? toggleHidden : undefined}
