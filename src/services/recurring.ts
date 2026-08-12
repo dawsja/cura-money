@@ -48,6 +48,41 @@ const markedRecurringListSchema = z.array(persistedMarkedRecurringSchema);
 export type MarkedRecurring = z.infer<typeof markedRecurringSchema>;
 type PersistedMarkedRecurring = z.infer<typeof persistedMarkedRecurringSchema>;
 
+export type RecurringFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+
+const OVERDUE_NOTIFY_WINDOW_DAYS = 7;
+
+export function recurringSchedule(
+  lastDate: string,
+  frequency: RecurringFrequency,
+  now = new Date(),
+): { nextDate: string; daysUntil: number; comingSoon: boolean } {
+  const [year, month, day] = lastDate.split('-').map(Number) as [number, number, number];
+  let nextDate: string;
+  if (frequency === 'weekly') {
+    nextDate = new Date(Date.UTC(year, month - 1, day + 7, 12)).toISOString().slice(0, 10);
+  } else {
+    const months = frequency === 'monthly' ? 1 : frequency === 'quarterly' ? 3 : 12;
+    const targetMonth = month - 1 + months;
+    const targetYear = year + Math.floor(targetMonth / 12);
+    const normalizedMonth = targetMonth % 12;
+    const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+    nextDate = new Date(Date.UTC(targetYear, normalizedMonth, Math.min(day, lastDay), 12)).toISOString().slice(0, 10);
+  }
+
+  const [nextYear, nextMonth, nextDay] = nextDate.split('-').map(Number) as [number, number, number];
+  const next = Date.UTC(nextYear, nextMonth - 1, nextDay);
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const daysUntil = Math.round((next - today) / 86_400_000);
+  const leadDays = frequency === 'weekly' ? 2 : frequency === 'monthly' ? 7 : frequency === 'quarterly' ? 14 : 30;
+
+  return {
+    nextDate,
+    daysUntil,
+    comingSoon: daysUntil >= -OVERDUE_NOTIFY_WINDOW_DAYS && daysUntil <= leadDays,
+  };
+}
+
 interface RecurringPreferences {
   dismissed: Set<string>;
   marked: PersistedMarkedRecurring[];

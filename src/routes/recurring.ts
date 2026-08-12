@@ -20,6 +20,7 @@ import {
   markRecurringRequestSchema,
   markRecurring,
   recurringIdentitySchema,
+  recurringSchedule,
   restoreRecurring,
   unmarkRecurring,
 } from '@/services/recurring';
@@ -29,7 +30,11 @@ export const recurringRoutes = new Hono();
 recurringRoutes.get(
   '/',
   safe(async (c) => {
-    return c.json(await loadActiveRecurringCharges(userId(c)));
+    const charges = await loadActiveRecurringCharges(userId(c));
+    return c.json(charges.map((charge) => ({
+      ...charge,
+      ...recurringSchedule(charge.lastDate, charge.frequency),
+    })));
   }),
 );
 

@@ -14,12 +14,16 @@ import { z } from 'zod';
 import { pendingReviewNotificationState, getSetting, setSetting } from '@/db/queries';
 import { userId } from '@/lib/tenant';
 import { safe } from '@/lib/errors';
-import { loadActiveRecurringCharges, recurringKey } from '@/services/recurring';
+import {
+  loadActiveRecurringCharges,
+  recurringKey,
+  recurringSchedule,
+  type RecurringFrequency,
+} from '@/services/recurring';
 
 export const notificationRoutes = new Hono();
 
 const DISMISSED_KEY = 'dismissed_notifications';
-const OVERDUE_NOTIFY_WINDOW_DAYS = 7;
 
 const DismissedStateSchema = z.object({
   reviewsClearedThroughIdentity: z.string().optional().catch(undefined),
@@ -48,39 +52,6 @@ async function getDismissed(uid: string): Promise<DismissedState> {
   } catch {
     return { upcoming: [] };
   }
-}
-
-type RecurringFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
-
-function estimateNextCharge(lastDate: string, frequency: RecurringFrequency): string {
-  const [year, month, day] = lastDate.split('-').map(Number) as [number, number, number];
-  if (frequency === 'weekly') {
-    const d = new Date(Date.UTC(year, month - 1, day + 7, 12));
-    return d.toISOString().slice(0, 10);
-  }
-  const months = frequency === 'monthly' ? 1 : frequency === 'quarterly' ? 3 : 12;
-  const targetMonth = month - 1 + months;
-  const targetYear = year + Math.floor(targetMonth / 12);
-  const normalizedMonth = targetMonth % 12;
-  const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
-  const d = new Date(Date.UTC(targetYear, normalizedMonth, Math.min(day, lastDay), 12));
-  return d.toISOString().slice(0, 10);
-}
-
-function daysUntil(nextDate: string, now = new Date()): number {
-  const [year, month, day] = nextDate.split('-').map(Number) as [number, number, number];
-  const next = Date.UTC(year, month - 1, day);
-  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return (next - today) / 86_400_000;
-}
-
-function isInNotifyWindow(days: number, frequency: RecurringFrequency): boolean {
-  if (days < -OVERDUE_NOTIFY_WINDOW_DAYS) return false;
-  if (frequency === 'weekly') return days <= 2;
-  if (days > 30 && frequency === 'yearly') return false;
-  if (frequency === 'monthly') return days <= 7;
-  if (frequency === 'quarterly') return days <= 14;
-  return days <= 30;
 }
 
 export interface UpcomingNotification {
@@ -124,9 +95,8 @@ notificationRoutes.get(
     const dismissedUpcoming = new Set(upgradedDismissed.upcoming);
     const upcoming: UpcomingNotification[] = [];
     for (const ch of merged) {
-      const nextDate = estimateNextCharge(ch.lastDate, ch.frequency);
-      const days = daysUntil(nextDate);
-      if (!isInNotifyWindow(days, ch.frequency)) continue;
+      const { nextDate, daysUntil, comingSoon } = recurringSchedule(ch.lastDate, ch.frequency);
+      if (!comingSoon) continue;
       const key = upcomingDismissKey(ch.merchant, ch.amount, ch.accountId ?? ch.account, nextDate);
       if (dismissedUpcoming.has(key) || dismissedUpcoming.has(legacyUpcomingDismissKey(ch.merchant, ch.amount, nextDate))) {
         continue;
@@ -137,7 +107,7 @@ notificationRoutes.get(
         amount: ch.amount,
         frequency: ch.frequency,
         nextDate,
-        daysUntil: Math.round(days),
+        daysUntil,
       });
     }
     upcoming.sort((a, b) => a.daysUntil - b.daysUntil || b.amount - a.amount);
@@ -171,9 +141,8 @@ notificationRoutes.post(
 
     const upcomingKeys = new Set(dismissed.upcoming);
     for (const ch of merged) {
-      const nextDate = estimateNextCharge(ch.lastDate, ch.frequency);
-      const days = daysUntil(nextDate);
-      if (!isInNotifyWindow(days, ch.frequency)) continue;
+      const { nextDate, comingSoon } = recurringSchedule(ch.lastDate, ch.frequency);
+      if (!comingSoon) continue;
       upcomingKeys.add(upcomingDismissKey(ch.merchant, ch.amount, ch.accountId ?? ch.account, nextDate));
     }
 

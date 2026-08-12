@@ -21,6 +21,9 @@ interface RecurringCharge {
   category: string;
   account: string;
   accountId?: string;
+  nextDate: string;
+  daysUntil: number;
+  comingSoon: boolean;
 }
 
 const FREQUENCY_LABEL: Record<string, string> = {
@@ -92,6 +95,12 @@ export function Recurring() {
   // Yearly = sum of annualized costs — always monthlyTotal * 12 (within float).
   const monthlyTotal = data?.reduce((sum, c) => sum + monthlyBurn(c), 0) ?? 0;
   const yearlyEstimate = data?.reduce((sum, c) => sum + annualCost(c), 0) ?? 0;
+  const comingUpCount = data?.filter((charge) => charge.comingSoon).length ?? 0;
+  const sortedCharges = data ? [...data].sort((a, b) => {
+    if (a.comingSoon !== b.comingSoon) return a.comingSoon ? -1 : 1;
+    if (a.comingSoon && b.comingSoon) return a.daysUntil - b.daysUntil;
+    return 0;
+  }) : undefined;
 
   if (isLoading) {
     return (
@@ -136,8 +145,8 @@ export function Recurring() {
           <p className="text-xl font-semibold fg-primary mt-1">{formatMoney(yearlyEstimate)}</p>
         </div>
         <div className="rounded-xl bg-surface border border-default p-4">
-          <p className="text-xs font-medium fg-tertiary uppercase tracking-wide">Detected Charges</p>
-          <p className="text-xl font-semibold fg-primary mt-1">{data?.length ?? 0}</p>
+          <p className="text-xs font-medium fg-tertiary uppercase tracking-wide">Coming Up</p>
+          <p className="text-xl font-semibold fg-primary mt-1">{comingUpCount}</p>
         </div>
       </div>
 
@@ -152,10 +161,13 @@ export function Recurring() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3">
-          {data?.map((charge) => (
+          {sortedCharges?.map((charge) => (
             <div
               key={recurringKey(charge.merchant, charge.amount, charge.accountId ?? charge.account)}
-              className="rounded-xl bg-surface border border-default p-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:border-amber-500/40 transition-colors"
+              className={clsx(
+                'rounded-xl bg-surface border p-4 flex flex-col sm:flex-row sm:items-center gap-3 transition-colors',
+                charge.comingSoon ? 'border-sky-500' : 'border-default hover:border-amber-500/40',
+              )}
             >
               {/* Left: merchant + meta */}
               <div className="flex-1 min-w-0">
@@ -173,7 +185,7 @@ export function Recurring() {
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs fg-tertiary">
                   <span className="inline-flex items-center gap-1">
                     <Calendar className="h-3.5 w-3.5" />
-                    Last: {formatDate(charge.lastDate)}
+                    Expected: {formatDate(charge.nextDate)}
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <CreditCard className="h-3.5 w-3.5" />
