@@ -1,0 +1,1 @@
+ALTER TABLE "transactions" ADD COLUMN "merchant_user_modified" boolean DEFAULT false NOT NULL;

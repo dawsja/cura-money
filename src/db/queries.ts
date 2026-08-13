@@ -1752,6 +1752,7 @@ export async function addTransaction(
     categoryId: assignment.categoryId,
     subCategoryId: assignment.subCategoryId,
     categoryUserModified: true,
+    merchantUserModified: true,
     accountId: account.id,
     account: account.name,
     amountCents,
@@ -1803,6 +1804,9 @@ export async function editTransaction(
       ? false
       : true
     : existing.dateUserModified;
+  const merchantUserModified = patch.merchant !== undefined && patch.merchant !== existing.merchant
+    ? true
+    : existing.merchantUserModified;
   // An inline edit on a row that was awaiting review is an
   // implicit acknowledgement — drop it from the queue. The PATCH
   // endpoint is the only path that touches an existing row, and
@@ -1830,6 +1834,7 @@ export async function editTransaction(
         date: patch.date ?? existing.date,
         dateUserModified,
         merchant: patch.merchant ?? existing.merchant,
+        merchantUserModified,
         category: patch.category ?? existing.category,
         subCategory: patch.subCategory !== undefined ? (patch.subCategory ?? null) : existing.subCategory,
         categoryId: changesAssignment ? assignment!.categoryId : existing.categoryId,
@@ -2090,12 +2095,16 @@ export async function updateFullTransaction(
         ? false
         : true
       : parent.dateUserModified;
+    const merchantUserModified = patch.merchant !== undefined && patch.merchant !== parent.merchant
+      ? true
+      : parent.merchantUserModified;
     await tx
       .update(transactions)
       .set({
         date,
         dateUserModified,
         merchant: patch.merchant ?? parent.merchant,
+        merchantUserModified,
         category: nextCategory,
         subCategory: nextSubCategory,
         categoryId: parentAssignment?.categoryId ?? parent.categoryId,
@@ -2522,6 +2531,15 @@ export async function addTransactionWithExternalId(
                 })
                 .where(and(eq(transactions.userId, userId), eq(transactions.id, lockedCandidate.id)));
             }
+            if (lockedExisting.merchantUserModified && !lockedCandidate.merchantUserModified) {
+              await databaseTx
+                .update(transactions)
+                .set({
+                  merchant: lockedExisting.merchant,
+                  merchantUserModified: true,
+                })
+                .where(and(eq(transactions.userId, userId), eq(transactions.id, lockedCandidate.id)));
+            }
             await databaseTx
               .update(transactions)
               .set({
@@ -2594,6 +2612,7 @@ export async function addTransactionWithExternalId(
         .orderBy(asc(transactionSplits.sortOrder));
       const incomingSourceDate = tx.preserveSourceDate && current.sourceDate ? current.sourceDate : tx.date;
       const effectiveDate = current.dateUserModified ? current.date : incomingSourceDate;
+      const effectiveMerchant = current.merchantUserModified ? current.merchant : tx.merchant;
       const effectiveNotes = current.notes === 'Pending Transaction' ? (tx.notes ?? null) : current.notes;
       const amountChanged = current.amountCents !== tx.amountCents;
       await databaseTx
@@ -2601,7 +2620,7 @@ export async function addTransactionWithExternalId(
         .set({
           date: effectiveDate,
           sourceDate: incomingSourceDate,
-           merchant: tx.merchant,
+           merchant: effectiveMerchant,
            sourceCategory: tx.sourceCategory,
            sourceSubCategory: tx.sourceSubCategory ?? null,
            sourceType: tx.sourceType,
@@ -2613,8 +2632,9 @@ export async function addTransactionWithExternalId(
           sourcePending: tx.sourcePending ?? current.sourcePending,
           sourceTransactedAt: tx.sourceTransactedAt ?? current.sourceTransactedAt,
           sourceLastSeenAt: tx.sourceLastSeenAt ?? current.sourceLastSeenAt,
-           // Existing assignments are user-owned. Sync refreshes source
-           // metadata, but historical categorization changes require Run.
+           // Existing assignments and merchant labels are user-owned. Sync
+           // refreshes source metadata, but historical categorization changes
+           // require Run.
           // A changed source amount invalidates explicit allocations. Return
           // the parent to review instead of silently counting its old assignment.
           ...(amountChanged && splitRows.length > 0 ? { needsReview: true } : {}),
@@ -2648,7 +2668,7 @@ export async function addTransactionWithExternalId(
         transaction: {
            id: current.id,
            date: effectiveDate,
-           merchant: tx.merchant,
+           merchant: effectiveMerchant,
            sourceCategory: tx.sourceCategory,
            sourceSubCategory: tx.sourceSubCategory,
            sourceType: tx.sourceType,
@@ -2690,6 +2710,7 @@ export async function addTransactionWithExternalId(
       sourceDate: tx.date,
       dateUserModified: false,
       merchant: tx.merchant,
+      merchantUserModified: false,
       sourceCategory: tx.sourceCategory,
       sourceSubCategory: tx.sourceSubCategory ?? null,
       sourceType: tx.sourceType,

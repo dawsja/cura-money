@@ -26,6 +26,8 @@ export const transactions = pgTable(
     sourceDate: date('source_date'),
     dateUserModified: boolean('date_user_modified').notNull().default(false),
     merchant: text('merchant').notNull(),
+    // User-edited merchant labels must survive SimpleFIN re-syncs.
+    merchantUserModified: boolean('merchant_user_modified').notNull().default(false),
     // Classification before a user rule or manual correction is applied.
     // Scoped rules match these immutable source values so applying a rule
     // does not change the fields that determine whether it matches.
