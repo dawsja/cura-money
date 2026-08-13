@@ -1273,7 +1273,7 @@ export function Transactions() {
           }}
         >
           <p>This permanently deletes the transaction for <strong className="fg-primary">{deleteTx.merchant}</strong>.</p>
-          <p>If it came from SimpleFIN, it may be imported again during a later sync.</p>
+          <p>If it came from SimpleFIN, later syncs will not import it again.</p>
         </ConfirmDialog>
       )}
     </div>

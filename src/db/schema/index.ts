@@ -9,6 +9,7 @@ export * from './sub_categories';
 export * from './transactions';
 export * from './transaction_splits';
 export * from './simplefin_transaction_aliases';
+export * from './simplefin_ignored_transactions';
 export * from './monthly_budgets';
 export * from './settings';
 export * from './oidc_providers';

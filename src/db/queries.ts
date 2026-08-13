@@ -16,6 +16,7 @@ import { subCategories } from './schema/sub_categories';
 import { transactions } from './schema/transactions';
 import { transactionSplits } from './schema/transaction_splits';
 import { simpleFinTransactionAliases } from './schema/simplefin_transaction_aliases';
+import { simpleFinIgnoredTransactions } from './schema/simplefin_ignored_transactions';
 import { monthlyBudgets } from './schema/monthly_budgets';
 import { settings } from './schema/settings';
 import { goals } from './schema/goals';
@@ -1956,7 +1957,37 @@ export async function bulkAssignTransactions(
 }
 
 export async function deleteTransaction(userId: string, id: string): Promise<void> {
-  await db.delete(transactions).where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ externalId: transactions.externalId })
+      .from(transactions)
+      .where(and(eq(transactions.userId, userId), eq(transactions.id, id)))
+      .for('update')
+      .limit(1);
+    if (!row) return;
+
+    const aliasRows = await tx
+      .select({ externalId: simpleFinTransactionAliases.externalId })
+      .from(simpleFinTransactionAliases)
+      .where(
+        and(
+          eq(simpleFinTransactionAliases.userId, userId),
+          eq(simpleFinTransactionAliases.transactionId, id),
+        ),
+      );
+    const ignoredIds = [...new Set(
+      [row.externalId, ...aliasRows.map((alias) => alias.externalId)].filter(
+        (externalId): externalId is string => !!externalId,
+      ),
+    )];
+    if (ignoredIds.length > 0) {
+      await tx
+        .insert(simpleFinIgnoredTransactions)
+        .values(ignoredIds.map((externalId) => ({ userId, externalId })))
+        .onConflictDoNothing();
+    }
+    await tx.delete(transactions).where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
+  });
 }
 
 export interface TransactionSplitInput {
@@ -2305,6 +2336,23 @@ export async function addTransactionWithExternalId(
     : null;
   if (!assignment || (assignment.type !== tx.type && tx.category !== 'Pay down goals')) {
     throw Object.assign(new Error('transaction must use a valid category, subCategory, and matching type'), { status: 400 });
+  }
+
+  const candidateExternalIds = [...new Set(
+    [tx.externalId, tx.legacyExternalId].filter((value): value is string => !!value),
+  )];
+  if (candidateExternalIds.length > 0) {
+    const [ignored] = await db
+      .select({ externalId: simpleFinIgnoredTransactions.externalId })
+      .from(simpleFinIgnoredTransactions)
+      .where(
+        and(
+          eq(simpleFinIgnoredTransactions.userId, userId),
+          inArray(simpleFinIgnoredTransactions.externalId, candidateExternalIds),
+        ),
+      )
+      .limit(1);
+    if (ignored) return null;
   }
 
   // SimpleFIN transaction IDs are only unique within an account. New imports

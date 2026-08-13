@@ -239,6 +239,13 @@
       "when": 1787500000000,
       "tag": "0033_serious_gamma_corps",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1786633320094,
+      "tag": "0034_violet_black_bird",
+      "breakpoints": true
     }
   ]
 }
