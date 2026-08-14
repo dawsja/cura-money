@@ -2,7 +2,7 @@
 # =============================================================================
 # Cura Money — single-image build.
 #
-# Single image, two modes via the dev override (docker-compose.override.yml):
+# Single image, two modes via the dev compose file (docker-compose.dev.yml):
 #   - dev:    `target: builder`, `bun run --watch src/index.ts`
 #   - prod:   `target: runtime`, `bun run src/index.ts` (distroless, non-root)
 #

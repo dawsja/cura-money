@@ -94,8 +94,3 @@ export function openSecretWithMetadata(value: string, secret?: string): OpenedSe
   }
   throw new SecretBoxError();
 }
-
-/** Opens versioned ciphertext and passes legacy plaintext through unchanged. */
-export function openSecret(value: string, secret?: string): string {
-  return openSecretWithMetadata(value, secret).value;
-}

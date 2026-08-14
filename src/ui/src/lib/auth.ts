@@ -61,14 +61,3 @@ export async function signOut(): Promise<void> {
 export async function signInEmail(email: string, password: string): Promise<void> {
   await api.post('/api/auth/sign-in/email', { email, password });
 }
-
-export async function signUpEmail(email: string, password: string, name: string): Promise<void> {
-  await api.post('/api/auth/sign-up/email', { email, password, name });
-}
-
-export async function startOidc(providerId: string, callbackURL: string): Promise<void> {
-  // Better Auth's genericOAuth plugin exposes /api/auth/sign-in/oauth/:providerId
-  window.location.href = `/api/auth/sign-in/oauth/${encodeURIComponent(
-    providerId,
-  )}?callbackURL=${encodeURIComponent(callbackURL)}`;
-}

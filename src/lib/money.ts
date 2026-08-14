@@ -15,13 +15,6 @@ function hasExactScale(value: number, scale: number): boolean {
 const centPrecision = (value: number) => hasExactScale(value, CENTS_PER_DOLLAR);
 const centPrecisionMessage = 'amount must have at most 2 decimal places';
 
-export const signedMoneyAmount = z
-  .number()
-  .finite()
-  .min(-MAX_MONEY)
-  .max(MAX_MONEY)
-  .refine(centPrecision, centPrecisionMessage);
-
 export const moneyAmount = z
   .number()
   .finite()

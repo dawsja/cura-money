@@ -18,12 +18,12 @@ import {
   bootstrapAdmin,
   configureOidc,
   markBootstrapComplete,
+  verifyBootstrapToken,
 } from '@/auth/setup';
 import { invalidateSetupCache } from '@/lib/guard';
 import { badRequest, conflict, forbidden, safe, serverError, unauthorized } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 import { getAuth } from '@/auth';
-import { verifyBootstrapToken } from '@/auth/setup';
 import { assertSecureOidcConfiguration } from '@/lib/oidc-url';
 import { db } from '@/db/client';
 import { user } from '@/db/schema/auth';

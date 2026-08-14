@@ -11,7 +11,7 @@
  * with `new Date(iso)` treats them as UTC midnight and shifts the
  * calendar day in western timezones — always go through parseLocalDate.
  */
-export const CURRENCY_STORAGE_KEY = 'cura.currency';
+const CURRENCY_STORAGE_KEY = 'cura.currency';
 const DEFAULT_CURRENCY = 'USD';
 
 /** Read the last-known currency synchronously so the very first paint
