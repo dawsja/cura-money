@@ -247,13 +247,23 @@ export async function resetDemoDatabase(): Promise<{ users: number; transactions
       { id: 'demo-split-target-household', userId: DEMO_USER_ID, transactionId: 'demo-shopping-split', amountCents: 6000, category: 'Shopping', subCategory: '🛋️ Furniture & Housewares', ...demoAssignment('Shopping', '🛋️ Furniture & Housewares'), type: 'expense', sortOrder: 1 },
     ]);
 
+    // Planned income $6,500 − expenses $5,687 − paydown $700 = $113 left to budget.
     const budgets = [
       ['sub-paychecks', 6500],
-      ['sub-rent', 1650], ['sub-groceries', 550], ['sub-restaurants-bars', 180],
-      ['sub-coffee-shops', 45], ['sub-gas-fuel', 180], ['sub-auto-payment', 385],
-      ['sub-gas-electric', 140], ['sub-internet-cable', 79], ['sub-phone', 68],
-      ['sub-entertainment', 100], ['sub-fitness', 45], ['sub-insurance', 132],
-      ['sub-travel-vacation', 300], ['sub-fun-money', 125],
+      ['sub-charity', 75], ['sub-gifts', 50],
+      ['sub-auto-payment', 385], ['sub-gas-fuel', 180], ['sub-auto-maintenance', 50],
+      ['sub-parking-tolls', 20], ['sub-taxi-rideshares', 25],
+      ['sub-rent', 1650], ['sub-home-improvement', 100],
+      ['sub-garbage', 30], ['sub-water', 48], ['sub-gas-electric', 140],
+      ['sub-internet-cable', 79], ['sub-phone', 68],
+      ['sub-groceries', 650], ['sub-restaurants-bars', 550], ['sub-coffee-shops', 45],
+      ['sub-travel-vacation', 400], ['sub-entertainment', 80], ['sub-personal', 100],
+      ['sub-fun-money', 150],
+      ['sub-shopping', 200], ['sub-clothing', 100], ['sub-furniture-housewares', 50],
+      ['sub-electronics', 35],
+      ['sub-medical', 100], ['sub-dentist', 25], ['sub-fitness', 45],
+      ['sub-insurance', 132], ['sub-financial-fees', 10], ['sub-cash-atm', 50],
+      ['sub-uncategorized', 25], ['sub-miscellaneous', 40],
     ] as const;
     await tx.insert(monthlyBudgets).values([currentMonth, previousMonth].flatMap((yearMonth) =>
       budgets.map(([subCategoryId, planned]) => ({
