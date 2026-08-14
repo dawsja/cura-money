@@ -3,8 +3,9 @@
  *
  *   - Summary cards (current principal, projected interest, total P&I,
  *     debt-free month).
- *   - Color-coded projection chart (one line per active account + a
- *     dotted "baseline" for the current plan when simulating).
+ *   - Color-coded projection chart (see PayoffProjectionChart): one area
+ *     per active account, or combined debt against a dashed "current
+ *     plan" baseline while simulating.
  *   - Savings calculator: method (Planned / Avalanche / Snowball) +
  *     monthly extra + one-time extra. Recomputes live.
  *   - Per-account list: name, balance, APR, min/planned, include toggle.
@@ -18,16 +19,17 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { CartesianGrid, Line, LineChart, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { api } from '../lib/api';
-import { currencySymbol, formatMoney, currentYearMonth, timeAgo } from '../lib/format';
-import { Dialog } from '../components/ui/dialog';
 import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '../components/ui/chart';
+  currencySymbol,
+  formatMoney,
+  currentYearMonth,
+  monthYearLong,
+  monthYearShort,
+  timeAgo,
+} from '../lib/format';
+import { Dialog } from '../components/ui/dialog';
+import { PayoffProjectionChart } from '../components/PayoffProjectionChart';
 import {
   CreditCard,
   Banknote,
@@ -192,14 +194,21 @@ function parseExtraPayment(value: string): number | null {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function monthShort(ym: string): string {
-  const [y, m] = ym.split('-');
-  return `${MONTH_NAMES[Number(m) - 1]} ${y.slice(2)}`;
-}
-function monthLong(ym: string): string {
-  const [y, m] = ym.split('-');
-  return `${MONTH_NAMES[Number(m) - 1]} ${y}`;
+// Color-coded series palette. Index order matches the account list below
+// the chart so the legend dot, the chart curve, and the row marker agree.
+const ACCOUNT_PALETTE = [
+  'var(--chart-category-1)',
+  'var(--chart-category-2)',
+  'var(--chart-category-3)',
+  'var(--chart-category-4)',
+  'var(--chart-category-5)',
+  'var(--chart-category-6)',
+  'var(--chart-category-7)',
+  'var(--chart-category-8)',
+];
+
+function accountColor(index: number): string {
+  return ACCOUNT_PALETTE[index % ACCOUNT_PALETTE.length]!;
 }
 
 export function Paydown() {
@@ -413,22 +422,15 @@ export function Paydown() {
   const byId = new Map<string, PaydownAccountResult>();
   for (const r of projection.perAccount) byId.set(r.accountId, r);
 
-  // SVG chart.
   const accList = accounts.data ?? [];
   const hasAnyDebt = accList.some((a) => a.balance > 0);
-  const accountColor = (idx: number) => {
-    const palette = [
-      'var(--chart-category-1)',
-      'var(--chart-category-2)',
-      'var(--chart-category-3)',
-      'var(--chart-category-4)',
-      'var(--chart-category-5)',
-      'var(--chart-category-6)',
-      'var(--chart-category-7)',
-      'var(--chart-category-8)',
-    ];
-    return palette[idx % palette.length];
-  };
+  // Chart series mirror the projection's active set: included and still
+  // owed on. Colors come from the account's position in the full list so
+  // a row's dot keeps matching its curve when a sibling gets excluded.
+  const chartSeries = accList
+    .map((a, i) => ({ id: a.id, name: a.name, color: accountColor(i), account: a }))
+    .filter(({ account }) => account.includeInPaydown && account.balance > 0)
+    .map(({ id, name, color }) => ({ id, name, color }));
 
   // An account is "unpayable" when it's included in the paydown plan
   // and has a balance but neither a minimum nor a planned payment.
@@ -470,7 +472,7 @@ export function Paydown() {
               onClick={saveToBudget}
               disabled={syncToBudget.isPending}
               className="btn-primary inline-flex items-center gap-2 disabled:opacity-50 min-h-[44px]"
-              title={`Snapshot every included credit/loan account's planned payment for ${monthShort(currentYm)} into the Budget page`}
+              title={`Snapshot every included credit/loan account's planned payment for ${monthYearShort(currentYm)} into the Budget page`}
             >
               <Save className="h-4 w-4" />
               {syncToBudget.isPending ? 'Saving…' : 'Save to Budget'}
@@ -486,7 +488,7 @@ export function Paydown() {
             <div className="fg-primary">
               {toast.rowCount === 0
                 ? 'No accounts included — toggle Include on at least one card to snapshot.'
-                : `Saved ${toast.rowCount} ${toast.rowCount === 1 ? 'account' : 'accounts'} to Budget for ${monthShort(toast.ym)}.`}
+                : `Saved ${toast.rowCount} ${toast.rowCount === 1 ? 'account' : 'accounts'} to Budget for ${monthYearShort(toast.ym)}.`}
             </div>
             {toast.rowCount > 0 && toast.scenario.method !== 'planned' && (
               <div className="text-xs fg-muted mt-0.5">
@@ -629,7 +631,7 @@ export function Paydown() {
                 hasUnpayable || beyondHorizon
                   ? '∞'
                   : projection.debtFreeMonth
-                    ? monthLong(projection.debtFreeMonth)
+                    ? monthYearLong(projection.debtFreeMonth)
                     : '—'
               }
               tone={hasUnpayable || beyondHorizon ? 'amber' : 'emerald'}
@@ -638,8 +640,8 @@ export function Paydown() {
 
           {/* Chart */}
           <section className="card">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold">Payoff projection</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h2 className="text-lg font-semibold fg-primary">Payoff projection</h2>
               {isSimulated && (
                 <span className="text-xs fg-muted">
                   {methodLabel}
@@ -668,11 +670,10 @@ export function Paydown() {
                 </p>
               </div>
             )}
-            <PayoffChart
-              accounts={accList.filter((a) => a.includeInPaydown)}
+            <PayoffProjectionChart
+              accounts={chartSeries}
               projection={projection}
               isSimulated={isSimulated}
-              colorOf={accountColor}
             />
           </section>
 
@@ -710,7 +711,7 @@ export function Paydown() {
                               </>
                             )}
                             {r?.payoffMonth && a.includeInPaydown && !unpayableIds.has(a.id) && (
-                              <> · payoff {monthShort(r.payoffMonth)}</>
+                              <> · payoff {monthYearShort(r.payoffMonth)}</>
                             )}
                             {r && a.includeInPaydown && r.totalInterest > 0 && (
                               <> · {formatMoney(r.totalInterest)} interest</>
@@ -784,218 +785,6 @@ export function Paydown() {
 function ymToMonths(ym: string): number {
   const [y, m] = ym.split('-');
   return Number(y) * 12 + Number(m);
-}
-
-function PayoffChart({
-  accounts,
-  projection,
-  isSimulated,
-  colorOf,
-}: {
-  accounts: PaydownAccount[];
-  projection: PaydownProjection;
-  isSimulated: boolean;
-  colorOf: (i: number) => string;
-}) {
-  const fullPoints = projection.timeline;
-  if (fullPoints.length === 0) {
-    return <div className="py-10 text-center text-sm fg-muted">No data yet.</div>;
-  }
-  if (accounts.length === 0) {
-    return (
-      <div className="py-10 text-center text-sm fg-muted">
-        No accounts included in paydown. Toggle one in the list below.
-      </div>
-    );
-  }
-
-  // Per-account payoff index, used to break the line at the payoff
-  // month. After the account hits zero we set the value to `null` and
-  // `connectNulls={false}` so the line stops there — no flat-at-zero
-  // trails across a 30-year mortgage.
-  const payoffIdx = new Map<string, number>();
-  for (const r of projection.perAccount) {
-    if (r.payoffMonth === null) continue;
-    const idx = fullPoints.findIndex((p) => p.month === r.payoffMonth);
-    if (idx >= 0) payoffIdx.set(r.accountId, idx);
-  }
-
-  // Flatten the per-account balances into the row shape Recharts wants.
-  // One column per account, plus `total` and (when simulated) `baseline`.
-  const chartData = fullPoints.map((p, i) => {
-    const row: Record<string, string | number | null> = {
-      month: p.month,
-      total: p.totalDebt,
-    };
-    for (const a of accounts) {
-      const paidIdx = payoffIdx.get(a.id);
-      row[a.id] = paidIdx !== undefined && i > paidIdx ? null : (p.byAccount[a.id] ?? 0);
-    }
-    if (isSimulated) {
-      const bp = projection.baselineTimeline[i];
-      if (bp) row.baseline = bp.totalDebt;
-    }
-    return row;
-  });
-
-  // Chart config: one entry per series. Colors reference CSS variables
-  // so light/dark mode flips automatically (see styles.css).
-  const chartConfig: ChartConfig = {
-    total: { label: 'Total debt', color: 'var(--chart-total)' },
-    baseline: { label: 'Baseline', color: 'var(--chart-baseline)' },
-  };
-  for (let i = 0; i < accounts.length; i++) {
-    const a = accounts[i]!;
-    chartConfig[a.id] = { label: a.name, color: colorOf(i) };
-  }
-
-  // Vertical "debt-free" markers — one per account that gets paid off
-  // inside the timeline. The tooltip already shows the exact month; the
-  // line is just a visual cue.
-  const payoffMarkers = projection.perAccount
-    .filter((r) => r.payoffMonth !== null)
-    .map((r) => ({ accountId: r.accountId, month: r.payoffMonth! }));
-
-  // X-axis label format: year-only when the range is long enough that
-  // month labels would crowd. Recharts' `minTickGap` handles the actual
-  // stride — we just decide the text format.
-  const firstMonth = fullPoints[0]!.month;
-  const lastMonth = fullPoints[fullPoints.length - 1]!.month;
-  const yearRange = Number(lastMonth.slice(0, 4)) - Number(firstMonth.slice(0, 4));
-  const xTickFormatter = (value: string) =>
-    yearRange > 5 ? value.slice(0, 4) : monthShort(value);
-
-  // Chart width: long timelines get a wider canvas so the line has room
-  // to breathe. Short timelines snap to 600px and fit without scrolling.
-  // The wrapper's `overflow-x-auto` kicks in when the chart exceeds the
-  // container — no "show full" toggle needed.
-  const chartWidth = Math.max(600, chartData.length * 5);
-
-  return (
-    <>
-      <div className="overflow-x-auto pb-2" aria-hidden="true">
-        <div style={{ minWidth: chartWidth }}>
-          <ChartContainer config={chartConfig} className="h-[360px]" aria-hidden={true}>
-            <LineChart data={chartData} margin={{ top: 20, right: 30, left: 10, bottom: 10 }}>
-              <CartesianGrid vertical={false} />
-              <XAxis
-                dataKey="month"
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-                minTickGap={32}
-                interval="preserveStartEnd"
-                tickFormatter={xTickFormatter}
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(v) => formatTick(Number(v))}
-                width={60}
-              />
-              <ChartTooltip
-                cursor={{ stroke: 'var(--chart-axis)', strokeWidth: 1, strokeDasharray: '2 3' }}
-                content={<ChartTooltipContent config={chartConfig} />}
-              />
-              {isSimulated && (
-                <Line
-                  type="natural"
-                  dataKey="baseline"
-                  stroke="var(--color-baseline)"
-                  strokeWidth={1.5}
-                  strokeDasharray="4 4"
-                  dot={false}
-                />
-              )}
-              <Line
-                type="natural"
-                dataKey="total"
-                stroke="var(--color-total)"
-                strokeWidth={2.5}
-                dot={false}
-              />
-              {accounts.map((a) => (
-                <Line
-                  key={a.id}
-                  type="natural"
-                  dataKey={a.id}
-                  stroke={`var(--color-${a.id})`}
-                  strokeWidth={1.5}
-                  dot={false}
-                  opacity={0.55}
-                  connectNulls={false}
-                />
-              ))}
-              {payoffMarkers.map((m) => (
-                <ReferenceLine
-                  key={m.accountId}
-                  x={m.month}
-                  stroke="var(--chart-grid)"
-                  strokeDasharray="2 3"
-                  label={{
-                    value: monthShort(m.month),
-                    position: 'top',
-                    fontSize: 9,
-                    fill: 'var(--chart-axis)',
-                  }}
-                />
-              ))}
-            </LineChart>
-          </ChartContainer>
-        </div>
-      </div>
-      <details className="mt-3 border-t border-default pt-3">
-        <summary className="cursor-pointer text-xs font-medium fg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500">
-          View projection data
-        </summary>
-        <p className="mt-2 text-xs fg-muted">
-          {formatMoney(projection.startingTotal)} total debt
-          {projection.debtFreeMonth
-            ? `, projected debt-free ${monthLong(projection.debtFreeMonth)}.`
-            : ', with no payoff date in this projection.'}
-        </p>
-        <div className="mt-2 overflow-x-auto">
-          <table className="w-full min-w-max text-left text-xs">
-            <caption className="sr-only">Monthly total debt, account balances, and baseline comparison</caption>
-            <thead className="fg-muted">
-              <tr className="border-b border-default">
-                <th scope="col" className="py-2 pr-3 font-medium">Month</th>
-                <th scope="col" className="py-2 px-3 text-right font-medium">Total debt</th>
-                {accounts.map((account) => (
-                  <th key={account.id} scope="col" className="py-2 px-3 text-right font-medium">{account.name}</th>
-                ))}
-                {isSimulated && <th scope="col" className="py-2 pl-3 text-right font-medium">Baseline total</th>}
-              </tr>
-            </thead>
-            <tbody className="fg-secondary">
-              {chartData.map((point) => (
-                <tr key={String(point.month)} className="border-b border-default last:border-0">
-                  <th scope="row" className="py-2 pr-3 font-medium fg-primary">{monthLong(String(point.month))}</th>
-                  <td className="py-2 px-3 text-right tabular-nums">{formatMoney(Number(point.total))}</td>
-                  {accounts.map((account) => (
-                    <td key={account.id} className="py-2 px-3 text-right tabular-nums">
-                      {point[account.id] === null ? 'Paid off' : formatMoney(Number(point[account.id] ?? 0))}
-                    </td>
-                  ))}
-                  {isSimulated && (
-                    <td className="py-2 pl-3 text-right tabular-nums">
-                      {point.baseline === undefined ? 'Not available' : formatMoney(Number(point.baseline))}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
-    </>
-  );
-}
-
-function formatTick(v: number): string {
-  if (Math.abs(v) >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(v) >= 1_000) return `$${Math.round(v / 1_000)}k`;
-  return `$${Math.round(v)}`;
 }
 
 // ---- Account edit modal -------------------------------------------------

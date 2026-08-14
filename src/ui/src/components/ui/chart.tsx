@@ -67,12 +67,16 @@ export function ChartContainer({
   config,
   className,
   style,
+  framed = true,
   'aria-hidden': ariaHidden,
   children,
 }: {
   config: ChartConfig;
   className?: string;
   style?: React.CSSProperties;
+  /** Draw the chart on its own `card` surface. Pass `false` when the
+   *  caller already provides a card, so the plot is not double-framed. */
+  framed?: boolean;
   'aria-hidden'?: boolean;
   children: React.ReactNode;
 }) {
@@ -83,7 +87,7 @@ export function ChartContainer({
       data-chart={chartId}
       aria-hidden={ariaHidden}
       style={style}
-      className={`card flex justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-[var(--chart-axis)] [&_.recharts-cartesian-grid_line]:stroke-[var(--chart-grid)] [&_.recharts-tooltip-cursor]:stroke-[var(--chart-axis)] ${className ?? ''}`}
+      className={`${framed ? 'card' : 'w-full'} flex justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-[var(--chart-axis)] [&_.recharts-cartesian-grid_line]:stroke-[var(--chart-grid)] [&_.recharts-tooltip-cursor]:stroke-[var(--chart-axis)] ${className ?? ''}`}
     >
       <ChartStyle id={chartId} config={config} />
       <ResponsiveContainer width="100%" height="100%">
@@ -202,17 +206,18 @@ export function ChartTooltipContent({
 /**
  * Compact currency formatter for chart axes & ticks. Switches to $K / $M
  * once values exceed $10,000 so the labels don't push the chart into 9
- * characters of "$1,234,567". Rounds to one decimal in the compact form
- * so axis labels don't jostle horizontally.
+ * characters of "$1,234,567". Keeps at most one decimal in the compact
+ * form, dropping it when it is zero so round steps read as "$2K".
  */
 export function formatShortMoney(n: number): string {
   if (!Number.isFinite(n)) return '—';
   const abs = Math.abs(n);
   const sign = n < 0 ? '-' : '';
   const sym = currencySymbol();
-  if (abs >= 1_000_000) return `${sign}${sym}${(abs / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
-  if (abs >= 10_000) return `${sign}${sym}${(abs / 1_000).toFixed(0)}K`;
-  if (abs >= 1_000) return `${sign}${sym}${(abs / 1_000).toFixed(1)}K`;
+  const compact = (value: number, digits: number) => Number(value.toFixed(digits)).toString();
+  if (abs >= 1_000_000) return `${sign}${sym}${compact(abs / 1_000_000, abs >= 10_000_000 ? 0 : 1)}M`;
+  if (abs >= 10_000) return `${sign}${sym}${compact(abs / 1_000, 0)}K`;
+  if (abs >= 1_000) return `${sign}${sym}${compact(abs / 1_000, 1)}K`;
   return formatMoney(n, true);
 }
 
