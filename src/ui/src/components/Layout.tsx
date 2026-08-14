@@ -1,7 +1,23 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
+import { motion, useReducedMotion } from 'motion/react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { MobileBottomNav } from './MobileBottomNav';
+
+const MOBILE_QUERY = '(max-width: 767px)';
+
+/** Tracks the mobile breakpoint so route transitions only run on mobile. */
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia(MOBILE_QUERY).matches);
+  useEffect(() => {
+    const media = window.matchMedia(MOBILE_QUERY);
+    const onChange = () => setIsMobile(media.matches);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+  return isMobile;
+}
 
 /**
  * Layout — viewport-locked frame:
@@ -19,11 +35,27 @@ import { MobileBottomNav } from './MobileBottomNav';
  *   - Mobile uses the same outer constraint; the MobileBottomNav is
  *     `fixed` (separate stacking context) so it sits on top of the
  *     scrollable main without taking part in the flex layout.
+ *   - On mobile, route changes reset the main scroll position and play
+ *     a short fade/slide transition so navigation feels like a native
+ *     app's screen change. Desktop (md+) renders routes with no
+ *     remount and no animation — identical to before.
  *
  *   Sidebar is icon-only (Monarch-style) by default and expands while
  *   hovered or while one of its controls has keyboard focus.
  */
 export function Layout({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
+  const isMobile = useIsMobile();
+  const reducedMotion = useReducedMotion() ?? false;
+  const animateRoutes = isMobile && !reducedMotion;
+
+  // Native apps show each screen from the top. Only applied on mobile so
+  // desktop scroll behavior stays exactly as it was.
+  useEffect(() => {
+    if (!isMobile) return;
+    document.getElementById('app-main')?.scrollTo({ top: 0 });
+  }, [pathname, isMobile]);
+
   return (
     // Sidebar (`bg-page`) and main area (`bg-page`) share the same
     // background so the rail blends in; only the icon column + support
@@ -33,7 +65,16 @@ export function Layout({ children }: { children: ReactNode }) {
       <div className="flex-1 min-w-0 min-h-0 flex flex-col h-full overflow-hidden">
         <Header />
         <main id="app-main" className="app-main app-mobile-bottom-space flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-4 pt-3 md:p-8 fg-primary">
-          {children}
+          {/* Keyed by pathname only while animating: on desktop the key is
+              stable so the tree never remounts on navigation. */}
+          <motion.div
+            key={animateRoutes ? pathname : 'app-routes'}
+            initial={animateRoutes ? { opacity: 0, y: 10 } : false}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+          >
+            {children}
+          </motion.div>
         </main>
         <MobileBottomNav />
       </div>

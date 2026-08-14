@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import clsx from 'clsx';
 import { NotificationBell } from './NotificationBell';
 import { ProfileMenu } from './ProfileMenu';
 
@@ -23,6 +25,11 @@ const routeTitles: Record<string, string> = {
  * the `ProfileMenu` dropdown — the visible chrome here is intentionally
  * minimal so the user focuses on the page content.
  *
+ * On mobile the header behaves like a native app bar: it stays pinned
+ * while `#app-main` scrolls underneath, and a hairline divider fades in
+ * once content has scrolled so the boundary reads clearly. Desktop
+ * (md+) keeps the borderless header unchanged.
+ *
  * The bell sits to the LEFT of the profile menu with a 4px gap. It
  * is always visible; the badge only appears when there's at least
  * one SimpleFIN-imported transaction awaiting review.
@@ -30,15 +37,32 @@ const routeTitles: Record<string, string> = {
 export function Header() {
   const location = useLocation();
   const title = routeTitles[location.pathname] ?? 'Cura Money';
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const main = document.getElementById('app-main');
+    if (!main) return;
+    const onScroll = () => setScrolled(main.scrollTop > 4);
+    onScroll();
+    main.addEventListener('scroll', onScroll, { passive: true });
+    return () => main.removeEventListener('scroll', onScroll);
+  }, [location.pathname]);
 
   return (
     // `shrink-0` keeps the Header pinned at the top of the main area
     // while the page content scrolls beneath it. Without this, the
     // header would compress / scroll out of view the moment the main
     // content overflowed.
-    <header className="app-header-safe relative z-40 shrink-0 flex min-h-[var(--app-header-height)] items-center justify-between bg-page/95 px-3 backdrop-blur-xl md:min-h-0 md:bg-page md:px-8 md:py-3">
+    <header
+      className={clsx(
+        'app-header-safe relative z-40 shrink-0 flex min-h-[var(--app-header-height)] items-center justify-between bg-page/95 px-4 backdrop-blur-xl transition-[border-color,box-shadow] duration-200 md:min-h-0 md:bg-page md:px-8 md:py-3',
+        // Mobile-only scrolled hairline + soft drop; md+ stays borderless.
+        'border-b md:border-b-0 md:shadow-none',
+        scrolled ? 'border-default shadow-[0_10px_18px_-16px_rgb(0_0_0/0.55)]' : 'border-transparent',
+      )}
+    >
       <div className="min-w-0 md:hidden">
-        <h1 className="truncate text-[1.05rem] font-bold tracking-tight fg-primary">{title}</h1>
+        <h1 className="truncate text-[1.35rem] font-bold tracking-tight fg-primary">{title}</h1>
       </div>
       {/* On md+ screens the sidebar carries the brand; the right cluster
           holds the bell + profile menu in a single flex row. The bell
