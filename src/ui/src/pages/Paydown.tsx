@@ -591,7 +591,7 @@ export function Paydown() {
           )}
 
           {/* Summary cards */}
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="summary-scroll grid gap-3 md:grid-cols-4">
             <SummaryCard
               icon={<Banknote className="h-4 w-4" />}
               label="Current debt"

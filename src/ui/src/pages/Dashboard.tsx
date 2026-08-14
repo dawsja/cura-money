@@ -313,7 +313,7 @@ export function Dashboard() {
   const renderWidget = (widget: WidgetId) => {
     if (widget === 'summary') {
       return (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="summary-scroll grid grid-cols-1 gap-3 md:grid-cols-3">
           <SummaryCard label="Net worth" sub="Sum of all accounts" tone={totalBalance >= 0 ? 'slate' : 'rose'} icon={<Wallet className="h-4 w-4" />} value={formatMoney(totalBalance)} />
           <SummaryCard label="Income (30d)" sub="Deposits (transfers excluded)" tone="emerald" icon={<TrendingUp className="h-4 w-4" />} value={formatMoney(income)} />
           <SummaryCard label="Spending (30d)" sub="Out-of-pocket expenses" tone="rose" icon={<TrendingDown className="h-4 w-4" />} value={formatMoney(expense)} />

@@ -240,7 +240,7 @@ export function Reports() {
         return <WidgetError message="Could not load the report summary." onRetry={() => void Promise.all([cashFlow.refetch(), netWorth.refetch()])} />;
       }
       return (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="summary-scroll grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <SummaryCard icon={<TrendingUp className="h-4 w-4" />} label="Income" sub="Over this range" tone="emerald" value={formatMoney(totalIncome)} />
           <SummaryCard icon={<TrendingDown className="h-4 w-4" />} label="Spending" sub="Out-of-pocket" tone="rose" value={formatMoney(totalExpense)} />
           <SummaryCard icon={<Receipt className="h-4 w-4" />} label="Net cash flow" sub={totalNet >= 0 ? 'Saved' : 'Overspent'} tone={totalNet >= 0 ? 'emerald' : 'rose'} value={`${totalNet >= 0 ? '+' : '−'}${formatMoney(Math.abs(totalNet))}`} />
@@ -344,7 +344,7 @@ export function Reports() {
               </button>
             </>
           )}
-          <div className="flex flex-col items-end gap-1">
+          <div className="flex w-full flex-col items-end gap-1 md:w-auto">
             <RangeSelector value={range} onChange={setRange} />
             {range === 'all' && <p className="max-w-sm text-right text-xs fg-muted">All-range drilldowns begin at the first displayed report month because reports do not expose the exact first transaction date.</p>}
           </div>
@@ -459,14 +459,16 @@ function ExportModal({
 }
 
 function RangeSelector({ value, onChange }: { value: Range; onChange: (r: Range) => void }) {
+  // Mobile: a full-width segmented control with comfortable touch
+  // targets. Desktop (md+) keeps the original compact inline pills.
   return (
-    <div className="inline-flex rounded-lg border border-default bg-surface p-1 gap-1">
+    <div className="flex w-full rounded-lg border border-default bg-surface p-1 gap-1 md:inline-flex md:w-auto">
       {RANGE_OPTIONS.map((opt) => (
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
           className={clsx(
-            'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+            'flex-1 min-h-10 px-3 py-1.5 text-xs font-medium rounded-md transition-colors md:flex-none md:min-h-0',
             value === opt.value
               ? 'bg-amber-500 text-slate-900'
               : 'fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700',
@@ -519,7 +521,7 @@ function WidgetError({ message, onRetry }: { message: string; onRetry: () => voi
 }
 
 function SummarySkeleton() {
-  return <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <ChartSkeleton key={index} height={112} />)}</div>;
+  return <div className="summary-scroll grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <ChartSkeleton key={index} height={112} />)}</div>;
 }
 
 function DrilldownDetails({ children }: { children: React.ReactNode }) {
