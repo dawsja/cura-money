@@ -578,10 +578,12 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       <div className="flex min-h-11 flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center">
+        <div className="flex items-center max-md:flex-1">
           <h1 className="text-2xl font-bold fg-primary">Dashboard</h1>
           {!editing && (
-            <button type="button" onClick={startEditing} disabled={layout.isLoading} className="edit-icon-button inline-flex h-11 w-11 items-center justify-center rounded-lg disabled:cursor-wait disabled:opacity-50" aria-label="Edit dashboard layout" title="Edit dashboard layout">
+            // On mobile the page h1 is hidden (the app bar owns the title),
+            // so the pencil moves to the right edge like a native Edit action.
+            <button type="button" onClick={startEditing} disabled={layout.isLoading} className="edit-icon-button inline-flex h-11 w-11 items-center justify-center rounded-lg disabled:cursor-wait disabled:opacity-50 max-md:ml-auto" aria-label="Edit dashboard layout" title="Edit dashboard layout">
               <Pencil className="h-4 w-4" />
             </button>
           )}
