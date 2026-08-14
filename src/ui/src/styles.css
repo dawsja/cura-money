@@ -406,6 +406,24 @@ textarea {
   right: 1rem;
 }
 
+/* Floating action button — the mobile primary action. Anchored above the
+ * pill tab bar and inside the right thumb zone. z-index sits below the
+ * pill (z-30) so the More sheet's scrim dims it. */
+.app-fab {
+  position: fixed;
+  right: 1rem;
+  bottom: calc(var(--app-tab-height) + env(safe-area-inset-bottom, 0px) + 1.75rem);
+  z-index: 20;
+}
+
+/* Horizontal chip rows scroll on mobile without showing a scrollbar. */
+.hide-scrollbar {
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .mobile-sheet {
   max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 0.75rem);
   padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
@@ -587,6 +605,46 @@ textarea {
 @media (max-width: 767px) {
   .app-main h1 {
     display: none;
+  }
+
+  /* Mobile-first list surfaces: a `.card` can opt out of its chrome on
+   * small screens so lists render edge-to-edge on the page canvas the
+   * way native apps present them. Desktop keeps the card unchanged. */
+  .card.card-mobile-plain {
+    background: transparent;
+    border-color: transparent;
+    border-radius: 0;
+    padding: 0;
+  }
+  .card.card-mobile-plain:hover {
+    border-color: transparent;
+  }
+
+  /* Extra breathing room so content never hides behind the FAB. */
+  .app-fab-page-space {
+    padding-bottom: 4.5rem;
+  }
+
+  /* Summary-card rows become swipeable snap carousels on mobile. The
+   * negative inline margin lets the cards bleed to the screen edges
+   * (past the shell's 1rem gutter) while snapping back into the
+   * gutter-aligned resting position. Desktop grids are untouched. */
+  .summary-scroll {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+    padding-bottom: 0.25rem;
+    scrollbar-width: none;
+  }
+  .summary-scroll::-webkit-scrollbar {
+    display: none;
+  }
+  .summary-scroll > * {
+    flex: 0 0 72%;
+    min-width: 0;
+    scroll-snap-align: center;
   }
 
   .mobile-popover {
