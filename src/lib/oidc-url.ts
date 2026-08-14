@@ -61,10 +61,6 @@ function parseSecureUrl(value: string, label: string): URL {
   return url;
 }
 
-export function assertSecureOidcUrl(value: string, label: string): void {
-  parseSecureUrl(value, label);
-}
-
 function isBlockedAddress(address: string): boolean {
   const family = isIP(address);
   if (family === 4) return blockedAddresses.check(address, 'ipv4');

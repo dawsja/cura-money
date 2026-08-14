@@ -9,10 +9,10 @@
  * existing install continues to allow local auth without any user
  * action.
  *
- * The only enforced guard for flipping the flag ON is
- * `canDisableLocalAuth()`: at least one OIDC user must already hold
- * the `admin` role, so the operator can never lock themselves out of
- * their own instance. Re-enabling local auth has no precondition.
+ * The only enforced guard for flipping the flag ON is that at least
+ * one OIDC user must already hold the `admin` role, so the operator
+ * can never lock themselves out of their own instance. Re-enabling
+ * local auth has no precondition.
  *
  * An OIDC-capable user has an `account.provider_id` matching an active
  * `oidc_providers.provider_id`. Stale account rows for removed, renamed,
@@ -64,30 +64,7 @@ function logReadFailureOnce(where: string, err: unknown): void {
 }
 
 /**
- * True if the instance has at least one OIDC provider configured AND
- * at least one user with role='admin' AND that admin has logged in via
- * a real OIDC provider (not just the local email/password flow).
- *
- * The second clause is the meaningful one — without it an admin could
- * add an OIDC provider, disable local auth, and then be unable to sign
- * in (because they only have a credential account row). Requiring an
- * existing OIDC admin makes "disable local auth" a strictly opt-in
- * migration step: someone has to prove the OIDC sign-in path works
- * for an admin before it becomes the only path.
- */
-export async function canDisableLocalAuth(): Promise<boolean> {
-  const rows = await db
-    .select({ id: authUser.id })
-    .from(authUser)
-    .innerJoin(authAccount, eq(authAccount.userId, authUser.id))
-    .innerJoin(oidcProviders, eq(oidcProviders.providerId, authAccount.providerId))
-    .where(and(eq(authUser.role, 'admin'), eq(oidcProviders.isActive, true)))
-    .limit(1);
-  return rows.length > 0;
-}
-
-/**
- * Flip the flag. Enforces `canDisableLocalAuth()` when transitioning
+ * Flip the flag. Requires an existing OIDC admin when transitioning
  * to disabled; re-enabling (false → true) has no precondition.
  *
  * Throws `local_auth_disabled_precondition_failed` when the caller

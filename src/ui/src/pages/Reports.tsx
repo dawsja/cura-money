@@ -27,9 +27,6 @@ import {
   ChartTooltipContent,
   formatShortMoney,
   type ChartConfig,
-} from '../components/ui/chart';
-import { Dialog } from '../components/ui/dialog';
-import {
   Area,
   AreaChart,
   Bar,
@@ -43,6 +40,7 @@ import {
   XAxis,
   YAxis,
 } from '../components/ui/chart';
+import { Dialog } from '../components/ui/dialog';
 import { MonthPicker } from '../components/MonthPicker';
 import { SummaryCard } from '../components/SummaryCard';
 import { SortableWidgetList } from '../components/SortableWidgetList';

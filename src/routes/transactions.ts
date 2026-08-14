@@ -2,9 +2,11 @@
  * /api/transactions — full CRUD on transactions.
  *
  * Three read endpoints:
- *   - `GET /api/transactions`        — full list, used by Budget and
- *                                       Dashboard to compute aggregates
- *                                       over the whole window.
+ *   - `GET /api/transactions`        — unpaginated full list. Kept for
+ *                                       clients that need every row in
+ *                                       one response; the SPA uses the
+ *                                       paginated and activity endpoints
+ *                                       below instead.
  *   - `GET /api/transactions/page`   — paginated subset + total count,
  *                                       used by the Transactions page.
  *                                       Supports structured filters

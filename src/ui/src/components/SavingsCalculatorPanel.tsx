@@ -100,7 +100,7 @@ export function SavingsCalculatorPanel({
                     'block rounded-lg border p-3 cursor-pointer transition-colors',
                     selected
                       ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/30'
-                      : 'border-default hover:border-strong',
+                      : 'border-default hover:border-amber-500',
                   )}
                 >
                   <div className="flex items-start gap-2">

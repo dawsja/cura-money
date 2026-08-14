@@ -16,9 +16,9 @@ import {
 } from '@/db/queries';
 import { userId, routeParam } from '@/lib/tenant';
 import { badRequest, safe } from '@/lib/errors';
+import { MAX_MONEY } from '@/lib/money';
 
 export const categoryRoutes = new Hono();
-const MAX_MONEY = 90_000_000_000_000;
 
 const TxType = z.enum(['income', 'expense', 'transfer']);
 const MainCategoryName = z.string().trim().min(1).max(120).refine(

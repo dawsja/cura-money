@@ -19,7 +19,7 @@ export const setupState = pgTable('setup_state', {
   // When TRUE, email/password sign-in + change-password
   // endpoints return 403 and the sign-in page hides the local-auth
   // form. Admins can only flip this after at least one OIDC user has
-  // been promoted to admin (see `canDisableLocalAuth()` in
+  // been promoted to admin (see `setLocalAuthDisabled()` in
   // src/auth/local_auth.ts). Defaults to FALSE so a fresh install
   // never blocks its first admin out.
   localAuthDisabled: boolean('local_auth_disabled').notNull().default(false),

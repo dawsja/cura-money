@@ -41,7 +41,7 @@ export function routeParam(c: Context, name: string): string {
  * the full user record (e.g. admin checks); the `userId(c)` shortcut is
  * preferred for resource routes that just need the id.
  */
-export function currentUser(c: Context<{ Variables: AuthedVariables }>): AuthedVariables['user'] {
+function currentUser(c: Context<{ Variables: AuthedVariables }>): AuthedVariables['user'] {
   const u = c.get('user');
   if (!u) throw new Error('currentUser() called outside an authenticated route');
   return u;

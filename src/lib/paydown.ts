@@ -95,7 +95,7 @@ const HUNDRED = 100;
  * - Snowball:  smallest current balance first; tie-break by higher APR.
  * - Planned:   empty array — every account just pays its own amount.
  */
-export function priorityOrder(
+function priorityOrder(
   method: PaydownMethod,
   activeAccounts: PaydownAccount[],
   currentBalances: Record<string, number>,
