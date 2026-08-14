@@ -13,6 +13,7 @@ import {
 import {
   Trash2, Search, Receipt, ArrowLeftRight, Filter, X, Check, ArrowUpRight,
   BellRing, Plus, TrendingUp, TrendingDown, MoreVertical, Calendar, Pencil,
+  ChevronRight,
 } from 'lucide-react';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '../components/ui/input-group';
 import {
@@ -125,6 +126,20 @@ const TYPE_STYLE: Record<TxType, { label: string; sign: string; amount: string }
     sign: '⇄',
     amount: 'text-slate-600 dark:text-slate-400',
   },
+};
+
+/** Leading icon for the mobile list rows — one glyph per type. */
+const TYPE_ICON: Record<TxType, typeof TrendingUp> = {
+  income: TrendingUp,
+  expense: TrendingDown,
+  transfer: ArrowLeftRight,
+};
+
+/** Tinted circle behind the mobile row icon (explicit light + dark pairs). */
+const TYPE_ICON_WRAP: Record<TxType, string> = {
+  income: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  expense: 'bg-rose-50 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+  transfer: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
 };
 
 /**
@@ -673,7 +688,7 @@ export function Transactions() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 app-fab-page-space">
       <h1 className="text-2xl font-bold fg-primary">Transactions</h1>
 
       {reviews.count > 0 && (
@@ -694,7 +709,9 @@ export function Transactions() {
         </div>
       )}
 
-      <section className="card">
+      {/* On mobile the section drops its card chrome so the list renders
+          edge-to-edge on the page canvas, native-app style. */}
+      <section className="card card-mobile-plain">
         <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
           <div className="flex items-baseline gap-2">
             <h2 className="text-lg font-semibold fg-primary">All transactions</h2>
@@ -829,13 +846,15 @@ export function Transactions() {
 
             {/* Add Transaction — primary CTA, amber pill on the
                 right end of the toolbar. Same height as the other
-                pills so the row reads as a single control strip. */}
+                pills so the row reads as a single control strip.
+                Hidden on mobile, where the floating action button
+                above the pill tab bar carries this action instead. */}
             <button
               type="button"
               onClick={() => setAddOpen(true)}
               data-onboarding-target="add-transaction"
               disabled={dependenciesLoading || !!dependenciesError}
-              className="col-span-2 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-900 px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 md:min-h-0 md:shrink-0"
+              className="hidden md:inline-flex items-center justify-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-900 px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 md:shrink-0"
               aria-label="Add transaction"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -856,7 +875,67 @@ export function Transactions() {
             </button>
           </div>
         )}
-        <div className="overflow-x-auto">
+        {/* Mobile list — tappable rows grouped by date. Every field the
+            desktop table shows (and edits) remains reachable through the
+            detail bottom sheet each row opens. */}
+        <div className="md:hidden">
+          {txns.isLoading && (
+            <p className="py-10 text-center text-sm fg-muted" role="status">Loading transactions…</p>
+          )}
+          {txns.isError && (
+            <p className="py-10 text-center text-sm text-rose-700 dark:text-rose-300" role="alert">
+              <span>Transactions could not be loaded.</span>{' '}
+              <button type="button" onClick={() => void txns.refetch()} className="font-semibold hover:underline">Retry</button>
+            </p>
+          )}
+          {txns.isSuccess && txns.data.rows.length === 0 && (
+            <p className="py-10 text-center text-sm fg-muted">
+              <Receipt className="mr-1 inline h-5 w-5 fg-muted" /> No transactions match.
+            </p>
+          )}
+          {txns.isSuccess && txns.data.rows.map((t, idx) => {
+            const prevDate = idx > 0 ? txns.data!.rows[idx - 1]!.date : null;
+            const showDateHeader = t.date !== prevDate;
+            const splitCount = t.splits?.length ?? 0;
+            const TypeIcon = TYPE_ICON[t.type];
+            return (
+              <Fragment key={t.id}>
+                {showDateHeader && (
+                  <div className={clsx('flex items-center gap-3 pb-2', idx === 0 ? 'pt-1' : 'pt-5')}>
+                    <span className="shrink-0 text-xs font-semibold fg-primary">{formatDateLong(t.date)}</span>
+                    <span className="flex-1 border-t border-default" aria-hidden="true" />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDetailTx(t)}
+                  className="flex w-full items-center gap-3 border-b border-default py-3 text-left transition-transform active:scale-[0.99]"
+                  aria-label={`${t.merchant}, ${TYPE_STYLE[t.type].label}, ${formatMoney(t.amount)} — view details`}
+                >
+                  <span className={clsx('flex h-10 w-10 shrink-0 items-center justify-center rounded-full', TYPE_ICON_WRAP[t.type])} aria-hidden="true">
+                    <TypeIcon className="h-[18px] w-[18px]" strokeWidth={2.2} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold fg-primary">{t.merchant}</span>
+                    <span className="mt-0.5 block truncate text-xs fg-muted">
+                      {splitCount > 0
+                        ? `${splitCount} split${splitCount === 1 ? '' : 's'}`
+                        : (t.subCategory || t.category || 'Uncategorized')}
+                      {' · '}
+                      {t.account}
+                    </span>
+                  </span>
+                  <span className={clsx('shrink-0 text-sm font-semibold tabular-nums', TYPE_STYLE[t.type].amount)}>
+                    {TYPE_STYLE[t.type].sign}{formatMoney(t.amount)}
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 fg-muted" aria-hidden="true" />
+                </button>
+              </Fragment>
+            );
+          })}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase fg-muted">
@@ -1053,6 +1132,21 @@ export function Transactions() {
           </div>
         )}
       </section>
+
+      {/* Mobile floating action button — the page's primary action, kept
+          in the right thumb zone above the pill tab bar. Shares the
+          onboarding target with the desktop toolbar button; the provider
+          picks whichever one is visible at the current breakpoint. */}
+      <button
+        type="button"
+        onClick={() => setAddOpen(true)}
+        data-onboarding-target="add-transaction"
+        disabled={dependenciesLoading || !!dependenciesError}
+        aria-label="Add transaction"
+        className="app-fab md:hidden flex h-14 w-14 items-center justify-center rounded-full bg-amber-500 text-slate-900 shadow-[0_10px_30px_rgba(0,0,0,0.35)] transition-transform active:scale-90 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <Plus className="h-6 w-6" strokeWidth={2.4} />
+      </button>
 
       {rulePrompt && (
         <div className="app-toast fixed z-[60] max-w-sm rounded-lg border border-default bg-surface shadow-lg px-4 py-3 text-sm flex items-start gap-3">
