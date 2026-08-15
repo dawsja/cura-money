@@ -217,6 +217,7 @@ export function PayoffProjectionChart({
               domain={[0, yTicks[yTicks.length - 1] ?? 0]}
               ticks={yTicks}
               tickFormatter={formatShortMoney}
+              tick={{ fill: 'var(--chart-axis)' }}
               tickLine={false}
               axisLine={false}
               width={56}
@@ -532,7 +533,7 @@ function MonthTick({
   const month = String(payload?.value ?? '');
   const anchor = month === firstMonth ? 'start' : month === lastMonth ? 'end' : 'middle';
   return (
-    <text x={x} y={y} dy="0.71em" textAnchor={anchor}>
+    <text x={x} y={y} dy="0.71em" textAnchor={anchor} fill="var(--chart-axis)">
       {format(month)}
     </text>
   );
