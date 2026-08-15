@@ -3,10 +3,10 @@
  *
  * Two views over the same projection:
  *
- *   - "By account" overlays one translucent area per debt, each running
- *     from today's balance down to the axis at its own payoff month. The
- *     areas are not stacked, so the Y axis stays scaled to the largest
- *     single balance and every curve keeps a readable slope.
+ *   - "By account" overlays one curve per debt, each running from today's
+ *     balance down to the axis at its own payoff month. The curves are
+ *     not stacked, so the Y axis stays scaled to the largest single
+ *     balance and every debt keeps a readable slope.
  *   - "Total" plots combined debt, plus a dashed line for the current
  *     plan when a savings scenario is active. The scenario reaches zero
  *     first and the dashed baseline keeps descending, so the time saved
@@ -19,11 +19,12 @@
  * the payoff month instead of leaving it hanging above zero, and avoids
  * a flat trail along the axis for the rest of the horizon.
  *
- * Axis ticks are generated rather than sampled: "Today" anchors the
- * left edge and the remaining ticks fall on January of evenly spaced
- * years (or on evenly spaced months for horizons under ~3 years), so
- * the labels read the same no matter which month the projection starts
- * in. The Y axis uses round steps ending on a round maximum.
+ * Axis ticks are generated rather than sampled: the first and last
+ * months always get one so the axis states the span it covers, and the
+ * interior ticks fall on January of evenly spaced years (or on evenly
+ * spaced months for horizons under ~3 years), so the labels read the
+ * same no matter which month the projection starts in. The Y axis uses
+ * round steps ending on a round maximum.
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
@@ -48,7 +49,6 @@ export interface PayoffChartProjection {
   baselineTimeline: PayoffChartPoint[];
   startingTotal: number;
   debtFreeMonth: string | null;
-  baselineDebtFreeMonth: string | null;
 }
 
 type View = 'accounts' | 'total';
@@ -114,6 +114,9 @@ export function PayoffProjectionChart({
   }
 
   const byAccount = view === 'accounts';
+  // A single debt has nothing to overlap, so it keeps the filled-area
+  // treatment; a bare line in an otherwise empty plot reads as unfinished.
+  const soloColor = byAccount && series.length === 1 ? series[0]!.color : null;
   const config: ChartConfig = {
     total: { label: isSimulated ? 'This scenario' : 'Total debt', color: 'var(--chart-total)' },
     baseline: { label: 'Current plan', color: 'var(--chart-baseline)' },
@@ -186,6 +189,12 @@ export function PayoffProjectionChart({
                 <stop offset="0%" stopColor="var(--chart-total)" stopOpacity={0.28} />
                 <stop offset="100%" stopColor="var(--chart-total)" stopOpacity={0.02} />
               </linearGradient>
+              {soloColor && (
+                <linearGradient id={`${gradientPrefix}-solo`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={soloColor} stopOpacity={0.28} />
+                  <stop offset="100%" stopColor={soloColor} stopOpacity={0.02} />
+                </linearGradient>
+              )}
             </defs>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis
@@ -229,19 +238,21 @@ export function PayoffProjectionChart({
                 }}
               />
             )}
+            {/* These series overlap rather than stack, so the region under
+                the largest debt spans the whole plot and its fill says
+                nothing the curve does not. Several such fills compound
+                into one flat tint that stops separating the palette, so
+                only a lone series takes one. */}
             {byAccount
               ? series.map((s) => (
-                  // Flat low-opacity fills rather than gradients: these
-                  // areas overlap, and stacked gradients read as one
-                  // muddy wash instead of distinct debts.
                   <Area
                     key={s.id}
                     type="monotone"
                     dataKey={s.id}
                     stroke={s.color}
                     strokeWidth={2}
-                    fill={s.color}
-                    fillOpacity={0.1}
+                    fill={soloColor ? `url(#${gradientPrefix}-solo)` : s.color}
+                    fillOpacity={soloColor ? 1 : 0}
                     dot={false}
                     activeDot={{ r: 3, strokeWidth: 0 }}
                     connectNulls={false}
