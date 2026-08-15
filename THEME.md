@@ -101,7 +101,7 @@ Light mode uses conventional pale-to-deep ramps.
 
 | Token | Light | Dark |
 | --- | --- | --- |
-| `--chart-grid` | `#c7d0d7` | `#21262d` |
+| `--chart-grid` | `#c7d0d7` | `#30363d` |
 | `--chart-axis` | `#4f5d68` | `#8b949e` |
 | `--chart-tooltip-bg` | `#e9edf0` | `#161b22` |
 | `--chart-tooltip-border` | `#b8c3cb` | `#30363d` |

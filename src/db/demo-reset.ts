@@ -287,6 +287,7 @@ export async function resetDemoDatabase(): Promise<{ users: number; transactions
     await tx.insert(goals).values([
       { id: 'demo-goal-emergency', userId: DEMO_USER_ID, name: 'Six-month emergency fund', target: 15000, startingValue: 5000, accountId: 'demo-emergency' },
       { id: 'demo-goal-travel', userId: DEMO_USER_ID, name: 'Japan trip', target: 5000, startingValue: 500, accountId: 'demo-travel' },
+      { id: 'demo-goal-retirement', userId: DEMO_USER_ID, name: 'First $25K invested', target: 25000, startingValue: 20000, accountId: 'demo-retirement' },
     ]);
     await tx.insert(rules).values([
       { id: 'demo-rule-market', userId: DEMO_USER_ID, matchValue: 'Fresh Market', accountId: 'demo-credit', sourceType: 'expense', sourceCategory: 'Food & Dining', sourceSubCategory: '🛒 Groceries', category: 'Food & Dining', subCategory: '🛒 Groceries', ...demoAssignment('Food & Dining', '🛒 Groceries'), type: 'expense' },

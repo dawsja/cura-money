@@ -1,16 +1,10 @@
 /**
  * Payoff projection chart — the Pay down page's headline visual.
  *
- * Two views over the same projection:
- *
- *   - "By account" overlays one curve per debt, each running from today's
- *     balance down to the axis at its own payoff month. The curves are
- *     not stacked, so the Y axis stays scaled to the largest single
- *     balance and every debt keeps a readable slope.
- *   - "Total" plots combined debt, plus a dashed line for the current
- *     plan when a savings scenario is active. The scenario reaches zero
- *     first and the dashed baseline keeps descending, so the time saved
- *     is the horizontal gap between them.
+ * One curve is drawn per debt, each running from today's balance down to
+ * the axis at its own payoff month. The curves are not stacked, so the Y
+ * axis stays scaled to the largest single balance and every debt keeps a
+ * readable slope.
  *
  * The projection timeline is a start-of-month snapshot: index 0 is
  * today's balance, and the entry after the final payment is exactly
@@ -19,16 +13,16 @@
  * the payoff month instead of leaving it hanging above zero, and avoids
  * a flat trail along the axis for the rest of the horizon.
  *
- * Axis ticks are generated rather than sampled: the first and last
- * months always get one so the axis states the span it covers, and the
- * interior ticks fall on January of evenly spaced years (or on evenly
- * spaced months for horizons under ~3 years), so the labels read the
- * same no matter which month the projection starts in. The Y axis uses
- * round steps ending on a round maximum.
+ * The chart uses the scenario's payoff horizon, which keeps its curves
+ * from ending in a large empty region. Axis ticks are generated rather
+ * than sampled: the first and last months always get one so the axis
+ * states the span it covers, and the interior ticks fall on January of
+ * evenly spaced years (or on evenly spaced months for horizons under ~3
+ * years), so the labels read the same no matter which month the projection
+ * starts in. The Y axis uses round steps ending on a round maximum.
  */
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Area, AreaChart, CartesianGrid, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
-import clsx from 'clsx';
+import { useEffect, useId, useMemo, useState } from 'react';
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip, formatShortMoney, type ChartConfig } from './ui/chart';
 import { formatMoney, monthYearLong, monthYearShort } from '../lib/format';
 
@@ -46,47 +40,24 @@ export interface PayoffChartPoint {
 
 export interface PayoffChartProjection {
   timeline: PayoffChartPoint[];
-  baselineTimeline: PayoffChartPoint[];
   startingTotal: number;
   debtFreeMonth: string | null;
 }
-
-type View = 'accounts' | 'total';
 
 // Balances are dollars with fractional cents, so treat anything under
 // half a cent as paid off — the same threshold the server simulator uses.
 const PAID_OFF = 0.005;
 const DESKTOP_QUERY = '(min-width: 768px)';
 
-const VIEWS: Array<{ value: View; label: string }> = [
-  { value: 'accounts', label: 'By account' },
-  { value: 'total', label: 'Total' },
-];
-
 export function PayoffProjectionChart({
   accounts,
   projection,
-  isSimulated,
 }: {
   accounts: PayoffChartSeries[];
   projection: PayoffChartProjection;
-  isSimulated: boolean;
 }) {
   const gradientPrefix = useId().replace(/:/g, '');
   const isDesktop = useIsDesktop();
-
-  // Default to the comparison view while a scenario is running, since
-  // that is the view that shows what the scenario bought. Once the user
-  // picks a view themselves we stop overriding it.
-  const [view, setView] = useState<View>(isSimulated ? 'total' : 'accounts');
-  const viewPicked = useRef(false);
-  useEffect(() => {
-    if (!viewPicked.current) setView(isSimulated ? 'total' : 'accounts');
-  }, [isSimulated]);
-  const chooseView = (next: View) => {
-    viewPicked.current = true;
-    setView(next);
-  };
 
   // The caller rebuilds the account array on every render (it filters a
   // query result), so memoize against the identity of the data instead
@@ -96,9 +67,9 @@ export function PayoffProjectionChart({
     .map((account) => `${account.id}\u0000${account.name}\u0000${account.color}`)
     .join('\u0001');
   const model = useMemo(
-    () => buildChartModel(accounts, projection, isSimulated),
+    () => buildChartModel(accounts, projection),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [seriesKey, projection, isSimulated],
+    [seriesKey, projection],
   );
   const series = model.series;
 
@@ -113,82 +84,34 @@ export function PayoffProjectionChart({
     );
   }
 
-  const byAccount = view === 'accounts';
   // A single debt has nothing to overlap, so it keeps the filled-area
   // treatment; a bare line in an otherwise empty plot reads as unfinished.
-  const soloColor = byAccount && series.length === 1 ? series[0]!.color : null;
+  const soloColor = series.length === 1 ? series[0]!.color : null;
   const config: ChartConfig = {
-    total: { label: isSimulated ? 'This scenario' : 'Total debt', color: 'var(--chart-total)' },
-    baseline: { label: 'Current plan', color: 'var(--chart-baseline)' },
     ...Object.fromEntries(series.map((s) => [s.id, { label: s.name, color: s.color }])),
   };
-  const yTicks = niceTicks(byAccount ? model.maxAccountBalance : model.maxTotal, isDesktop ? 5 : 4);
-  const xTicks = buildMonthTicks(model.months, isDesktop ? 6 : 4);
-  const yearTicks = model.months.length > 36;
+  const chartRows = model.rows;
+  const chartMonths = chartRows.map((row) => row.month);
+  const yTicks = niceTicks(model.maxAccountBalance, isDesktop ? 5 : 4);
+  const xTicks = buildMonthTicks(chartMonths, isDesktop ? 6 : 4);
+  const yearTicks = chartMonths.length > 36;
   const formatMonthTick = (value: string) =>
-    value === model.months[0]
+    value === chartMonths[0]
       ? 'Today'
       : yearTicks
         ? monthYearLong(value)
         : monthYearShort(value);
 
-  // Marking the payoff month only helps when it sits inside the plotted
-  // range. Without a scenario the curve already ends on the right edge,
-  // where the label would be clipped.
-  const debtFreeMarker = isSimulated
-    && projection.debtFreeMonth !== null
-    && model.zeroMonth !== null
-    && model.zeroMonth !== model.months[model.months.length - 1]
-    ? model.zeroMonth
-    : null;
-
-  const legend = byAccount
-    ? series.map((s) => ({ key: s.id, label: s.name, color: s.color, dashed: false }))
-    : [
-        { key: 'total', label: isSimulated ? 'This scenario' : 'Total debt', color: 'var(--chart-total)', dashed: false },
-        ...(isSimulated
-          ? [{ key: 'baseline', label: 'Current plan', color: 'var(--chart-baseline)', dashed: true }]
-          : []),
-      ];
+  const legend = series.map((s) => ({ key: s.id, label: s.name, color: s.color }));
 
   return (
     <>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs fg-muted">
-          {byAccount
-            ? 'Each debt from today down to its payoff month.'
-            : isSimulated
-              ? 'This scenario against your current plan.'
-              : 'Combined balance across every included debt.'}
-        </p>
-        <div className="flex rounded-lg border border-default bg-surface p-1 gap-1" role="group" aria-label="Chart view">
-          {VIEWS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => chooseView(option.value)}
-              aria-pressed={view === option.value}
-              className={clsx(
-                'min-h-9 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                view === option.value
-                  ? 'bg-amber-500 text-slate-900'
-                  : 'fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700',
-              )}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <p className="mb-3 text-xs fg-muted">Each debt from today down to its payoff month.</p>
 
       <div aria-hidden="true">
         <ChartContainer config={config} className="h-[280px] sm:h-[340px]" framed={false} aria-hidden={true}>
-          <AreaChart data={model.rows} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+          <AreaChart data={chartRows} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
             <defs>
-              <linearGradient id={`${gradientPrefix}-total`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--chart-total)" stopOpacity={0.28} />
-                <stop offset="100%" stopColor="var(--chart-total)" stopOpacity={0.02} />
-              </linearGradient>
               {soloColor && (
                 <linearGradient id={`${gradientPrefix}-solo`} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={soloColor} stopOpacity={0.28} />
@@ -196,19 +119,19 @@ export function PayoffProjectionChart({
                 </linearGradient>
               )}
             </defs>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+            <CartesianGrid strokeDasharray="3 3" />
             <XAxis
               dataKey="month"
               ticks={xTicks}
               tick={
                 <MonthTick
                   format={formatMonthTick}
-                  firstMonth={model.months[0]!}
-                  lastMonth={model.months[model.months.length - 1]!}
+                  firstMonth={chartMonths[0]!}
+                  lastMonth={chartMonths[chartMonths.length - 1]!}
                 />
               }
               tickLine={false}
-              axisLine={false}
+              axisLine={{ stroke: 'var(--chart-axis)' }}
               tickMargin={10}
               interval={0}
               minTickGap={0}
@@ -219,68 +142,32 @@ export function PayoffProjectionChart({
               tickFormatter={formatShortMoney}
               tick={{ fill: 'var(--chart-axis)' }}
               tickLine={false}
-              axisLine={false}
+              axisLine={{ stroke: 'var(--chart-axis)' }}
               width={56}
             />
             <ChartTooltip
               cursor={{ stroke: 'var(--chart-axis)', strokeWidth: 1, strokeDasharray: '3 3' }}
-              content={<PayoffTooltip config={config} showTotal={byAccount} />}
+              content={<PayoffTooltip config={config} />}
             />
-            {debtFreeMarker && (
-              <ReferenceLine
-                x={debtFreeMarker}
-                stroke="var(--chart-axis)"
-                strokeDasharray="3 3"
-                label={{
-                  value: 'Debt-free',
-                  position: 'insideTopLeft',
-                  fontSize: 10,
-                  fill: 'var(--chart-axis)',
-                }}
-              />
-            )}
             {/* These series overlap rather than stack, so the region under
                 the largest debt spans the whole plot and its fill says
                 nothing the curve does not. Several such fills compound
                 into one flat tint that stops separating the palette, so
                 only a lone series takes one. */}
-            {byAccount
-              ? series.map((s) => (
-                  <Area
-                    key={s.id}
-                    type="monotone"
-                    dataKey={s.id}
-                    stroke={s.color}
-                    strokeWidth={2}
-                    fill={soloColor ? `url(#${gradientPrefix}-solo)` : s.color}
-                    fillOpacity={soloColor ? 1 : 0}
-                    dot={false}
-                    activeDot={{ r: 3, strokeWidth: 0 }}
-                    connectNulls={false}
-                  />
-                ))
-              : (
-                <Area
-                  type="monotone"
-                  dataKey="total"
-                  stroke="var(--chart-total)"
-                  strokeWidth={2}
-                  fill={`url(#${gradientPrefix}-total)`}
-                  dot={false}
-                  activeDot={{ r: 3, strokeWidth: 0 }}
-                />
-              )}
-            {!byAccount && isSimulated && (
-              <Line
+            {series.map((s) => (
+              <Area
+                key={s.id}
                 type="monotone"
-                dataKey="baseline"
-                stroke="var(--chart-baseline)"
+                dataKey={s.id}
+                stroke={s.color}
                 strokeWidth={2}
-                strokeDasharray="5 4"
+                fill={soloColor ? `url(#${gradientPrefix}-solo)` : s.color}
+                fillOpacity={soloColor ? 1 : 0}
                 dot={false}
                 activeDot={{ r: 3, strokeWidth: 0 }}
+                connectNulls={false}
               />
-            )}
+            ))}
           </AreaChart>
         </ChartContainer>
       </div>
@@ -288,14 +175,7 @@ export function PayoffProjectionChart({
       <ul className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5">
         {legend.map((item) => (
           <li key={item.key} className="flex items-center gap-1.5 text-xs fg-tertiary">
-            {item.dashed ? (
-              <span
-                className="h-0 w-3.5 shrink-0 border-t-2 border-dashed"
-                style={{ borderColor: item.color }}
-              />
-            ) : (
-              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
-            )}
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
             {item.label}
           </li>
         ))}
@@ -313,7 +193,7 @@ export function PayoffProjectionChart({
         </p>
         <div className="mt-2 max-h-64 overflow-auto">
           <table className="w-full min-w-max text-left text-xs">
-            <caption className="sr-only">Monthly total debt, account balances, and baseline comparison</caption>
+            <caption className="sr-only">Monthly total debt and account balances</caption>
             <thead className="fg-muted">
               <tr className="border-b border-default">
                 <th scope="col" className="py-2 pr-3 font-medium">Month</th>
@@ -321,7 +201,6 @@ export function PayoffProjectionChart({
                 {series.map((s) => (
                   <th key={s.id} scope="col" className="py-2 px-3 text-right font-medium">{s.name}</th>
                 ))}
-                {isSimulated && <th scope="col" className="py-2 pl-3 text-right font-medium">Current plan total</th>}
               </tr>
             </thead>
             <tbody className="fg-secondary">
@@ -334,9 +213,6 @@ export function PayoffProjectionChart({
                       {row[s.id] === null || row[s.id] === undefined ? 'Paid off' : formatMoney(Number(row[s.id]))}
                     </td>
                   ))}
-                  {isSimulated && (
-                    <td className="py-2 pl-3 text-right tabular-nums">{formatMoney(Number(row.baseline ?? 0))}</td>
-                  )}
                 </tr>
               ))}
             </tbody>
@@ -354,21 +230,15 @@ type ChartRow = Record<string, string | number | null> & { month: string };
 interface ChartModel {
   /** Draw order: largest debt first, so its curve sits behind the rest. */
   series: PayoffChartSeries[];
-  months: string[];
   rows: ChartRow[];
-  maxTotal: number;
   maxAccountBalance: number;
-  /** First month whose snapshot shows zero debt, i.e. where the curve lands. */
-  zeroMonth: string | null;
 }
 
 function buildChartModel(
   accounts: PayoffChartSeries[],
   projection: PayoffChartProjection,
-  isSimulated: boolean,
 ): ChartModel {
   const scenario = projection.timeline;
-  const baseline = isSimulated ? projection.baselineTimeline : [];
   const startingBalance = (id: string) => projection.timeline[0]?.byAccount[id] ?? 0;
 
   // Areas overlap, and each one's translucent fill paints over whatever
@@ -379,11 +249,7 @@ function buildChartModel(
     (a, b) => startingBalance(b.id) - startingBalance(a.id) || a.name.localeCompare(b.name),
   );
 
-  // Both timelines start at the same month and step monthly, so the
-  // longer one supplies the X domain. Plotting the full baseline is the
-  // point of the comparison: the scenario bottoms out early and the gap
-  // to the dashed line is the time saved.
-  const months = (baseline.length > scenario.length ? baseline : scenario).map((p) => p.month);
+  const months = scenario.map((point) => point.month);
 
   // Draw each account through its first zero snapshot, then stop. The
   // snapshot is start-of-month, so the zero entry is the month after the
@@ -400,16 +266,11 @@ function buildChartModel(
     lastIndex.set(s.id, end);
   }
 
-  let maxTotal = 0;
   let maxAccountBalance = 0;
-  let zeroMonth: string | null = null;
 
   const rows: ChartRow[] = months.map((month, i) => {
-    const point = scenario[i];
-    // Past the scenario's end the debt is genuinely zero, and holding it
-    // there keeps the flat line next to the still-descending baseline.
-    const total = point ? Math.max(0, point.totalDebt) : 0;
-    if (total <= PAID_OFF && zeroMonth === null) zeroMonth = month;
+    const point = scenario[i]!;
+    const total = Math.max(0, point.totalDebt);
     const row: ChartRow = { month, total };
     for (const s of series) {
       const end = lastIndex.get(s.id) ?? months.length - 1;
@@ -417,19 +278,16 @@ function buildChartModel(
         row[s.id] = null;
         continue;
       }
-      const balance = Math.max(0, point?.byAccount[s.id] ?? 0);
+      const balance = Math.max(0, point.byAccount[s.id] ?? 0);
       // Snap the payoff snapshot to exactly zero so the curve meets the axis.
       const value = i === end ? 0 : balance;
       row[s.id] = value;
       if (value > maxAccountBalance) maxAccountBalance = value;
     }
-    const baselineTotal = isSimulated ? Math.max(0, baseline[i]?.totalDebt ?? 0) : 0;
-    if (isSimulated) row.baseline = baselineTotal;
-    maxTotal = Math.max(maxTotal, total, baselineTotal);
     return row;
   });
 
-  return { series, months, rows, maxTotal, maxAccountBalance, zeroMonth };
+  return { series, rows, maxAccountBalance };
 }
 
 // ---- Axis helpers -------------------------------------------------------
@@ -551,24 +409,20 @@ interface TooltipEntry {
 /**
  * Hover card for the projection.
  *
- * In the per-account view, paid-off accounts drop out and the rest sort
- * by balance so the largest debt reads first; a total footer supplies
- * the figure the overlaid areas cannot show. In the total view both
- * series always render, including a $0 scenario next to a baseline that
- * is still descending — that contrast is the whole point of comparing.
+ * Paid-off accounts drop out and the rest sort by balance so the largest
+ * debt reads first; a combined footer supplies the figure the overlaid
+ * areas cannot show.
  */
 function PayoffTooltip({
   active,
   payload,
   label,
   config,
-  showTotal,
 }: {
   active?: boolean;
   payload?: TooltipEntry[];
   label?: string | number;
   config: ChartConfig;
-  showTotal: boolean;
 }) {
   if (!active || !payload || payload.length === 0) return null;
   let rows = payload
@@ -582,10 +436,8 @@ function PayoffTooltip({
       };
     })
     .filter((row) => row.value !== null);
-  if (showTotal) {
-    rows = rows.filter((row) => (row.value ?? 0) > PAID_OFF);
-    rows.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
-  }
+  rows = rows.filter((row) => (row.value ?? 0) > PAID_OFF);
+  rows.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
   const total = rows.reduce((sum, row) => sum + (row.value ?? 0), 0);
 
   return (
@@ -609,12 +461,12 @@ function PayoffTooltip({
           ))}
         </div>
       )}
-      {showTotal && rows.length > 1 && (
+      {rows.length > 1 && (
         <div
           className="mt-2 flex items-center justify-between gap-4 border-t pt-2 font-medium"
           style={{ borderColor: 'var(--chart-tooltip-border)' }}
         >
-          <span>Total</span>
+          <span>Combined</span>
           <span className="tabular-nums">{formatMoney(total)}</span>
         </div>
       )}

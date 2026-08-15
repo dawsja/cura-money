@@ -673,7 +673,6 @@ export function Paydown() {
             <PayoffProjectionChart
               accounts={chartSeries}
               projection={projection}
-              isSimulated={isSimulated}
             />
           </section>
 

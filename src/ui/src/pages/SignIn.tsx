@@ -121,10 +121,7 @@ export function SignIn() {
 
         {authOptions.data?.demoMode && authOptions.data.demoCredentials && (
           <div className="mb-4 rounded-lg border border-default bg-canvas-subtle p-3 text-sm">
-            <p className="font-semibold fg-primary">Public demo</p>
-            <p className="mt-1 fg-secondary">
-              This shared database resets every 15 minutes and signs everyone out.
-            </p>
+            <p className="font-semibold fg-primary">Sign in with the credentials below:</p>
             <dl className="mt-3 space-y-2">
               <DemoCredential label="Username" value={authOptions.data.demoCredentials.email} />
               <DemoCredential label="Password" value={authOptions.data.demoCredentials.password} />
