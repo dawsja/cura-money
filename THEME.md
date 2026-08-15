@@ -132,6 +132,13 @@ is unique within its theme and is selected to retain at least 3:1 contrast
 against the elevated chart surface (`#e9edf0` light, `#21262d` dark). Series
 still use labels, tooltips, and accessible data tables rather than color alone.
 
+That contrast holds for strokes, not for compounded fills. Where several series
+overlap without stacking — the Pay down page's per-account payoff curves —
+translucent fills pile up into one flat tint that no longer separates the
+tokens, so those series render as strokes alone and only a lone series takes a
+filled gradient. Stacked or single-series charts (Reports cash flow, net worth)
+keep their gradient fills, since nothing overlaps to compound.
+
 ## Rules
 
 1. Define palette values only in `src/ui/src/styles.css`; do not place hex

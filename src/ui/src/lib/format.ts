@@ -116,6 +116,20 @@ export function currentYearMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
+const MONTH_ABBREVIATIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** `YYYY-MM` → "Jan 27". Compact enough for dense chart axes. */
+export function monthYearShort(ym: string): string {
+  const [y, m] = ym.split('-');
+  return `${MONTH_ABBREVIATIONS[Number(m) - 1] ?? ''} ${(y ?? '').slice(2)}`;
+}
+
+/** `YYYY-MM` → "Jan 2027". */
+export function monthYearLong(ym: string): string {
+  const [y, m] = ym.split('-');
+  return `${MONTH_ABBREVIATIONS[Number(m) - 1] ?? ''} ${y ?? ''}`;
+}
+
 export function shiftYearMonth(ym: string, delta: number): string {
   const [yStr, mStr] = ym.split('-');
   const d = new Date(Number(yStr), Number(mStr) - 1 + delta, 1);
