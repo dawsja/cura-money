@@ -15,6 +15,7 @@ import {
   addTransactionWithExternalId,
   countStaleSimpleFinPending,
   deleteImportedTransactionsForAccount,
+  findSimpleFinAccountIdByExternalIds,
   getAllCategories,
   listRulesForMatching,
 } from '@/db/queries';
@@ -121,6 +122,14 @@ const activeSyncUsers = new Set<string>();
 
 export function sealSimpleFinAccessUrl(accessUrl: string): string {
   return sealSecret(accessUrl);
+}
+
+export async function rememberSimpleFinFeedIdentity(userId: string): Promise<void> {
+  const accessUrl = await getSimpleFinAccessUrl(userId);
+  if (accessUrl) {
+    await setSetting(userId, 'simplefin_previous_feed_key', stableSimpleFinId([accessUrl]));
+    await setSetting(userId, 'simplefin_previous_endpoint_key', simpleFinEndpointKey(accessUrl));
+  }
 }
 
 async function getSimpleFinAccessUrl(userId: string): Promise<string | null> {
@@ -328,6 +337,12 @@ function stableSimpleFinId(parts: string[]): string {
   return createHash('sha256').update(parts.join('\0')).digest('hex').slice(0, 32);
 }
 
+function simpleFinEndpointKey(accessUrl: string): string {
+  const url = new URL(accessUrl);
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  return stableSimpleFinId([`${url.origin}${path}`]);
+}
+
 export interface ImportedAccount {
   // Stable, tenant-and-connection-scoped DB primary key. Legacy rows keep
   // their original `simplefin-<accountId>` key during migration.
@@ -440,7 +455,8 @@ async function performSimpleFinSync(
     );
   }
   await setSetting(userId, 'simplefin_last_attempt', new Date(now).toISOString());
-  const feedKey = stableSimpleFinId([accessUrl]);
+  const endpointKey = simpleFinEndpointKey(accessUrl);
+  const legacyFeedKey = stableSimpleFinId([accessUrl]);
 
   // Load the user's rules once and match per-transaction with
   // exact-or-prefix (longest wins). Rules win over the smart
@@ -469,6 +485,8 @@ async function performSimpleFinSync(
   let pendingWithoutTimestamp = 0;
   const imported: ImportedAccount[] = [];
   const storedAccountMap = await getSetting(userId, 'simplefin_account_id_map');
+  const previousFeedKey = await getSetting(userId, 'simplefin_previous_feed_key');
+  const previousEndpointKey = await getSetting(userId, 'simplefin_previous_endpoint_key');
   const legacyMigrationComplete = await getSetting(userId, 'simplefin_legacy_account_migration_complete') === 'true';
   let accountIdMap: Record<string, string> = {};
   if (storedAccountMap) {
@@ -504,11 +522,26 @@ async function performSimpleFinSync(
     });
     const legacyAccId = `simplefin-${sAcc.id}`;
     const previousScopedAccId = `simplefin-${stableSimpleFinId([userId, sAcc.conn_id ?? '', sAcc.id])}`;
-    const scopedAccId = `simplefin-${stableSimpleFinId([userId, feedKey, sAcc.conn_id ?? '', sAcc.id])}`;
-    const sourceKey = stableSimpleFinId([feedKey, sAcc.conn_id ?? '', sAcc.id]);
+    const scopedAccId = `simplefin-${stableSimpleFinId([userId, endpointKey, sAcc.conn_id ?? '', sAcc.id])}`;
+    const sourceKey = stableSimpleFinId([endpointKey, sAcc.conn_id ?? '', sAcc.id]);
+    const legacyTokenSourceKey = stableSimpleFinId([legacyFeedKey, sAcc.conn_id ?? '', sAcc.id]);
+    const previousTokenSourceKey = previousFeedKey && previousEndpointKey === endpointKey
+      ? stableSimpleFinId([previousFeedKey, sAcc.conn_id ?? '', sAcc.id])
+      : null;
     const previousSourceKey = stableSimpleFinId([sAcc.conn_id ?? '', sAcc.id]);
     const mappedAccId = accountIdMap[sourceKey]
+      ?? accountIdMap[legacyTokenSourceKey]
+      ?? (previousTokenSourceKey ? accountIdMap[previousTokenSourceKey] : undefined)
       ?? (!legacyMigrationComplete ? accountIdMap[previousSourceKey] : undefined);
+
+    // Older disconnects deleted the source map. Exact transaction identities
+    // can still reconnect an account without relying on mutable names.
+    const transactionExternalIds = (sAcc.transactions ?? [])
+      .slice(0, 100)
+      .map((tx) => `sf-${stableSimpleFinId([sAcc.conn_id ?? '', sAcc.id, tx.id])}`);
+    const recoveredAccId = mappedAccId
+      ? null
+      : await findSimpleFinAccountIdByExternalIds(userId, transactionExternalIds);
 
     // If the user previously hid this account, skip the upsert AND the
     // transaction import. Without this check, deleting (or hiding) an
@@ -533,6 +566,7 @@ async function performSimpleFinSync(
     const canClaimLegacy = !legacyMigrationComplete && legacyRows.length > 0 && !claimedAccountIds.has(legacyAccId);
     const canClaimPreviousScoped = previousScopedRows.length > 0 && !claimedAccountIds.has(previousScopedAccId);
     const accId = mappedAccId
+      ?? recoveredAccId
       ?? (canClaimLegacy ? legacyAccId : canClaimPreviousScoped ? previousScopedAccId : scopedAccId);
     const [existing] = accId === legacyAccId && legacyRows.length > 0
       ? legacyRows
@@ -545,6 +579,8 @@ async function performSimpleFinSync(
         .limit(1);
     if (accountIdMap[sourceKey] !== accId) {
       accountIdMap[sourceKey] = accId;
+      if (legacyTokenSourceKey !== sourceKey) delete accountIdMap[legacyTokenSourceKey];
+      if (previousTokenSourceKey) delete accountIdMap[previousTokenSourceKey];
       claimedAccountIds.add(accId);
       await setSetting(userId, 'simplefin_account_id_map', JSON.stringify(accountIdMap));
     }

@@ -6,6 +6,7 @@ import { z } from 'zod';
 import {
   claimSetupToken,
   publicSimpleFinError,
+  rememberSimpleFinFeedIdentity,
   sealSimpleFinAccessUrl,
   SimpleFinError,
   syncSimpleFinToDatabase,
@@ -66,10 +67,10 @@ simplefinRoutes.post(
     try {
       const accessUrl = await claimSetupToken(parsed.data.setupToken);
       const uid = userId(c);
+      await rememberSimpleFinFeedIdentity(uid);
       await setSetting(uid, 'simplefin_access_url', sealSimpleFinAccessUrl(accessUrl));
       // New claim always starts a fresh 6-month backfill on next sync.
       await setSetting(uid, 'simplefin_last_sync', '');
-      await deleteSetting(uid, 'simplefin_account_id_map');
       await setSetting(uid, 'simplefin_legacy_account_migration_complete', 'true');
       await deleteSetting(uid, 'simplefin_enabled_account_ids');
       await deleteSetting(uid, 'simplefin_last_error');
@@ -87,9 +88,9 @@ simplefinRoutes.delete(
   '/disconnect',
   safe(async (c) => {
     const uid = userId(c);
+    await rememberSimpleFinFeedIdentity(uid);
     await setSetting(uid, 'simplefin_access_url', '');
     await deleteSetting(uid, 'simplefin_enabled_account_ids');
-    await deleteSetting(uid, 'simplefin_account_id_map');
     await setSetting(uid, 'simplefin_last_sync', '');
     await deleteSetting(uid, 'simplefin_last_error');
     await deleteSetting(uid, 'simplefin_last_attempt');

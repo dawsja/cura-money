@@ -395,6 +395,24 @@ export async function deleteImportedTransactionsForAccount(userId: string, accou
   return result.length;
 }
 
+/** Recover an account identity from transactions that SimpleFIN has already imported. */
+export async function findSimpleFinAccountIdByExternalIds(
+  userId: string,
+  externalIds: string[],
+): Promise<string | null> {
+  if (externalIds.length === 0) return null;
+  const rows = await db
+    .selectDistinct({ accountId: transactions.accountId })
+    .from(transactions)
+    .where(and(
+      eq(transactions.userId, userId),
+      inArray(transactions.externalId, externalIds),
+      isNotNull(transactions.accountId),
+    ))
+    .limit(2);
+  return rows.length === 1 ? rows[0]!.accountId : null;
+}
+
 /**
  * Patch just the pay-down fields for an account. Used by the paydown
  * calculator panel — keeps the patch shape focused so the route doesn't
