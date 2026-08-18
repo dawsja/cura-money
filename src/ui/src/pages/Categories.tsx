@@ -34,6 +34,11 @@ export function Categories() {
     mutationFn: (id: string) => api.delete(`/api/categories/${id}`),
     onSuccess: () => invalidateCategoryDependents(qc),
   });
+  const renameMain = useMutation({
+    mutationFn: (input: { id: string; name: string }) =>
+      api.patch(`/api/categories/${input.id}`, { name: input.name }),
+    onSuccess: () => invalidateCategoryDependents(qc),
+  });
   const addSub = useMutation({
     mutationFn: (input: { mainCategoryId: string; name: string }) =>
       api.post(`/api/categories/${input.mainCategoryId}/sub`, { name: input.name }),
@@ -204,7 +209,8 @@ export function Categories() {
               group="expense"
               categories={expenseCats}
               onDeleteMain={(id) => delMain.mutateAsync(id)}
-               onAddSub={(mainId, name) => addSub.mutateAsync({ mainCategoryId: mainId, name })}
+              onRenameMain={(id, name) => renameMain.mutateAsync({ id, name })}
+              onAddSub={(mainId, name) => addSub.mutateAsync({ mainCategoryId: mainId, name })}
               onDeleteSub={(mainCategoryId, subCategoryId) => delSub.mutateAsync({ mainCategoryId, subCategoryId })}
               onRenameSub={(mainCategoryId, subCategoryId, name) => renameSub.mutateAsync({ mainCategoryId, subCategoryId, name })}
               onReorder={onReorder}
@@ -219,7 +225,8 @@ export function Categories() {
               group="income"
               categories={incomeCats}
               onDeleteMain={(id) => delMain.mutateAsync(id)}
-               onAddSub={(mainId, name) => addSub.mutateAsync({ mainCategoryId: mainId, name })}
+              onRenameMain={(id, name) => renameMain.mutateAsync({ id, name })}
+              onAddSub={(mainId, name) => addSub.mutateAsync({ mainCategoryId: mainId, name })}
               onDeleteSub={(mainCategoryId, subCategoryId) => delSub.mutateAsync({ mainCategoryId, subCategoryId })}
               onRenameSub={(mainCategoryId, subCategoryId, name) => renameSub.mutateAsync({ mainCategoryId, subCategoryId, name })}
               onReorder={onReorder}
@@ -234,7 +241,8 @@ export function Categories() {
               group="transfer"
               categories={transferCats}
               onDeleteMain={(id) => delMain.mutateAsync(id)}
-               onAddSub={(mainId, name) => addSub.mutateAsync({ mainCategoryId: mainId, name })}
+              onRenameMain={(id, name) => renameMain.mutateAsync({ id, name })}
+              onAddSub={(mainId, name) => addSub.mutateAsync({ mainCategoryId: mainId, name })}
               onDeleteSub={(mainCategoryId, subCategoryId) => delSub.mutateAsync({ mainCategoryId, subCategoryId })}
               onRenameSub={(mainCategoryId, subCategoryId, name) => renameSub.mutateAsync({ mainCategoryId, subCategoryId, name })}
               onReorder={onReorder}
@@ -258,6 +266,7 @@ function CategoryGroup({
   group,
   categories,
   onDeleteMain,
+  onRenameMain,
   onAddSub,
   onDeleteSub,
   onRenameSub,
@@ -270,6 +279,7 @@ function CategoryGroup({
   group: 'expense' | 'income' | 'transfer';
   categories: MainCategory[];
   onDeleteMain: (id: string) => Promise<unknown>;
+  onRenameMain: (id: string, name: string) => Promise<unknown>;
   onAddSub: (mainId: string, name: string) => Promise<unknown>;
   onDeleteSub: (mainCategoryId: string, subCategoryId: string) => Promise<unknown>;
   onRenameSub: (mainCategoryId: string, subCategoryId: string, name: string) => Promise<unknown>;
@@ -599,21 +609,14 @@ function CategoryGroup({
                 className="flex items-center justify-between mb-2 cursor-grab active:cursor-grabbing select-none touch-none"
                 title="Drag to reorder"
               >
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex flex-1 items-center gap-2 min-w-0">
                   <GripVertical className="h-4 w-4 text-slate-300 dark:text-slate-600 shrink-0" />
-                  <h4 className="text-sm font-semibold truncate fg-primary">{cat.name}</h4>
+                  <EditableMainCategory
+                    category={cat}
+                    onRename={(name) => onRenameMain(cat.id, name)}
+                    onDelete={() => setDeleteTarget({ kind: 'category', category: cat })}
+                  />
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleteTarget({ kind: 'category', category: cat });
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  className="fg-muted hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded p-1"
-                  title="Delete category"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
               </div>
               {cat.subCategories.length > 0 ? (
                 <ul className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -676,6 +679,110 @@ function invalidateCategoryDependents(qc: QueryClient) {
   }
 }
 
+function EditableMainCategory({
+  category,
+  onRename,
+  onDelete,
+}: {
+  category: MainCategory;
+  onRename: (name: string) => Promise<unknown>;
+  onDelete: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(category.name);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const cancel = () => {
+    setName(category.name);
+    setError('');
+    setEditing(false);
+  };
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const nextName = name.trim();
+    if (!nextName) return;
+    if (nextName === category.name) {
+      cancel();
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      await onRename(nextName);
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not rename category');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="min-w-0 flex-1">
+        <form onSubmit={save} className="flex items-center gap-2">
+          <input
+            autoFocus
+            value={name}
+            maxLength={120}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') cancel();
+            }}
+            className="min-w-0 flex-1 rounded border border-default bg-surface fg-primary px-2 py-1.5 text-sm focus:border-amber-500 focus:outline-none"
+            aria-label={`Rename ${category.name}`}
+          />
+          <button
+            type="submit"
+            disabled={saving || !name.trim()}
+            className="save-icon-button flex h-9 w-9 shrink-0 items-center justify-center rounded disabled:opacity-50"
+            title="Save name"
+            aria-label="Save name"
+          >
+            <Check className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={cancel}
+            className="close-button flex h-9 w-9 shrink-0 items-center justify-center rounded disabled:opacity-50"
+            title="Cancel"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </form>
+        {error && <p className="mt-1 text-xs text-rose-600 dark:text-rose-400" role="alert">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-1">
+      <h4 className="flex-1 truncate text-sm font-semibold fg-primary">{category.name}</h4>
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="edit-icon-button flex h-9 w-9 shrink-0 items-center justify-center rounded"
+        title={`Rename ${category.name}`}
+        aria-label={`Rename ${category.name}`}
+      >
+        <Pencil className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        onClick={onDelete}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded fg-muted hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30 dark:hover:text-rose-400"
+        title={`Delete ${category.name}`}
+        aria-label={`Delete ${category.name}`}
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 function EditableSubCategory({
   sub,
   onRename,
@@ -719,7 +826,7 @@ function EditableSubCategory({
   if (editing) {
     return (
       <li className="py-2 text-sm">
-        <form onSubmit={save} className="flex items-center gap-1">
+        <form onSubmit={save} className="flex items-center gap-2">
           <input
             autoFocus
             value={name}
@@ -765,14 +872,14 @@ function EditableSubCategory({
           title={`Rename ${sub.name}`}
           aria-label={`Rename ${sub.name}`}
         >
-          <Pencil className="h-3.5 w-3.5" />
+          <Pencil className="h-4 w-4" />
         </button>
         <button
           onClick={onDelete}
           className="flex h-9 w-9 items-center justify-center rounded fg-muted hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30 dark:hover:text-rose-400"
           title={`Delete ${sub.name}`}
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          <Trash2 className="h-4 w-4" />
         </button>
       </div>
     </li>
