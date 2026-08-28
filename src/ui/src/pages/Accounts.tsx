@@ -517,7 +517,7 @@ export function Accounts() {
           onConfirm={() => hide.mutateAsync(confirmation.account.id)}
           onClose={() => setConfirmation(null)}
         >
-          <p>This account and its activity will be excluded from Dashboard, Transactions, Budget, Paydown, Reports, and the main account list.</p>
+          <p>This account and its activity will be excluded from Home, Transactions, Budget, Paydown, Reports, and the main account list.</p>
           <p>It will remain available in the hidden accounts section, and sync will pause until you unhide it.</p>
         </ConfirmDialog>
       )}
@@ -657,7 +657,7 @@ function EditAccountModal({
             </select>
             <span className="mt-1 block text-[10px] fg-muted">
               {type === 'investment'
-                ? 'Investment is balance-only: value stays on Accounts/Dashboard for growth; no transactions are imported or shown.'
+                ? 'Investment is balance-only: value stays on Accounts/Home for growth; no transactions are imported or shown.'
                 : 'Affects net worth sign and paydown. Survives SimpleFIN sync.'}
             </span>
           </label>

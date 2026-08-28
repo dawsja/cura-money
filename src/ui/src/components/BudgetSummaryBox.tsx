@@ -27,7 +27,6 @@ export function BudgetSummaryBox({
   const leftToBudget = Math.round(plannedIncome - plannedExpense - plannedDebt);
   const overAssigned = leftToBudget < 0;
   const balanced = leftToBudget === 0;
-  const incomeRemaining = plannedIncome - earnedIncome;
   const expenseRemaining = plannedExpense - spentExpense;
   const debtRemaining = plannedDebt - actualDebt;
   const debtPct = plannedDebt > 0 ? Math.min(100, (actualDebt / plannedDebt) * 100) : 0;
@@ -64,9 +63,7 @@ export function BudgetSummaryBox({
           label="Income"
           planned={plannedIncome}
           actual={earnedIncome}
-          remaining={incomeRemaining}
           actualLabel="earned"
-          showRemaining={plannedIncome > 0}
           barTone="emerald"
         />
         <SummaryRow
@@ -75,7 +72,6 @@ export function BudgetSummaryBox({
           actual={spentExpense}
           remaining={expenseRemaining}
           actualLabel="spent"
-          showRemaining
           barTone="rose"
         />
         <button
@@ -123,24 +119,22 @@ function SummaryRow({
   actual,
   remaining,
   actualLabel,
-  showRemaining,
   barTone,
 }: {
   label: string;
   planned: number;
   actual: number;
-  remaining: number;
+  remaining?: number;
   actualLabel: string;
-  showRemaining: boolean;
   barTone: 'emerald' | 'rose';
 }) {
   const pct = planned > 0 ? Math.min(100, (actual / planned) * 100) : 0;
-  const remainingClass = remaining < 0
+  const remainingClass = remaining != null && remaining < 0
     ? 'text-rose-600 dark:text-rose-400'
-    : remaining > 0
+    : remaining != null && remaining > 0
       ? 'text-emerald-600 dark:text-emerald-400'
       : 'fg-muted';
-  const remainingPrefix = remaining < 0 ? '−' : '';
+  const remainingPrefix = remaining != null && remaining < 0 ? '−' : '';
 
   return (
     <div>
@@ -151,7 +145,7 @@ function SummaryRow({
       <Progress value={pct} tone={barTone} />
       <div className="mt-1.5 flex items-baseline justify-between text-xs">
         <span className="fg-secondary">{formatMoney(actual, true)} {actualLabel}</span>
-        {showRemaining && (
+        {remaining != null && (
           <span className={clsx('tabular-nums', remainingClass)}>
             {remainingPrefix}{formatMoney(Math.abs(remaining), true)} remaining
           </span>

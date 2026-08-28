@@ -22,7 +22,7 @@ import clsx from 'clsx';
 // as a launcher-style grid sheet directly above the user's thumb.
 const items = [
   { to: '/', label: 'Home', icon: House },
-  { to: '/transactions', label: 'Txns', icon: Receipt },
+  { to: '/transactions', label: 'Transactions', icon: Receipt },
   { to: '/budget', label: 'Budget', icon: BarChart3 },
   { to: '/paydown', label: 'Pay down', icon: TrendingDown },
 ];
@@ -67,7 +67,10 @@ function TabContent({
   return (
     <>
       <Icon className="relative z-10 h-[22px] w-[22px]" strokeWidth={active ? 2.4 : 2} />
-      <span className="relative z-10 text-[10px] font-semibold leading-none tracking-tight">
+      <span className={clsx(
+        'relative z-10 max-w-full px-0.5 text-center font-semibold leading-none tracking-tight',
+        label.length > 10 ? 'text-[9px]' : 'text-[10px]',
+      )}>
         {label}
       </span>
     </>

@@ -21,8 +21,17 @@ const WidgetId = z.enum([
   'accounts',
   'recent-transactions',
 ]);
-const DEFAULT_ORDER = WidgetId.options;
 type WidgetIdValue = z.infer<typeof WidgetId>;
+const DEFAULT_ORDER: WidgetIdValue[] = [
+  'budget',
+  'coming-up',
+  'save-up',
+  'summary',
+  'assets-liabilities',
+  'recent-transactions',
+  'accounts',
+];
+const DEFAULT_HIDDEN: WidgetIdValue[] = ['accounts'];
 const Layout = z.object({
   order: z.array(WidgetId).length(DEFAULT_ORDER.length),
   hidden: z.array(WidgetId).max(DEFAULT_ORDER.length),
@@ -51,7 +60,7 @@ function insertMissingWidgets(stored: WidgetIdValue[], defaultOrder: readonly Wi
 }
 
 function parseStoredLayout(raw: string | null): z.infer<typeof Layout> {
-  if (!raw) return { order: [...DEFAULT_ORDER], hidden: [] };
+  if (!raw) return { order: [...DEFAULT_ORDER], hidden: [...DEFAULT_HIDDEN] };
   try {
     const json: unknown = JSON.parse(raw);
     const stored = Array.isArray(json)
@@ -65,7 +74,7 @@ function parseStoredLayout(raw: string | null): z.infer<typeof Layout> {
     const hidden = [...new Set((stored.hidden ?? []).filter((id) => validIds.has(id)))] as WidgetIdValue[];
     return { order, hidden };
   } catch {
-    return { order: [...DEFAULT_ORDER], hidden: [] };
+    return { order: [...DEFAULT_ORDER], hidden: [...DEFAULT_HIDDEN] };
   }
 }
 

@@ -15,10 +15,10 @@ import {
 import clsx from 'clsx';
 
 // Top group: daily working surfaces. Order matters — this is the order
-// users see in the sidebar. Dashboard first, then transactions, budget,
+// users see in the sidebar. Home first, then transactions, budget,
 // paydown, then the planning surfaces (save up, reports).
 const primaryItems = [
-  { to: '/', label: 'Dashboard', icon: House },
+  { to: '/', label: 'Home', icon: House },
   { to: '/transactions', label: 'Transactions', icon: Receipt },
   { to: '/budget', label: 'Budget', icon: BarChart3 },
   { to: '/paydown', label: 'Pay down', icon: TrendingDown },

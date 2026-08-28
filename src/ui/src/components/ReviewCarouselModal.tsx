@@ -391,7 +391,7 @@ export function ReviewCarouselModal({
           </div>
           <p className="text-sm fg-secondary">
             Nothing here right now. New SimpleFIN imports will land here for
-            confirmation before they show up on your dashboard.
+            confirmation before they show up on Home.
           </p>
           {err && <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p>}
           <div className="flex justify-end">

@@ -562,8 +562,8 @@ function BudgetSection({
   const allSubs = cats.flatMap((c) => c.subCategories.map((sub) => ({ sub, categoryName: c.name })));
   const totalPlanned = allSubs.reduce((s, x) => s + (plannedMap.get(x.sub.id) ?? x.sub.planned), 0);
   const totalAmount = allSubs.reduce((s, x) => s + (amountMap.get(actualKey(x.categoryName, x.sub.name)) ?? 0), 0);
-  const totalRemaining = totalPlanned - totalAmount;
   const isIncome = amountType === 'earned';
+  const totalRemaining = totalPlanned - totalAmount;
 
   const headerBg = title === 'Income' ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : '';
 
@@ -591,17 +591,24 @@ function BudgetSection({
             <span className="fg-muted text-xs uppercase tracking-wider mr-2">Actual</span>
             <span className="font-semibold fg-primary">{formatMoney(totalAmount)}</span>
           </div>
-          <div>
-            <span className="fg-muted text-xs uppercase tracking-wider mr-1 sm:mr-2">Left</span>
-            <span className={clsx(
-              'font-semibold',
-              totalRemaining < 0
-                ? 'text-rose-600 dark:text-rose-400'
-                : 'text-emerald-600 dark:text-emerald-400',
-            )}>
-              {formatMoney(totalRemaining)}
-            </span>
-          </div>
+          {isIncome ? (
+            <div className="sm:hidden">
+              <span className="fg-muted text-xs uppercase tracking-wider mr-1">Actual</span>
+              <span className="font-semibold fg-primary">{formatMoney(totalAmount)}</span>
+            </div>
+          ) : (
+            <div>
+              <span className="fg-muted text-xs uppercase tracking-wider mr-1 sm:mr-2">Left</span>
+              <span className={clsx(
+                'font-semibold',
+                totalRemaining < 0
+                  ? 'text-rose-600 dark:text-rose-400'
+                  : 'text-emerald-600 dark:text-emerald-400',
+              )}>
+                {formatMoney(totalRemaining)}
+              </span>
+            </div>
+          )}
         </div>
       </button>
 
@@ -633,14 +640,20 @@ function BudgetSection({
                     >
                       <span className="truncate">{sub.name}</span>
                     </button>
-                    <span className={clsx(
-                      'text-sm font-semibold tabular-nums shrink-0',
-                      remaining < 0
-                        ? 'text-rose-600 dark:text-rose-400'
-                        : 'text-emerald-600 dark:text-emerald-400',
-                    )}>
-                      {formatMoney(remaining)}
-                    </span>
+                    {isIncome ? (
+                      <span className="text-sm font-semibold tabular-nums shrink-0 fg-primary">
+                        {formatMoney(amount)}
+                      </span>
+                    ) : (
+                      <span className={clsx(
+                        'text-sm font-semibold tabular-nums shrink-0',
+                        remaining < 0
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-emerald-600 dark:text-emerald-400',
+                      )}>
+                        {formatMoney(remaining)}
+                      </span>
+                    )}
                   </div>
                   {showProgress && (
                     <Progress
@@ -687,14 +700,18 @@ function BudgetSection({
               <span className="text-sm font-semibold fg-primary">Total</span>
               <div className="flex items-center gap-3 text-xs tabular-nums">
                 <span className="fg-secondary">{formatMoney(totalPlanned)} planned</span>
-                <span className={clsx(
-                  'text-sm font-semibold',
-                  totalRemaining < 0
-                    ? 'text-rose-600 dark:text-rose-400'
-                    : 'text-emerald-600 dark:text-emerald-400',
-                )}>
-                  {formatMoney(totalRemaining)}
-                </span>
+                {isIncome ? (
+                  <span className="text-sm font-semibold fg-primary">{formatMoney(totalAmount)}</span>
+                ) : (
+                  <span className={clsx(
+                    'text-sm font-semibold',
+                    totalRemaining < 0
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : 'text-emerald-600 dark:text-emerald-400',
+                  )}>
+                    {formatMoney(totalRemaining)}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -706,7 +723,7 @@ function BudgetSection({
               <col className="w-40" />
               <col className="w-32" />
               <col className="w-32" />
-              <col className="w-32" />
+              {!isIncome && <col className="w-32" />}
             </colgroup>
             <thead>
               <tr className="text-left text-xs uppercase fg-muted">
@@ -714,7 +731,7 @@ function BudgetSection({
                 <th className="py-1"></th>
                 <th className="py-1 text-right pl-6">Planned</th>
                 <th className="py-1 text-right pl-10">Actual</th>
-                <th className="py-1 text-right pl-6">Remaining</th>
+                {!isIncome && <th className="py-1 text-right pl-6">Remaining</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -779,14 +796,16 @@ function BudgetSection({
                     <td className="py-2 text-right pl-10">
                       <div className="tabular-nums fg-secondary">{formatMoney(amount)}</div>
                     </td>
-                    <td className={clsx(
-                      'py-2 text-right font-semibold tabular-nums pl-6',
-                      remaining < 0
-                        ? 'text-rose-600 dark:text-rose-400'
-                        : 'text-emerald-600 dark:text-emerald-400',
-                    )}>
-                      {formatMoney(remaining)}
-                    </td>
+                    {!isIncome && (
+                      <td className={clsx(
+                        'py-2 text-right font-semibold tabular-nums pl-6',
+                        remaining < 0
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-emerald-600 dark:text-emerald-400',
+                      )}>
+                        {formatMoney(remaining)}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -795,14 +814,16 @@ function BudgetSection({
                 <td className="py-2"></td>
                 <td className="py-2 text-right font-semibold tabular-nums fg-secondary pl-6">{formatMoney(totalPlanned)}</td>
                 <td className="py-2 text-right font-semibold tabular-nums fg-secondary pl-10">{formatMoney(totalAmount)}</td>
-                <td className={clsx(
-                  'py-2 text-right font-semibold tabular-nums pl-6',
-                  totalRemaining < 0
-                    ? 'text-rose-600 dark:text-rose-400'
-                    : 'text-emerald-600 dark:text-emerald-400',
-                )}>
-                  {formatMoney(totalRemaining)}
-                </td>
+                {!isIncome && (
+                  <td className={clsx(
+                    'py-2 text-right font-semibold tabular-nums pl-6',
+                    totalRemaining < 0
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : 'text-emerald-600 dark:text-emerald-400',
+                  )}>
+                    {formatMoney(totalRemaining)}
+                  </td>
+                )}
               </tr>
             </tbody>
           </table>

@@ -15,6 +15,7 @@ import {
   Pencil,
   X,
   Calendar,
+  BellRing,
 } from 'lucide-react';
 import { SummaryCard } from '../components/SummaryCard';
 import { SortableWidgetList } from '../components/SortableWidgetList';
@@ -22,6 +23,7 @@ import { Progress } from '../components/ui/progress';
 import { GoalProgressBar } from '../components/GoalProgressBar';
 import clsx from 'clsx';
 import { AsyncQueryState } from '../components/ui/AsyncQueryState';
+import { useReviews } from '../components/ReviewsProvider';
 
 interface Account { id: string; name: string; type: string; balance: number; institution?: string; }
 interface DashboardTransaction {
@@ -78,15 +80,16 @@ interface BudgetActivityRow {
 }
 
 const DEFAULT_WIDGET_ORDER = [
-  'summary',
-  'assets-liabilities',
   'budget',
   'coming-up',
   'save-up',
-  'accounts',
+  'summary',
+  'assets-liabilities',
   'recent-transactions',
+  'accounts',
 ] as const;
 type WidgetId = (typeof DEFAULT_WIDGET_ORDER)[number];
+const DEFAULT_HIDDEN: WidgetId[] = ['accounts'];
 interface DashboardLayout { order: WidgetId[]; hidden: WidgetId[]; }
 
 const WIDGET_LABELS: Record<WidgetId, string> = {
@@ -97,18 +100,6 @@ const WIDGET_LABELS: Record<WidgetId, string> = {
   'assets-liabilities': 'Assets & Liabilities',
   accounts: 'Accounts',
   'recent-transactions': 'Recent transactions',
-};
-
-const FREQUENCY_LABEL: Record<string, string> = {
-  weekly: 'Weekly',
-  monthly: 'Monthly',
-  yearly: 'Yearly',
-};
-
-const FREQUENCY_BADGE: Record<string, string> = {
-  weekly: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-  monthly: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
-  yearly: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
 };
 
 const actualKey = (category: string, subCategory?: string) => `${category}\0${subCategory ?? category}`;
@@ -150,6 +141,7 @@ function daysLabel(days: number): string {
 export function Dashboard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const reviews = useReviews();
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState(false);
   const [draftOrder, setDraftOrder] = useState<WidgetId[]>([...DEFAULT_WIDGET_ORDER]);
@@ -199,7 +191,7 @@ export function Dashboard() {
   });
 
   const savedOrder = withAllWidgets(layout.data?.order ?? [...DEFAULT_WIDGET_ORDER]);
-  const savedHidden = (layout.data?.hidden ?? []).filter((id) => (DEFAULT_WIDGET_ORDER as readonly string[]).includes(id));
+  const savedHidden = (layout.data?.hidden ?? DEFAULT_HIDDEN).filter((id) => (DEFAULT_WIDGET_ORDER as readonly string[]).includes(id));
   const startEditing = () => {
     setDraftOrder([...savedOrder]);
     setDraftHidden([...savedHidden]);
@@ -264,11 +256,11 @@ export function Dashboard() {
     return (active.length > 0 ? active : list).slice(0, 3);
   }, [goals.data]);
 
-  if (accounts.isLoading || activity.isLoading) {
+  if (accounts.isLoading || activity.isLoading || layout.isLoading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold fg-primary">Dashboard</h1>
-        <AsyncQueryState status="loading" title="Loading your dashboard…" message="Fetching accounts and recent transactions." />
+        <h1 className="text-2xl font-bold fg-primary">Home</h1>
+        <AsyncQueryState status="loading" title="Loading Home…" message="Fetching accounts and recent transactions." />
       </div>
     );
   }
@@ -276,10 +268,10 @@ export function Dashboard() {
   if (accounts.isError || activity.isError) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold fg-primary">Dashboard</h1>
+        <h1 className="text-2xl font-bold fg-primary">Home</h1>
         <AsyncQueryState
           status="error"
-          title="Could not load your dashboard"
+          title="Could not load Home"
           message="Account and transaction data is unavailable, so financial totals are hidden."
           onRetry={() => void Promise.all([accounts.refetch(), activity.refetch()])}
           retrying={accounts.isFetching || activity.isFetching}
@@ -341,7 +333,7 @@ export function Dashboard() {
           ) : budgetError ? (
             <p className="py-4 text-sm text-rose-600 dark:text-rose-400 text-center">Could not load this month's budget.</p>
           ) : monthBudget.plannedExpense <= 0 && monthBudget.spentExpense <= 0 ? (
-            <p className="py-4 text-sm fg-muted text-center">No expense budget this month.</p>
+            <EmptyAction message="No expense budget this month." action="Set budget" onClick={() => navigate('/budget')} />
           ) : (
             <div className="space-y-3">
               <div className="flex items-end justify-between gap-3">
@@ -394,18 +386,13 @@ export function Dashboard() {
           ) : recurring.isError ? (
             <p className="py-4 text-sm text-rose-600 dark:text-rose-400 text-center">Could not load upcoming charges.</p>
           ) : upcomingCharges.length === 0 ? (
-            <p className="py-4 text-sm fg-muted text-center">No upcoming charges.</p>
+            <EmptyAction message="No upcoming charges." action="See recurring" onClick={() => navigate('/recurring')} />
           ) : (
             <ul className="divide-y divide-slate-100 dark:divide-slate-700">
               {upcomingCharges.map((charge) => (
                 <li key={`${charge.merchant}|${charge.accountId ?? charge.account}|${charge.nextDate}`} className="flex items-center justify-between gap-3 py-2 text-sm">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium fg-primary truncate">{charge.merchant}</span>
-                      <span className={clsx('inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0', FREQUENCY_BADGE[charge.frequency])}>
-                        {FREQUENCY_LABEL[charge.frequency]}
-                      </span>
-                    </div>
+                    <div className="font-medium fg-primary truncate">{charge.merchant}</div>
                     <div className="mt-0.5 flex items-center gap-1 text-xs fg-muted">
                       <Calendar className="h-3 w-3" />
                       {daysLabel(charge.daysUntil)}
@@ -436,7 +423,7 @@ export function Dashboard() {
           ) : goals.isError ? (
             <p className="py-4 text-sm text-rose-600 dark:text-rose-400 text-center">Could not load savings goals.</p>
           ) : goalRows.length === 0 ? (
-            <p className="py-4 text-sm fg-muted text-center">No savings goals yet.</p>
+            <EmptyAction message="No savings goals yet." action="Add a goal" onClick={() => navigate('/saveup')} />
           ) : (
             <ul className="space-y-3">
               {goalRows.map((goal) => {
@@ -514,7 +501,11 @@ export function Dashboard() {
                 </li>
               );
             })}
-            {accounts.data?.length === 0 && <li className="py-4 text-sm fg-muted text-center">No accounts yet. Add one to get started.</li>}
+            {accounts.data?.length === 0 && (
+              <li>
+                <EmptyAction message="No accounts yet." action="Add an account" onClick={() => navigate('/accounts')} />
+              </li>
+            )}
           </ul>
         </section>
       );
@@ -579,11 +570,11 @@ export function Dashboard() {
     <div className="space-y-6">
       <div className="flex min-h-11 flex-wrap items-center justify-between gap-3">
         <div className="flex items-center max-md:flex-1">
-          <h1 className="text-2xl font-bold fg-primary">Dashboard</h1>
+          <h1 className="text-2xl font-bold fg-primary">Home</h1>
           {!editing && (
             // On mobile the page h1 is hidden (the app bar owns the title),
             // so the pencil moves to the right edge like a native Edit action.
-            <button type="button" onClick={startEditing} disabled={layout.isLoading} className="edit-icon-button inline-flex h-11 w-11 items-center justify-center rounded-lg disabled:cursor-wait disabled:opacity-50 max-md:ml-auto" aria-label="Edit dashboard layout" title="Edit dashboard layout">
+            <button type="button" onClick={startEditing} disabled={layout.isLoading} className="edit-icon-button inline-flex h-11 w-11 items-center justify-center rounded-lg disabled:cursor-wait disabled:opacity-50 max-md:ml-auto" aria-label="Edit home layout" title="Edit home layout">
               <Pencil className="h-4 w-4" />
             </button>
           )}
@@ -599,7 +590,24 @@ export function Dashboard() {
           </div>
         )}
       </div>
-      {saveLayout.isError && <p className="text-sm text-rose-600 dark:text-rose-400">Could not save the dashboard layout. Please try again.</p>}
+      {saveLayout.isError && <p className="text-sm text-rose-600 dark:text-rose-400">Could not save the home layout. Please try again.</p>}
+      {!editing && reviews.count > 0 && (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm fg-primary">
+            <BellRing className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span>
+              You have {reviews.count} transaction{reviews.count === 1 ? '' : 's'} to review. They are not counted in this month&apos;s leftover yet.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={reviews.openModal}
+            className="text-sm font-semibold text-amber-700 dark:text-amber-400 hover:underline shrink-0"
+          >
+            Review now →
+          </button>
+        </div>
+      )}
 
       <SortableWidgetList
         order={displayedOrder}
@@ -616,11 +624,29 @@ export function Dashboard() {
   );
 }
 
-/**
- * ExpandableSubcategory — a subcategory row (e.g. "Cash", "Loans") that
- * can be expanded to reveal the individual accounts contributing to the
- * total. The arrow rotates 90° when expanded for a clear visual cue.
- */
+function EmptyAction({
+  message,
+  action,
+  onClick,
+}: {
+  message: string;
+  action: string;
+  onClick: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-2 py-4 text-center">
+      <p className="text-sm fg-muted">{message}</p>
+      <button
+        type="button"
+        onClick={onClick}
+        className="text-sm font-semibold text-amber-700 dark:text-amber-400 hover:underline"
+      >
+        {action}
+      </button>
+    </div>
+  );
+}
+
 function ExpandableSubcategory({
   label,
   total,

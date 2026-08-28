@@ -103,7 +103,7 @@ const STEPS: Record<StepId, StepDefinition> = {
   },
   review: {
     title: 'Review imported transactions',
-    body: 'Categorize accepts a transaction and teaches Cura a merchant rule. Skip accepts the suggested category without training a rule. Pending reviews do not count in dashboard or budget actuals.',
+    body: 'Categorize accepts a transaction and teaches Cura a merchant rule. Skip accepts the suggested category without training a rule. Pending reviews do not count in Home or budget actuals.',
     target: 'review-transactions',
     path: '/transactions',
     action: 'Open reviews',
@@ -167,7 +167,7 @@ const STEPS: Record<StepId, StepDefinition> = {
   complete: {
     title: 'Your financial workspace is ready',
     body: 'You have seen the full workflow: accounts, categories, reviews, rules, budgets, debt, savings goals, reports, and recurring charges. You can run this tutorial again from your profile menu at any time.',
-    action: 'Go to dashboard',
+    action: 'Go to Home',
   },
 };
 
@@ -422,7 +422,7 @@ export function FinancialOnboardingProvider({ userId, children }: { userId: stri
         <OnboardingModal
           title={STEPS.complete.title}
           body={STEPS.complete.body}
-          primaryLabel="Go to dashboard"
+          primaryLabel="Go to Home"
           secondaryLabel="Close"
           onPrimary={finish}
           onSecondary={finish}

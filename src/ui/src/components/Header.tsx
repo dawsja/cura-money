@@ -5,7 +5,7 @@ import { NotificationBell } from './NotificationBell';
 import { ProfileMenu } from './ProfileMenu';
 
 const routeTitles: Record<string, string> = {
-  '/': 'Overview',
+  '/': 'Home',
   '/accounts': 'Accounts',
   '/budget': 'Budget',
   '/categories': 'Categories',
