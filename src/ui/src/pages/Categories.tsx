@@ -318,8 +318,8 @@ function CategoryGroup({
   // cards shift out of the way. React state only updates when the drop
   // index changes or the drag starts/ends.
   //
-  // Header is the drag handle (grip is visual affordance; full header
-  // is a ≥44px touch target).
+  // The grip button is the only drag handle so the rest of the header
+  // remains available for expanding and category actions.
   const [drag, setDrag] = useState<{
     id: string;
     height: number;
@@ -412,13 +412,11 @@ function CategoryGroup({
     }
   };
 
-  const onPointerDown = (e: React.PointerEvent, id: string) => {
+  const startDrag = (e: React.PointerEvent, id: string) => {
     if (disabled) return;
     if (e.button !== 0) return;
     // Already dragging another card.
     if (sessionRef.current) return;
-    const target = e.target as HTMLElement;
-    if (target.closest('input, textarea, select, label, button')) return;
 
     const cardEl = cardRefs.current.get(id);
     if (!cardEl) return;
@@ -646,12 +644,17 @@ function CategoryGroup({
                 disabled && 'opacity-60',
               )}
             >
-              <div
-                onPointerDown={(e) => onPointerDown(e, cat.id)}
-                className="flex min-h-14 items-center gap-1 px-2 cursor-grab active:cursor-grabbing select-none touch-none"
-                title="Drag to reorder"
-              >
-                <GripVertical className="h-4 w-4 shrink-0 fg-muted" aria-hidden="true" />
+              <div className="flex min-h-14 items-center gap-1 px-2">
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onPointerDown={(e) => startDrag(e, cat.id)}
+                  aria-label={`Drag to reorder ${cat.name}`}
+                  title="Drag to reorder"
+                  className="close-button flex h-11 w-11 shrink-0 touch-none select-none items-center justify-center rounded-lg cursor-grab active:cursor-grabbing disabled:cursor-not-allowed"
+                >
+                  <GripVertical className="h-4 w-4 fg-muted" aria-hidden="true" />
+                </button>
                 <button
                   type="button"
                   onClick={() => toggleCategory(cat.id)}
