@@ -108,6 +108,7 @@ interface Account { id: string; name: string; alias?: string; type?: string; }
  * the dark-mode styling stays consistent.
  */
 const INPUT_CLS = 'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
+const ROW_SELECT_CLS = 'w-auto max-w-[9rem] rounded-md border border-control bg-surface py-1 pl-1.5 pr-5 text-xs fg-primary focus:border-amber-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50';
 
 /** Visual styling for a transaction type across the page. */
 const TYPE_STYLE: Record<TxType, { label: string; sign: string; amount: string }> = {
@@ -226,6 +227,59 @@ function activeFilterCount(f: FilterState, accountCount: number): number {
   if (f.merchant) n++;
   if (f.minAmount || f.maxAmount) n++;
   return n;
+}
+
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex min-h-8 max-w-full items-center gap-0.5 rounded-lg bg-amber-50 pl-2 pr-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+      <span className="truncate">{label}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="close-button flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
+        aria-label={`Remove filter ${label}`}
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
+  );
+}
+
+function EmptyTransactions({
+  filtered,
+  onClear,
+  onAdd,
+  addDisabled,
+}: {
+  filtered: boolean;
+  onClear: () => void;
+  onAdd: () => void;
+  addDisabled?: boolean;
+}) {
+  return (
+    <div className="py-10 text-center">
+      <Receipt className="mx-auto mb-2 h-5 w-5 fg-muted" />
+      <p className="text-sm fg-muted">{filtered ? 'No transactions match.' : 'No transactions yet.'}</p>
+      {filtered ? (
+        <button
+          type="button"
+          onClick={onClear}
+          className="mt-2 text-sm font-medium text-amber-700 hover:underline dark:text-amber-400"
+        >
+          Clear filters
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={addDisabled}
+          className="mt-2 text-sm font-medium text-amber-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-400"
+        >
+          Add transaction
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function Transactions() {
@@ -595,7 +649,56 @@ export function Transactions() {
 
   const datesActive = !!dateRange.from || !!dateRange.to;
   const filterActive = hasActiveFilters(filters, q, ledgerAccounts.length) || datesActive;
-  const filterCount = activeFilterCount(filters, ledgerAccounts.length) + (q.trim() ? 1 : 0) + (datesActive ? 1 : 0);
+  const popoverFilterCount = activeFilterCount(filters, ledgerAccounts.length);
+  const filterChips: { key: string; label: string; onRemove: () => void }[] = [];
+  if (q.trim()) {
+    filterChips.push({ key: 'q', label: `Search: ${q.trim()}`, onRemove: () => setQ('') });
+  }
+  if (datesActive) {
+    filterChips.push({ key: 'dates', label: dateRangeLabel(dateRange), onRemove: () => setDateRange(EMPTY_DATE_RANGE) });
+  }
+  for (const type of TX_TYPES) {
+    if (filters.types.has(type)) {
+      filterChips.push({ key: `type-${type}`, label: TYPE_STYLE[type].label, onRemove: () => toggleType(type) });
+    }
+  }
+  if (filters.accounts.size > 0 && filters.accounts.size < ledgerAccounts.length) {
+    for (const id of filters.accounts) {
+      const account = ledgerAccounts.find((a) => a.id === id);
+      filterChips.push({
+        key: `account-${id}`,
+        label: account?.alias || account?.name || id,
+        onRemove: () => setFilters((prev) => {
+          const next = new Set(prev.accounts);
+          next.delete(id);
+          return { ...prev, accounts: next };
+        }),
+      });
+    }
+  }
+  if (filters.categoryPick) {
+    let categoryLabel = 'Category';
+    try {
+      const parsed = JSON.parse(filters.categoryPick) as { category?: string; subCategory?: string };
+      if (parsed.category) categoryLabel = parsed.subCategory ? `${parsed.category} › ${parsed.subCategory}` : parsed.category;
+    } catch {
+      categoryLabel = 'Category';
+    }
+    filterChips.push({ key: 'category', label: categoryLabel, onRemove: () => setFilters((prev) => ({ ...prev, categoryPick: '' })) });
+  }
+  if (filters.merchant) {
+    filterChips.push({ key: 'merchant', label: filters.merchant, onRemove: () => setFilters((prev) => ({ ...prev, merchant: '' })) });
+  }
+  if (filters.minAmount || filters.maxAmount) {
+    const min = filters.minAmount && Number.isFinite(Number(filters.minAmount)) ? formatMoney(Number(filters.minAmount)) : '';
+    const max = filters.maxAmount && Number.isFinite(Number(filters.maxAmount)) ? formatMoney(Number(filters.maxAmount)) : '';
+    const amountLabel = min && max ? `${min}–${max}` : min ? `≥ ${min}` : `≤ ${max}`;
+    filterChips.push({
+      key: 'amount',
+      label: amountLabel,
+      onRemove: () => setFilters((prev) => ({ ...prev, minAmount: '', maxAmount: '' })),
+    });
+  }
 
   // Mirror the bell badge so the banner is a discoverable backstop if
   // the user ignores the chrome. Clicking the CTA opens the same
@@ -689,7 +792,12 @@ export function Transactions() {
 
   return (
     <div className="space-y-6 app-fab-page-space">
-      <h1 className="text-2xl font-bold fg-primary">Transactions</h1>
+      <div className="flex items-baseline gap-2">
+        <h1 className="text-2xl font-bold fg-primary">Transactions</h1>
+        <span className="text-xs fg-muted tabular-nums">
+          {txns.isLoading ? '…' : `${total.toLocaleString()} match${total === 1 ? '' : 'es'}`}
+        </span>
+      </div>
 
       {reviews.count > 0 && (
         <div data-onboarding-target="review-transactions" className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 flex items-center justify-between gap-3">
@@ -712,156 +820,108 @@ export function Transactions() {
       {/* On mobile the section drops its card chrome so the list renders
           edge-to-edge on the page canvas, native-app style. */}
       <section className="card card-mobile-plain">
-        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-          <div className="flex items-baseline gap-2">
-            <h2 className="text-lg font-semibold fg-primary">All transactions</h2>
-            <span className="text-xs fg-muted tabular-nums">
-              {txns.isLoading ? '…' : `${total.toLocaleString()} match${total === 1 ? '' : 'es'}`}
-            </span>
-          </div>
-          {/* Header pill row: Search / All Filters (status + clear) /
-              Filters (popover) / Add Transaction (primary CTA). Each
-              pill is a compact, same-height control so the row reads
-              as a unified toolbar. */}
-          <div className="grid grid-cols-2 gap-2 w-full md:flex md:w-auto md:flex-1 md:items-center md:justify-end">
-            {/* Search pill — same height as the buttons, single-line
-                placeholder. The matches count slides inside the
-                right edge when the user has typed something so the
-                pill doesn't grow. */}
-            <InputGroup className="col-span-2 min-h-11 min-w-0 md:min-h-0 md:flex-1 md:max-w-xs">
-              <InputGroupAddon aria-hidden="true">
-                <Search className="h-4 w-4" />
-              </InputGroupAddon>
-              <InputGroupInput
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search merchants, accounts…"
-                aria-label="Search transactions"
-              />
-              {q && (
-                <InputGroupAddon align="inline-end" className="text-xs fg-muted tabular-nums">
-                  {total.toLocaleString()}
-                </InputGroupAddon>
-              )}
-            </InputGroup>
+        <div className="mb-3 grid grid-cols-2 gap-2 md:flex md:items-center">
+          <InputGroup className="col-span-2 min-h-11 min-w-0 md:min-h-0 md:flex-1">
+            <InputGroupAddon aria-hidden="true">
+              <Search className="h-4 w-4" />
+            </InputGroupAddon>
+            <InputGroupInput
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search merchants, accounts…"
+              aria-label="Search transactions"
+            />
+          </InputGroup>
 
-            {/* Date range pill — presets + custom from/to. Independent
-                of the Filters popover so the date dimension stays a
-                one-click toolbar control. */}
-            <div ref={dateContainerRef} className="relative min-w-0 md:shrink-0">
-              <button
-                type="button"
-                onClick={() => setDateOpen((o) => !o)}
-                aria-expanded={dateOpen}
-                aria-haspopup="dialog"
-                aria-label="Date range"
-                className={clsx(
-                  'inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors md:min-h-0 md:w-auto md:max-w-[11rem]',
-                  dateRange.preset !== 'all' && (dateRange.from || dateRange.to)
-                    ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700',
-                )}
-              >
-                <Calendar className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{dateRangeLabel(dateRange)}</span>
-              </button>
-              {dateOpen && (
-                <DateRangePopover
-                  value={dateRange}
-                  onChange={setDateRange}
-                  onClose={() => setDateOpen(false)}
-                />
-              )}
-            </div>
-
-            {/* "All Filters" pill — status indicator + quick reset.
-                Shows "All Filters" when nothing is active (read-only
-                feel). When filters are on, shows the active count
-                and clicking clears everything back to defaults —
-                same action as the popover's "Clear all" but visible
-                at the toolbar level. */}
+          <div ref={dateContainerRef} className="relative min-w-0 md:shrink-0">
             <button
               type="button"
-              onClick={clearFilters}
-              disabled={!filterActive}
-              aria-label={
-                filterActive
-                  ? `Clear all ${filterCount} active filter${filterCount === 1 ? '' : 's'}`
-                  : 'All filters'
-              }
+              onClick={() => setDateOpen((o) => !o)}
+              aria-expanded={dateOpen}
+              aria-haspopup="dialog"
+              aria-label="Date range"
               className={clsx(
-                'hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors shrink-0 md:inline-flex',
-                filterActive
-                  ? 'bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600'
-                  : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 cursor-default',
+                'inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors md:min-h-0 md:w-auto md:max-w-[11rem]',
+                dateRange.preset !== 'all' && (dateRange.from || dateRange.to)
+                  ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700',
+              )}
+            >
+              <Calendar className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{dateRangeLabel(dateRange)}</span>
+            </button>
+            {dateOpen && (
+              <DateRangePopover
+                value={dateRange}
+                onChange={setDateRange}
+                onClose={() => setDateOpen(false)}
+              />
+            )}
+          </div>
+
+          <div ref={filterContainerRef} className="relative min-w-0 md:shrink-0">
+            <button
+              type="button"
+              onClick={() => setFilterOpen((o) => !o)}
+              aria-expanded={filterOpen}
+              aria-haspopup="dialog"
+              aria-label="Filters"
+              className={clsx(
+                'inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors md:min-h-0 md:w-auto',
+                popoverFilterCount > 0
+                  ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700',
               )}
             >
               <Filter className="h-3.5 w-3.5" />
-              <span>{filterActive ? `${filterCount} filter${filterCount === 1 ? '' : 's'}` : 'All Filters'}</span>
+              <span>Filters</span>
+              {popoverFilterCount > 0 && (
+                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold tabular-nums text-slate-900">
+                  {popoverFilterCount}
+                </span>
+              )}
             </button>
 
-            {/* Filters popover pill — opens the structured filter
-                sheet (type / account / category / merchant / amount
-                range). Carries a count badge so users see how many
-                active filters are set even before opening it. */}
-            <div ref={filterContainerRef} className="relative min-w-0 md:shrink-0">
-              <button
-                type="button"
-                onClick={() => setFilterOpen((o) => !o)}
-                aria-expanded={filterOpen}
-                aria-haspopup="dialog"
-                aria-label="Filters"
-                className={clsx(
-                  'inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors md:min-h-0 md:w-auto',
-                  filterActive
-                    ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700',
-                )}
-              >
-                <Filter className="h-3.5 w-3.5" />
-                <span>Filters</span>
-                {filterCount > 0 && (
-                  <span className={clsx(
-                    'inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold tabular-nums',
-                    'bg-amber-500 text-slate-900',
-                  )}>
-                    {filterCount}
-                  </span>
-                )}
-              </button>
+            {filterOpen && (
+              <FilterPopover
+                filters={filters}
+                setFilters={setFilters}
+                accounts={ledgerAccounts}
+                categories={cats.data ?? []}
+                merchants={merchants.data ?? []}
+                clearEnabled={filterActive}
+                onClear={clearFilters}
+                onClose={() => setFilterOpen(false)}
+              />
+            )}
+          </div>
 
-              {filterOpen && (
-                <FilterPopover
-                  filters={filters}
-                  setFilters={setFilters}
-                  accounts={ledgerAccounts}
-                  categories={cats.data ?? []}
-                  merchants={merchants.data ?? []}
-                  clearEnabled={filterActive}
-                  onClear={clearFilters}
-                  onClose={() => setFilterOpen(false)}
-                />
-              )}
-            </div>
-
-            {/* Add Transaction — primary CTA, amber pill on the
-                right end of the toolbar. Same height as the other
-                pills so the row reads as a single control strip.
-                Hidden on mobile, where the floating action button
-                above the pill tab bar carries this action instead. */}
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            data-onboarding-target="add-transaction"
+            disabled={dependenciesLoading || !!dependenciesError}
+            className="hidden md:inline-flex items-center justify-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-900 px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 md:shrink-0"
+            aria-label="Add transaction"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Transaction
+          </button>
+        </div>
+        {filterChips.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+            {filterChips.map((chip) => (
+              <FilterChip key={chip.key} label={chip.label} onRemove={chip.onRemove} />
+            ))}
             <button
               type="button"
-              onClick={() => setAddOpen(true)}
-              data-onboarding-target="add-transaction"
-              disabled={dependenciesLoading || !!dependenciesError}
-              className="hidden md:inline-flex items-center justify-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-900 px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 md:shrink-0"
-              aria-label="Add transaction"
+              onClick={clearFilters}
+              className="text-xs font-medium fg-muted hover:text-amber-700 dark:hover:text-amber-400"
             >
-              <Plus className="h-3.5 w-3.5" />
-              Add Transaction
+              Clear all
             </button>
           </div>
-        </div>
+        )}
         {dependenciesLoading && (
           <p className="mb-3 rounded-lg border border-default bg-surface px-3 py-2 text-sm fg-muted" role="status">
             Loading categories and accounts…
@@ -889,9 +949,12 @@ export function Transactions() {
             </p>
           )}
           {txns.isSuccess && txns.data.rows.length === 0 && (
-            <p className="py-10 text-center text-sm fg-muted">
-              <Receipt className="mr-1 inline h-5 w-5 fg-muted" /> No transactions match.
-            </p>
+            <EmptyTransactions
+              filtered={filterActive}
+              onClear={clearFilters}
+              onAdd={() => setAddOpen(true)}
+              addDisabled={dependenciesLoading || !!dependenciesError}
+            />
           )}
           {txns.isSuccess && txns.data.rows.map((t, idx) => {
             const prevDate = idx > 0 ? txns.data!.rows[idx - 1]!.date : null;
@@ -935,36 +998,30 @@ export function Transactions() {
           })}
         </div>
 
-        <div className="hidden md:block overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase fg-muted">
-                <th className="py-2 hidden md:table-cell">Date</th>
                 <th className="py-2">Merchant</th>
-                <th className="py-2 hidden md:table-cell">Type</th>
-                <th className="py-2 hidden md:table-cell">Category</th>
-                <th className="py-2 hidden md:table-cell">Account</th>
+                <th className="py-2">Type</th>
+                <th className="py-2">Category</th>
+                <th className="py-2">Account</th>
                 <th className="py-2 text-right">Amount</th>
-                <th className="py-2 hidden md:table-cell" />
+                <th className="py-2" />
               </tr>
             </thead>
             <tbody>
               {txns.isLoading && (
-                <tr><td colSpan={7} className="py-8 text-center text-sm fg-muted" role="status">Loading transactions…</td></tr>
+                <tr><td colSpan={6} className="py-8 text-center text-sm fg-muted" role="status">Loading transactions…</td></tr>
               )}
               {txns.isError && (
-                <tr><td colSpan={7} className="py-8 text-center text-sm text-rose-700 dark:text-rose-300" role="alert">
+                <tr><td colSpan={6} className="py-8 text-center text-sm text-rose-700 dark:text-rose-300" role="alert">
                   <span>Transactions could not be loaded.</span>{' '}
                   <button type="button" onClick={() => void txns.refetch()} className="font-semibold hover:underline">Retry</button>
                 </td></tr>
               )}
               {txns.isSuccess && txns.data.rows.map((t, idx) => {
-                // Categories filtered by the transaction's type so an
-                // expense row only sees expense categories and vice versa.
                 const rowCats = (cats.data ?? []).filter((c) => c.type === t.type || c.name === 'Pay down goals');
-                // Only leaf sub-categories are assignable. Historical
-                // main-only values remain visible in transaction details,
-                // but show an empty picker until the user chooses a leaf.
                 const currentValue = (() => {
                   const cat = rowCats.find((c) => c.name === t.category);
                   if (!cat) return '';
@@ -980,10 +1037,7 @@ export function Transactions() {
                   <Fragment key={t.id}>
                   {showDateHeader && (
                     <tr>
-                      <td
-                        colSpan={7}
-                        className="px-0 pb-2 pt-4"
-                      >
+                      <td colSpan={6} className="px-0 pb-2 pt-4">
                         <div className="flex items-center gap-3">
                           <span className="shrink-0 text-xs font-semibold fg-primary">
                             {formatDateLong(t.date)}
@@ -993,23 +1047,33 @@ export function Transactions() {
                       </td>
                     </tr>
                   )}
-                  <tr className="border-b border-default md:cursor-default cursor-pointer" onClick={() => { if (!isDesktop) setDetailTx(t); }}>
-                    <td className="py-2 whitespace-nowrap fg-secondary hidden md:table-cell">{formatDate(t.date)}</td>
-                    <td className="py-2 fg-primary">{t.merchant}</td>
-                    {/* Type select auto-fires on selection and PATCHes
-                        the row's type + a category from the new bucket in
-                        the same call so the row stays consistent. */}
-                    <td className="py-2 hidden md:table-cell">
+                  <tr className="cursor-pointer border-b border-default md:cursor-default" onClick={() => { if (!isDesktop) setDetailTx(t); }}>
+                    <td className="py-2 fg-primary">
+                      <div>{t.merchant}</div>
+                      {hasSplits && (
+                        <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] fg-muted">
+                          {t.splits!.map((split, splitIndex) => (
+                            <span key={split.id || splitIndex}>
+                              {split.category} › {split.subCategory} ·{' '}
+                              <span className={clsx('font-semibold tabular-nums', TYPE_STYLE[split.type].amount)}>
+                                {TYPE_STYLE[split.type].sign}{formatMoney(split.amount)}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-2">
                       <select
                         value={t.type}
                         disabled={hasSplits || updateAssignmentInline.isPending || createRuleFromTransaction.isPending || !!cats.error}
                         aria-label="Transaction type"
                         title={hasSplits ? 'Edit the transaction to change split allocations.' : undefined}
-                        className={`${INPUT_CLS} w-56 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50`}
+                        className={`${ROW_SELECT_CLS} font-medium`}
                         onChange={(e) => {
                           const newType = e.target.value as TxType;
                           if (newType === t.type) return;
-                           changeTransactionType(t, newType);
+                          changeTransactionType(t, newType);
                         }}
                       >
                         {TX_TYPES.map((type) => (
@@ -1017,14 +1081,14 @@ export function Transactions() {
                         ))}
                       </select>
                     </td>
-                    <td className="py-2 hidden md:table-cell">
+                    <td className="py-2">
                       <select
                         value={currentValue}
                         onChange={(e) => onPickCategory(t, e.target.value)}
                         disabled={hasSplits || updateAssignmentInline.isPending || createRuleFromTransaction.isPending || !!cats.error}
                         aria-label="Transaction category"
                         title={hasSplits ? 'Edit the transaction to change split allocations.' : (t.subCategory ? `${t.category} › ${t.subCategory}` : t.category)}
-                        className={`${INPUT_CLS} w-56 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50`}
+                        className={ROW_SELECT_CLS}
                       >
                         {!currentValue && <option value="">Select category</option>}
                         {rowCats.map((c) => (
@@ -1040,48 +1104,36 @@ export function Transactions() {
                           </optgroup>
                         ))}
                       </select>
-                      {hasSplits && <p className="mt-1 text-[10px] fg-muted">Use Edit to change splits.</p>}
                     </td>
-                    <td className="py-2 fg-tertiary hidden md:table-cell">{t.account}</td>
+                    <td className="py-2 fg-tertiary">{t.account}</td>
                     <td className={clsx('py-2 text-right font-semibold tabular-nums', TYPE_STYLE[t.type].amount)}>
                       {TYPE_STYLE[t.type].sign}{formatMoney(t.amount)}
                     </td>
-                    <td className="py-2 text-right hidden md:table-cell">
+                    <td className="py-2 text-right">
                       <button
+                        type="button"
                         onClick={(e) => { e.stopPropagation(); setActionTx(t); }}
-                        className="fg-tertiary hover:fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 rounded p-1 transition-colors"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg fg-tertiary transition-colors hover:bg-slate-100 hover:fg-secondary dark:hover:bg-slate-700"
                         aria-label="Transaction actions"
                       >
-                        <MoreVertical className="h-3.5 w-3.5" />
+                        <MoreVertical className="h-4 w-4" />
                       </button>
                     </td>
                   </tr>
-                  {hasSplits && (
-                    <tr className="hidden border-b border-default bg-slate-50 dark:bg-slate-900/20 md:table-row">
-                      <td />
-                      <td colSpan={5} className="pb-2 pt-1">
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs fg-secondary">
-                          {t.splits!.map((split, splitIndex) => (
-                            <span key={split.id || splitIndex}>
-                              <span className="fg-muted">Split {splitIndex + 1}:</span>{' '}
-                              {TYPE_STYLE[split.type].label} · {split.category} › {split.subCategory} ·{' '}
-                              <span className={clsx('font-semibold tabular-nums', TYPE_STYLE[split.type].amount)}>
-                                {TYPE_STYLE[split.type].sign}{formatMoney(split.amount)}
-                              </span>
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td />
-                    </tr>
-                  )}
                   </Fragment>
                 );
               })}
               {txns.isSuccess && txns.data.rows.length === 0 && (
-                <tr><td colSpan={7} className="py-6 text-center text-sm fg-muted">
-                  <Receipt className="h-5 w-5 inline mr-1 fg-muted" /> No transactions match.
-                </td></tr>
+                <tr>
+                  <td colSpan={6}>
+                    <EmptyTransactions
+                      filtered={filterActive}
+                      onClear={clearFilters}
+                      onAdd={() => setAddOpen(true)}
+                      addDisabled={dependenciesLoading || !!dependenciesError}
+                    />
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
@@ -1416,9 +1468,14 @@ function TransactionDetailModal({
       contentClassName="mobile-sheet card w-full rounded-b-none rounded-t-3xl border-b-0"
     >
         <div className="mx-auto -mt-1 mb-4 h-1.5 w-10 rounded-full bg-slate-600" aria-hidden="true" />
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold fg-primary">Transaction Details</h3>
-          <button type="button" onClick={onClose} disabled={isPending} className="close-button flex h-11 w-11 items-center justify-center rounded-full disabled:opacity-50" aria-label="Close">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-semibold fg-primary">{t.merchant}</h3>
+            <p className={clsx('mt-0.5 text-base font-semibold tabular-nums', TYPE_STYLE[t.type].amount)}>
+              {TYPE_STYLE[t.type].sign}{formatMoney(t.amount)}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} disabled={isPending} className="close-button flex h-11 w-11 shrink-0 items-center justify-center rounded-full disabled:opacity-50" aria-label="Close">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -1429,26 +1486,8 @@ function TransactionDetailModal({
             <dd className="fg-primary font-medium">{formatDate(t.date)}</dd>
           </div>
           <div className="flex justify-between">
-            <dt className="fg-tertiary">Merchant</dt>
-            <dd className="fg-primary font-medium">{t.merchant}</dd>
-          </div>
-          <div className="flex justify-between">
-            <dt className="fg-tertiary">Type</dt>
-            <dd className="fg-primary font-medium">{TYPE_STYLE[t.type].label}</dd>
-          </div>
-          <div className="flex justify-between">
-            <dt className="fg-tertiary">Category</dt>
-            <dd className="fg-primary font-medium">{t.subCategory ? `${t.category} › ${t.subCategory}` : t.category}</dd>
-          </div>
-          <div className="flex justify-between">
             <dt className="fg-tertiary">Account</dt>
             <dd className="fg-primary font-medium">{t.account}</dd>
-          </div>
-          <div className="flex justify-between">
-            <dt className="fg-tertiary">Amount</dt>
-            <dd className={clsx('font-semibold tabular-nums', TYPE_STYLE[t.type].amount)}>
-              {TYPE_STYLE[t.type].sign}{formatMoney(t.amount)}
-            </dd>
           </div>
           {!!t.splits?.length && (
             <div className="space-y-2 border-t border-default pt-3">
@@ -1466,7 +1505,7 @@ function TransactionDetailModal({
           {t.notes && (
             <div className="flex justify-between">
               <dt className="fg-tertiary">Notes</dt>
-              <dd className="fg-primary font-medium text-right max-w-[60%]">{t.notes}</dd>
+              <dd className="max-w-[60%] text-right font-medium fg-primary">{t.notes}</dd>
             </div>
           )}
         </dl>
@@ -1511,16 +1550,7 @@ function TransactionDetailModal({
           )}
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => onDelete(t.id)}
-            disabled={isPending}
-            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 px-3 py-2 text-sm font-medium hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-colors disabled:opacity-50"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Delete
-          </button>
+        <div className="mt-6 grid gap-2">
           <button
             type="button"
             onClick={onActions}
@@ -1528,6 +1558,15 @@ function TransactionDetailModal({
             className="btn-primary inline-flex items-center justify-center disabled:opacity-50"
           >
             More actions
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(t.id)}
+            disabled={isPending}
+            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-50 disabled:opacity-50 dark:text-rose-400 dark:hover:bg-rose-900/20"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete
           </button>
         </div>
     </Dialog>

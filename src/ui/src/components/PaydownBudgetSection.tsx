@@ -21,6 +21,8 @@ export interface PaydownBudgetMeta {
 
 export type PlannedCellStatus = 'saving' | 'saved' | 'error';
 
+const PLANNED_INPUT_CLS = 'min-h-11 w-28 text-right tabular-nums rounded-md border border-control bg-surface fg-primary px-2 py-1.5 text-sm focus:border-amber-500 focus:outline-none disabled:cursor-wait disabled:opacity-60 sm:h-9 sm:min-h-0 sm:w-24 sm:py-1';
+
 export function PaydownBudgetSection({
   title = 'Pay down',
   rows,
@@ -33,6 +35,9 @@ export function PaydownBudgetSection({
   onLiveCommit,
   onLiveReset,
   statuses,
+  loading,
+  error,
+  onRetry,
 }: {
   title?: string;
   rows: PaydownBudgetRow[];
@@ -45,6 +50,9 @@ export function PaydownBudgetSection({
   onLiveCommit?: (accountId: string) => void;
   onLiveReset?: (accountId: string) => void;
   statuses?: Map<string, PlannedCellStatus | undefined>;
+  loading?: boolean;
+  error?: boolean;
+  onRetry?: () => void;
 }) {
   const navigate = useNavigate();
   const isCollapsed = collapsed.has(title);
@@ -101,7 +109,16 @@ export function PaydownBudgetSection({
 
       {!isCollapsed && (
         <div className="px-2 sm:px-4 pb-3 pt-1">
-          {displayRows.length === 0 ? (
+          {loading ? (
+            <p className="py-6 text-center text-sm fg-muted" role="status">Loading pay down…</p>
+          ) : error ? (
+            <div className="space-y-3 py-6 text-center" role="alert">
+              <p className="text-sm fg-secondary">Pay down data could not be loaded.</p>
+              {onRetry && (
+                <button type="button" onClick={onRetry} className="btn-primary px-3 py-1.5 text-sm">Retry</button>
+              )}
+            </div>
+          ) : displayRows.length === 0 ? (
             <EmptyState onSyncClick={() => navigate('/paydown')} synced={!!meta.syncedAt} />
           ) : (
             <>
@@ -158,7 +175,7 @@ export function PaydownBudgetSection({
                                   if (e.key === 'Escape') onLiveReset?.(r.accountId);
                                 }}
                                 onClick={(e) => e.stopPropagation()}
-                                className="w-20 text-right tabular-nums rounded border border-default bg-surface fg-primary px-1.5 py-1 text-xs focus:border-amber-500 focus:outline-none"
+                                className={PLANNED_INPUT_CLS}
                                 aria-label={`Planned payment for ${r.accountName}`}
                               />
                               <CellFeedback status={statuses?.get(r.accountId)} onRetry={() => onLiveCommit!(r.accountId)} />
@@ -192,7 +209,6 @@ export function PaydownBudgetSection({
               <table className="hidden sm:table w-full text-sm table-fixed">
               <colgroup>
                 <col />
-                <col className="w-40" />
                 <col className="w-32" />
                 <col className="w-32" />
                 <col className="w-32" />
@@ -200,7 +216,6 @@ export function PaydownBudgetSection({
               <thead>
                 <tr className="text-left text-xs uppercase fg-muted">
                   <th className="py-1">Account</th>
-                  <th className="py-1"></th>
                   <th className="py-1 text-right pl-6">Planned</th>
                   <th className="py-1 text-right pl-10">Actual</th>
                   <th className="py-1 text-right pl-6">Remaining</th>
@@ -225,10 +240,8 @@ export function PaydownBudgetSection({
                         <div className="text-xs fg-muted mt-0.5 ml-5 tabular-nums">
                           {(r.apr * 100).toFixed(2)}% APR
                         </div>
-                      </td>
-                      <td className="py-2 pr-2">
                         {showProgress && (
-                          <Progress value={pct} tone={tone} className="w-full" />
+                          <Progress value={pct} tone={tone} className="mt-1.5 max-w-xs" />
                         )}
                       </td>
                       <td className="py-2 text-right pl-6">
@@ -252,7 +265,7 @@ export function PaydownBudgetSection({
                                 if (e.key === 'Enter') onLiveCommit!(r.accountId);
                                 if (e.key === 'Escape') onLiveReset?.(r.accountId);
                               }}
-                              className="w-24 ml-auto text-right tabular-nums rounded border border-default bg-surface fg-primary px-1.5 py-1 text-sm focus:border-amber-500 focus:outline-none"
+                              className={`${PLANNED_INPUT_CLS} ml-auto`}
                               aria-label={`Planned payment for ${r.accountName}`}
                             />
                             <CellFeedback status={statuses?.get(r.accountId)} onRetry={() => onLiveCommit!(r.accountId)} />
@@ -277,7 +290,6 @@ export function PaydownBudgetSection({
                 })}
                 <tr>
                   <td className="py-2 font-semibold fg-primary">Total {title}</td>
-                  <td className="py-2"></td>
                   <td className="py-2 text-right font-semibold tabular-nums fg-secondary pl-6">{formatMoney(totalPlanned)}</td>
                   <td className="py-2 text-right font-semibold tabular-nums fg-secondary pl-10">{formatMoney(totalActual)}</td>
                   <td className={clsx(

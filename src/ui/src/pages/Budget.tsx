@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useId, useRef } from 'react';
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation, keepPreviousData } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { formatDate, formatMoney, currentYearMonth } from '../lib/format';
@@ -68,6 +68,7 @@ interface PaydownSnapshotResponse {
 const PAYDOWN_SECTION_ID = 'paydown-section';
 const draftKey = (yearMonth: string, id: string) => `${yearMonth}:${id}`;
 const actualKey = (category: string, subCategory?: string) => `${category}\0${subCategory ?? category}`;
+const PLANNED_INPUT_CLS = 'min-h-11 w-28 text-right tabular-nums rounded-md border border-control bg-surface fg-primary px-2 py-1.5 text-sm focus:border-amber-500 focus:outline-none disabled:cursor-wait disabled:opacity-60 sm:h-9 sm:min-h-0 sm:py-1';
 
 export function Budget() {
   const qc = useQueryClient();
@@ -93,10 +94,12 @@ export function Budget() {
   const budgets = useQuery({
     queryKey: ['budget', ym],
     queryFn: () => api.get<BudgetRow[]>(`/api/budget/${ym}`),
+    placeholderData: keepPreviousData,
   });
   const activity = useQuery({
     queryKey: ['budget', 'activity', ym],
     queryFn: () => api.get<BudgetActivityResponse>(`/api/budget/${ym}/activity`),
+    placeholderData: keepPreviousData,
   });
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api.get<Account[]>('/api/accounts') });
   const paydownSnapshot = useQuery<PaydownSnapshotResponse>({
@@ -159,6 +162,14 @@ export function Budget() {
     for (const row of activity.data?.rows ?? []) {
       if (row.type !== 'expense') continue;
       m.set(actualKey(row.category, row.subCategory), row.actual);
+    }
+    return m;
+  }, [activity.data]);
+
+  const txnCountMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const row of activity.data?.rows ?? []) {
+      m.set(actualKey(row.category, row.subCategory), row.transactions.length);
     }
     return m;
   }, [activity.data]);
@@ -368,14 +379,16 @@ export function Budget() {
 
   const incomeCats = (cats.data ?? []).filter((c) => c.type === 'income');
   const expenseCats = (cats.data ?? []).filter((c) => c.type === 'expense');
-  const loading = cats.isLoading || budgets.isLoading || activity.isLoading || accounts.isLoading || paydownSnapshot.isLoading;
-  const failed = cats.isError || budgets.isError || activity.isError || accounts.isError || paydownSnapshot.isError;
+  const hasWorkspace = !!cats.data && !!accounts.data && !!budgets.data && !!activity.data;
+  const loading = !hasWorkspace && (cats.isLoading || budgets.isLoading || activity.isLoading || accounts.isLoading);
+  const failed = !hasWorkspace && (cats.isError || budgets.isError || activity.isError || accounts.isError);
+  const refreshFailed = hasWorkspace && (budgets.isError || activity.isError);
   const retry = () => {
     void Promise.all([cats.refetch(), budgets.refetch(), activity.refetch(), accounts.refetch(), paydownSnapshot.refetch()]);
   };
 
   return (
-    <div className="space-y-4 lg:h-full lg:flex lg:flex-col">
+    <div className="space-y-4">
       <div className="shrink-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold fg-primary">Budget</h1>
         <MonthPicker value={ym} onChange={setYm} />
@@ -390,11 +403,10 @@ export function Budget() {
         </div>
       ) : (
         /* Mobile: single-column flow (summary then sections) inside the
-             main scroll. Desktop: two-column layout with the budget table
-             scrolling independently and the summary pinned on the right. */
-        <div className="lg:flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-4 lg:gap-6">
-        {/* Summary box — appears first on mobile, right column on desktop */}
-        <div className="shrink-0 lg:order-2 lg:w-96">
+             main scroll. Desktop: two-column layout with the leftover
+             panel sticky so it stays in view while assigning lower groups. */
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
+        <div className="shrink-0 lg:sticky lg:top-8 lg:order-2 lg:w-96">
           <BudgetSummaryBox
             plannedIncome={totals.plannedIncome}
             earnedIncome={totals.earnedIncome}
@@ -407,14 +419,21 @@ export function Budget() {
           />
         </div>
 
-        <div className="flex-1 min-w-0 lg:overflow-y-auto space-y-6 lg:pr-1">
+        <div className="min-w-0 flex-1 space-y-6">
           <>
+              {refreshFailed && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300" role="alert">
+                  <span>This month could not be refreshed.</span>
+                  <button type="button" onClick={retry} className="font-semibold hover:underline">Retry</button>
+                </div>
+              )}
               {incomeCats.length > 0 ? (
                 <BudgetSection
                   title="Income"
                   cats={incomeCats}
                   plannedMap={mergedPlanned}
                   amountMap={earnedMap}
+                  countMap={txnCountMap}
                   amountType="earned"
                   collapsed={collapsed}
                   onToggleCollapsed={toggleCollapsed}
@@ -426,15 +445,11 @@ export function Budget() {
                   onOpenDrilldown={setDrilldown}
                 />
               ) : (
-                <div className="card text-sm fg-muted text-center">
-                  <BarChart3 className="h-5 w-5 inline mr-1 fg-muted" /> No income categories yet. Add some on the Categories page.
-                </div>
+                <EmptyCategoriesCard type="income" />
               )}
 
               {expenseCats.length === 0 ? (
-                <div className="card text-sm fg-muted text-center">
-                  <BarChart3 className="h-5 w-5 inline mr-1 fg-muted" /> No expense categories yet. Add some on the Categories page.
-                </div>
+                <EmptyCategoriesCard type="expense" />
               ) : (
                 expenseCats.map((cat) => (
                   <BudgetSection
@@ -443,6 +458,7 @@ export function Budget() {
                     cats={[cat]}
                     plannedMap={mergedPlanned}
                     amountMap={spentMap}
+                    countMap={txnCountMap}
                     amountType="spent"
                     collapsed={collapsed}
                     onToggleCollapsed={toggleCollapsed}
@@ -467,6 +483,9 @@ export function Budget() {
                 onLiveCommit={commitPaydownOverride}
                 onLiveReset={resetPaydownOverride}
                 statuses={new Map((paydownSnapshot.data?.rows ?? []).map((row) => [row.accountId, paydownStatuses.get(draftKey(ym, row.accountId))]))}
+                loading={paydownSnapshot.isLoading && !paydownSnapshot.data}
+                error={paydownSnapshot.isError && !paydownSnapshot.data}
+                onRetry={() => void paydownSnapshot.refetch()}
               />
           </>
         </div>
@@ -532,6 +551,7 @@ interface BudgetSectionProps {
   cats: MainCategory[];
   plannedMap: Map<string, number>;
   amountMap: Map<string, number>;
+  countMap: Map<string, number>;
   amountType: 'earned' | 'spent';
   collapsed: Set<string>;
   onToggleCollapsed: (id: string) => void;
@@ -543,11 +563,24 @@ interface BudgetSectionProps {
   onOpenDrilldown: (selection: BudgetDrilldown) => void;
 }
 
+function EmptyCategoriesCard({ type }: { type: 'income' | 'expense' }) {
+  return (
+    <div className="card text-center text-sm fg-muted">
+      <BarChart3 className="mr-1 inline h-5 w-5 fg-muted" />
+      No {type} categories yet.{' '}
+      <Link to="/categories" className="font-medium text-amber-700 hover:underline dark:text-amber-300">
+        Add some on the Categories page.
+      </Link>
+    </div>
+  );
+}
+
 function BudgetSection({
   title,
   cats,
   plannedMap,
   amountMap,
+  countMap,
   amountType,
   collapsed,
   onToggleCollapsed,
@@ -619,6 +652,7 @@ function BudgetSection({
             {allSubs.map(({ sub, categoryName }, index) => {
               const planned = plannedMap.get(sub.id) ?? sub.planned;
               const amount = amountMap.get(actualKey(categoryName, sub.name)) ?? 0;
+              const txnCount = countMap.get(actualKey(categoryName, sub.name)) ?? 0;
               const status = statuses.get(draftKey(yearMonth, sub.id));
               const remaining = planned - amount;
               const showProgress = planned > 0;
@@ -636,9 +670,11 @@ function BudgetSection({
                       type="button"
                       onClick={() => onOpenDrilldown({ category: categoryName, subCategory: sub.name, type: isIncome ? 'income' : 'expense' })}
                       title={`View transactions for ${sub.name}`}
-                      className="inline-flex min-w-0 cursor-pointer items-center text-left text-sm font-medium fg-primary hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
+                      className="inline-flex min-w-0 cursor-pointer items-center gap-1 text-left text-sm font-medium fg-primary hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
                     >
                       <span className="truncate">{sub.name}</span>
+                      {txnCount > 0 && <span className="shrink-0 text-xs tabular-nums fg-muted">{txnCount}</span>}
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 fg-muted" aria-hidden="true" />
                     </button>
                     {isIncome ? (
                       <span className="text-sm font-semibold tabular-nums shrink-0 fg-primary">
@@ -684,7 +720,7 @@ function BudgetSection({
                           if (e.key === 'Enter') onLiveCommit(sub.id);
                           if (e.key === 'Escape') onLiveReset(sub.id);
                         }}
-                        className="w-20 text-right tabular-nums rounded border border-default bg-surface fg-primary px-1.5 py-1 text-xs focus:border-amber-500 focus:outline-none disabled:cursor-wait disabled:opacity-60"
+                        className={PLANNED_INPUT_CLS}
                       />
                       <CellFeedback status={status} onRetry={() => onLiveCommit(sub.id)} />
                     </div>
@@ -720,7 +756,6 @@ function BudgetSection({
           <table className="hidden sm:table w-full text-sm table-fixed">
             <colgroup>
               <col />
-              <col className="w-40" />
               <col className="w-32" />
               <col className="w-32" />
               {!isIncome && <col className="w-32" />}
@@ -728,7 +763,6 @@ function BudgetSection({
             <thead>
               <tr className="text-left text-xs uppercase fg-muted">
                 <th className="py-1">Sub-category</th>
-                <th className="py-1"></th>
                 <th className="py-1 text-right pl-6">Planned</th>
                 <th className="py-1 text-right pl-10">Actual</th>
                 {!isIncome && <th className="py-1 text-right pl-6">Remaining</th>}
@@ -738,6 +772,7 @@ function BudgetSection({
               {allSubs.map(({ sub, categoryName }, index) => {
                 const planned = plannedMap.get(sub.id) ?? sub.planned;
                 const amount = amountMap.get(actualKey(categoryName, sub.name)) ?? 0;
+                const txnCount = countMap.get(actualKey(categoryName, sub.name)) ?? 0;
                 const status = statuses.get(draftKey(yearMonth, sub.id));
                 const remaining = planned - amount;
                 const showProgress = planned > 0;
@@ -755,17 +790,17 @@ function BudgetSection({
                         type="button"
                         onClick={() => onOpenDrilldown({ category: categoryName, subCategory: sub.name, type: isIncome ? 'income' : 'expense' })}
                         title={`View transactions for ${sub.name}`}
-                        className="inline-flex cursor-pointer items-center text-left hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
+                        className="inline-flex max-w-full cursor-pointer items-center gap-1 text-left hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
                       >
-                        <span>{sub.name}</span>
+                        <span className="truncate">{sub.name}</span>
+                        {txnCount > 0 && <span className="shrink-0 text-xs tabular-nums fg-muted">{txnCount}</span>}
+                        <ChevronRight className="h-3.5 w-3.5 shrink-0 fg-muted" aria-hidden="true" />
                       </button>
-                    </td>
-                    <td className="py-2 pr-2">
                       {showProgress && (
                         <Progress
                           value={progressPct}
                           tone={isIncome ? 'emerald' : progressTone}
-                          className="w-full"
+                          className="mt-1.5 max-w-xs"
                         />
                       )}
                     </td>
@@ -789,7 +824,7 @@ function BudgetSection({
                           if (e.key === 'Enter') onLiveCommit(sub.id);
                           if (e.key === 'Escape') onLiveReset(sub.id);
                         }}
-                        className="w-28 text-right tabular-nums rounded border border-default bg-surface fg-primary px-2 py-1 text-sm focus:border-amber-500 focus:outline-none disabled:cursor-wait disabled:opacity-60"
+                        className={PLANNED_INPUT_CLS}
                       />
                       <CellFeedback status={status} onRetry={() => onLiveCommit(sub.id)} />
                     </td>
@@ -811,7 +846,6 @@ function BudgetSection({
               })}
               <tr>
                 <td className="py-2 font-semibold fg-primary">Total {title}</td>
-                <td className="py-2"></td>
                 <td className="py-2 text-right font-semibold tabular-nums fg-secondary pl-6">{formatMoney(totalPlanned)}</td>
                 <td className="py-2 text-right font-semibold tabular-nums fg-secondary pl-10">{formatMoney(totalAmount)}</td>
                 {!isIncome && (
