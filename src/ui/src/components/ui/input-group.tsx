@@ -42,7 +42,7 @@ export function InputGroup({
         // Visible border + background live on the wrapper so addons
         // and the input read as one control. The inner input strips its
         // own outline so focus-within can highlight this full wrapper.
-        'flex items-stretch w-full rounded-lg border border-default bg-surface',
+        'flex items-stretch w-full rounded-lg border border-control bg-surface',
         'transition-colors',
         'has-[>input:disabled]:opacity-50 has-[>input:disabled]:cursor-not-allowed',
         className,

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy } from 'lucide-react';
 import { signInEmail, fetchMe, SIGNOUT_FLAG_KEY } from '../lib/auth';
 import { api } from '../lib/api';
+import { AuthBrand, AuthError, AuthPage, AuthPanel, AuthTextField } from '../components/AuthScreen';
+import { AsyncQueryState } from '../components/ui/AsyncQueryState';
+import { Button } from '../components/ui/button';
 
 interface OidcProvider {
   providerId: string;
@@ -28,11 +30,12 @@ export function SignIn() {
   const [password, setPassword] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [oidcBusy, setOidcBusy] = useState<string | null>(null);
   // Read the "just signed out" flag from sessionStorage. When set, the
   // next OIDC click will include `prompt=login` so the IdP forces a
   // fresh login. We clear the flag on read so it only affects the
   // immediate post-signout attempt and not later visits to /sign-in.
-  const [fromSignOut, setFromSignOut] = useState<boolean>(() => {
+  const [fromSignOut] = useState<boolean>(() => {
     const flag = sessionStorage.getItem(SIGNOUT_FLAG_KEY);
     if (flag) {
       sessionStorage.removeItem(SIGNOUT_FLAG_KEY);
@@ -58,6 +61,13 @@ export function SignIn() {
     queryFn: () => api.get<AuthOptions>('/api/auth-app/auth-options'),
   });
 
+  useEffect(() => {
+    const creds = authOptions.data?.demoCredentials;
+    if (!authOptions.data?.demoMode || !creds) return;
+    setEmail((current) => current || creds.email);
+    setPassword((current) => current || creds.password);
+  }, [authOptions.data]);
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null);
@@ -77,6 +87,7 @@ export function SignIn() {
 
   const startOidc = async (providerId: string) => {
     setErr(null);
+    setOidcBusy(providerId);
     try {
       const body: Record<string, unknown> = { providerId, callbackURL };
       if (fromSignOut) {
@@ -89,8 +100,8 @@ export function SignIn() {
         body: JSON.stringify(body),
       });
       if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        throw new Error(body.error ?? `OIDC sign-in failed (${resp.status})`);
+        const failed = await resp.json().catch(() => ({}));
+        throw new Error(failed.error ?? `OIDC sign-in failed (${resp.status})`);
       }
       const data = (await resp.json()) as { url?: string; redirect?: boolean };
       if (data.url) {
@@ -100,70 +111,98 @@ export function SignIn() {
       }
     } catch (e) {
       setErr((e as Error).message);
+      setOidcBusy(null);
     }
   };
 
-  const oidcList = authOptions.data?.providers ?? [];
-  const localAuthDisabled = authOptions.data?.localAuthDisabled ?? false;
-  // We render the email/password form only when local auth is enabled.
-  // When it's disabled, the OIDC buttons (or a notice) take the full
-  // card so the user can't accidentally try to sign in locally.
-  const showLocalForm = !localAuthDisabled;
+  if (authOptions.isPending) {
+    return (
+      <AuthPage>
+        <AuthPanel>
+          <AuthBrand title="Cura Money" />
+          <AsyncQueryState
+            status="loading"
+            title="Loading sign-in…"
+            message="Checking how this instance is set up."
+          />
+        </AuthPanel>
+      </AuthPage>
+    );
+  }
+
+  if (authOptions.isError || !authOptions.data) {
+    return (
+      <AuthPage>
+        <AuthPanel>
+          <AuthBrand title="Cura Money" />
+          <AsyncQueryState
+            status="error"
+            title="Could not load sign-in"
+            message="Sign-in options could not be loaded. Check your connection and try again."
+            onRetry={() => void authOptions.refetch()}
+            retrying={authOptions.isFetching}
+          />
+        </AuthPanel>
+      </AuthPage>
+    );
+  }
+
+  const demoMode = authOptions.data.demoMode;
+  const oidcList = authOptions.data.providers;
+  const showLocalForm = !authOptions.data.localAuthDisabled;
+  const lockedOut = !showLocalForm && oidcList.length === 0;
+
+  let title = 'Sign in';
+  let subtitle: string | undefined = 'Use your Cura Money account.';
+  if (demoMode) {
+    title = 'Try Cura Money';
+    subtitle = undefined;
+  } else if (showLocalForm && oidcList.length > 0) {
+    subtitle = 'Use your email or identity provider.';
+  } else if (!showLocalForm && oidcList.length > 0) {
+    subtitle = 'Continue with your identity provider.';
+  } else if (lockedOut) {
+    subtitle = 'Sign-in is not available on this instance.';
+  }
 
   return (
-    <div className="h-full overflow-y-auto bg-page px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:flex sm:items-center sm:justify-center">
-      <div className="w-full max-w-sm card">
-        <div className="mb-6 flex flex-col items-center text-center">
-          <img src="/logo.png" alt="Cura Money" className="mb-3 h-14 w-14" />
-          <h1 className="text-2xl font-bold tracking-tight fg-primary">Welcome back</h1>
-          <p className="mt-1 text-sm fg-secondary">Sign in to Cura Money</p>
-        </div>
-
-        {authOptions.data?.demoMode && authOptions.data.demoCredentials && (
-          <div className="mb-4 rounded-lg border border-default bg-canvas-subtle p-3 text-sm">
-            <p className="font-semibold fg-primary">Sign in with the credentials below:</p>
-            <dl className="mt-3 space-y-2">
-              <DemoCredential label="Username" value={authOptions.data.demoCredentials.email} />
-              <DemoCredential label="Password" value={authOptions.data.demoCredentials.password} />
-            </dl>
-          </div>
-        )}
+    <AuthPage>
+      <AuthPanel>
+        <AuthBrand title={title} subtitle={subtitle} />
 
         {showLocalForm && (
           <form onSubmit={onSubmit} className="space-y-3">
-            <label className="block">
-              <span className="text-sm font-medium fg-secondary">Email</span>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-                required
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm font-medium fg-secondary">Password</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-                required
-              />
-            </label>
-            {err && <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p>}
-            <button type="submit" className="btn-primary w-full" disabled={busy}>
-              {busy ? 'Signing in…' : 'Sign in'}
+            <AuthTextField
+              label="Email"
+              type="email"
+              name="email"
+              value={email}
+              onChange={setEmail}
+              autoComplete="username"
+              disabled={busy}
+            />
+            <AuthTextField
+              label="Password"
+              type="password"
+              name="password"
+              value={password}
+              onChange={setPassword}
+              autoComplete="current-password"
+              disabled={busy}
+            />
+            {err && <AuthError message={err} />}
+            <button type="submit" className="btn-primary w-full" disabled={busy || !!oidcBusy}>
+              {busy ? (demoMode ? 'Entering…' : 'Signing in…') : demoMode ? 'Enter demo' : 'Sign in'}
             </button>
           </form>
         )}
 
-        {!showLocalForm && oidcList.length === 0 && (
-          <div className="rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/30 p-3 text-sm">
+        {lockedOut && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-900/30">
             <p className="font-medium text-amber-900 dark:text-amber-200">
               Local sign-in is disabled
             </p>
-            <p className="text-amber-800 dark:text-amber-300 mt-1">
+            <p className="mt-1 text-amber-800 dark:text-amber-300">
               An admin has turned off email/password sign-in. Ask them to
               add an OIDC provider in Settings → Authentication, or to
               re-enable local sign-in.
@@ -171,80 +210,36 @@ export function SignIn() {
           </div>
         )}
 
+        {!showLocalForm && err && <AuthError message={err} />}
+
         {oidcList.length > 0 && (
-          <>
+          <div className={showLocalForm ? 'mt-4' : undefined}>
             {showLocalForm && (
-              <div className="flex items-center gap-3 my-3">
-                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
-                <span className="text-xs uppercase tracking-wider fg-muted">or</span>
-                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+              <div className="mb-4 flex items-center gap-3">
+                <div className="h-px flex-1 border-t border-default" />
+                <span className="text-xs fg-muted">or</span>
+                <div className="h-px flex-1 border-t border-default" />
               </div>
             )}
             <div className="space-y-2">
-              {oidcList.map((p) => (
-                <button
-                  key={p.providerId}
+              {oidcList.map((provider) => (
+                <Button
+                  key={provider.providerId}
                   type="button"
-                  onClick={() => startOidc(p.providerId)}
-                  className="w-full flex items-center justify-center gap-2 rounded-lg border border-default bg-surface fg-primary hover:bg-slate-50 dark:hover:bg-slate-600 px-3 py-2 text-sm font-medium"
+                  variant={showLocalForm ? 'outline' : 'default'}
+                  className="w-full"
+                  disabled={busy || !!oidcBusy}
+                  onClick={() => void startOidc(provider.providerId)}
                 >
-                  <span>Sign in with OIDC</span>
-                </button>
+                  {oidcBusy === provider.providerId
+                    ? `Continuing with ${provider.displayName}…`
+                    : `Sign in with ${provider.displayName}`}
+                </Button>
               ))}
             </div>
-          </>
+          </div>
         )}
-
-        {showLocalForm && oidcList.length === 0 && !authOptions.data?.demoMode && (
-          <p className="mt-3 text-xs fg-muted text-center">
-            OIDC sign-in is configured? It will appear here once an admin
-            enables it from the IdP link.
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function DemoCredential({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      const textarea = document.createElement('textarea');
-      textarea.value = value;
-      textarea.style.position = 'fixed';
-      textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-    }
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
-  };
-
-  return (
-    <div>
-      <dt className="mb-1 text-xs fg-muted">{label}</dt>
-      <dd className="flex overflow-hidden rounded-lg border border-default bg-surface">
-        <code className="min-w-0 flex-1 overflow-x-auto px-3 py-2 font-mono font-medium fg-primary">
-          {value}
-        </code>
-        <button
-          type="button"
-          onClick={copy}
-          className="flex w-11 shrink-0 items-center justify-center border-l border-default fg-tertiary hover:bg-slate-100 hover:fg-primary dark:hover:bg-slate-700"
-          title={copied ? 'Copied!' : `Copy ${label.toLowerCase()}`}
-          aria-label={`Copy ${label.toLowerCase()} to clipboard`}
-        >
-          {copied
-            ? <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            : <Copy className="h-4 w-4" />}
-        </button>
-      </dd>
-    </div>
+      </AuthPanel>
+    </AuthPage>
   );
 }
