@@ -27,7 +27,8 @@ import {
   Pencil,
   Trash2,
   Target,
-  Wallet,
+  WalletCards,
+  Link,
   Link2Off,
   Trophy,
   Sparkles,
@@ -121,6 +122,18 @@ export function SaveUp() {
         dollar in counts toward your target.
       </p>
 
+      {accList.length === 0 && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200" role="status">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-semibold">A savings goal needs an eligible account</p>
+            <p className="mt-0.5 text-xs">
+              Add a cash, checking, savings, or investment account from Accounts, then return here to track its balance.
+            </p>
+          </div>
+        </div>
+      )}
+
       {list.length > 0 && (
         <div className="flex items-center gap-3 rounded-lg border border-default bg-canvas-subtle px-4 py-3">
           <div className={clsx(
@@ -147,9 +160,23 @@ export function SaveUp() {
       )}
 
       {list.length === 0 ? (
-        <div className="card text-sm fg-muted text-center">
-          <PiggyBank className="h-5 w-5 inline mr-1 fg-muted" />
-          No goals yet. Click <span className="font-semibold">New goal</span> to save up for something.
+        <div className="card flex flex-col items-center py-10 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+            <PiggyBank className="h-6 w-6" aria-hidden="true" />
+          </span>
+          <h2 className="mt-4 text-base font-semibold fg-primary">Start with one goal</h2>
+          <p className="mt-1 max-w-sm text-sm fg-secondary">
+            Choose what you're saving for and link the account whose balance should count toward it.
+          </p>
+          {accList.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setCreatingNew(true)}
+              className="btn-primary mt-5 flex items-center gap-2"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" /> Create your first goal
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-6">
@@ -234,7 +261,7 @@ function GoalGroup({
             key={goal.id}
             goal={goal}
             index={index}
-            sharesAccount={allGoals.some((other) => other.id !== goal.id && other.accountId === goal.accountId)}
+            sharedGoalCount={allGoals.filter((other) => other.id !== goal.id && other.accountId === goal.accountId).length}
             onOpen={() => onOpen(goal.id)}
           />
         ))}
@@ -246,12 +273,12 @@ function GoalGroup({
 function GoalCard({
   goal,
   index,
-  sharesAccount,
+  sharedGoalCount,
   onOpen,
 }: {
   goal: Goal;
   index: number;
-  sharesAccount: boolean;
+  sharedGoalCount: number;
   onOpen: () => void;
 }) {
   const reduceMotion = useReducedMotion();
@@ -325,31 +352,44 @@ function GoalCard({
               </span>
             )}
           </div>
-          <div className="mt-1 flex items-center gap-1 text-xs fg-muted">
-            <Wallet className="h-3 w-3" />
-            {goal.accountName ?? (
-              <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400">
-                <Link2Off className="h-3 w-3" /> Account removed
-              </span>
-            )}
-            {sharesAccount && goal.accountId && (
-              <span title="This account's full balance counts toward more than one goal">· Shared account</span>
-            )}
-          </div>
         </div>
-        <Pencil className="h-3.5 w-3.5 shrink-0 text-slate-500 transition-colors group-hover:text-amber-700 dark:text-slate-400 dark:group-hover:text-amber-300" />
+        <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium fg-secondary transition-colors group-hover:text-amber-700 dark:group-hover:text-amber-300">
+          <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Manage
+        </span>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs fg-muted">
+        {goal.accountName ? (
+          <span className="inline-flex min-w-0 items-center gap-1">
+            <WalletCards className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate">{goal.accountName}</span>
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 font-medium text-rose-600 dark:text-rose-400">
+            <Link2Off className="h-3.5 w-3.5" aria-hidden="true" /> Account removed
+          </span>
+        )}
+        {sharedGoalCount > 0 && goal.accountId && (
+          <span className="inline-flex items-center gap-1 text-sky-700 dark:text-sky-300">
+            <Link className="h-3.5 w-3.5" aria-hidden="true" />
+            Shared with {sharedGoalCount} other {sharedGoalCount === 1 ? 'goal' : 'goals'}
+          </span>
+        )}
       </div>
 
       <div className="mt-4 flex items-end justify-between gap-3 tabular-nums">
         <div>
-          <div className={clsx('text-sm font-bold', reached ? 'text-emerald-600 dark:text-emerald-300' : 'fg-primary')}>
+          <div className={clsx('text-xs font-semibold', reached ? 'text-emerald-600 dark:text-emerald-300' : 'fg-secondary')}>
             {goalStatusLabel(pct, reached)}
           </div>
-          <div className="text-lg font-bold fg-primary">{formatMoney(current)}</div>
+          <div className="mt-0.5 text-2xl font-bold fg-primary">
+            {formatMoney(hasAccount ? (reached ? current : remaining) : goal.target)}
+          </div>
+          <div className="text-xs fg-muted">{reached ? 'saved' : hasAccount ? 'remaining' : 'target'}</div>
         </div>
         <div className="text-right">
           <AnimatedPercentage value={pct} reached={reached} />
-          <div className="text-xs fg-muted">of {formatMoney(goal.target)}</div>
+          <div className="text-xs fg-muted">complete</div>
         </div>
       </div>
 
@@ -363,21 +403,21 @@ function GoalCard({
 
       {hasAccount && (
         <div className="mt-3 flex items-start justify-between gap-3 text-xs tabular-nums">
-          <div className={reached ? 'font-medium text-emerald-600 dark:text-emerald-300' : 'fg-secondary'}>
+          <div className="fg-secondary">
+            {reached ? `Target ${formatMoney(goal.target)}` : `${formatMoney(current)} saved of ${formatMoney(goal.target)}`}
+          </div>
+          <div className="text-right fg-muted">
             {reached
               ? current > goal.target
                 ? `${formatMoney(current - goal.target)} ahead of goal`
-                : 'You fully funded this goal'
-              : `${formatMoney(remaining)} to go`}
-          </div>
-          <div className="text-right fg-muted">
-            {gained > 0
-              ? `+${formatMoney(gained)} since your start`
-              : gained < 0
-                ? `${formatMoney(Math.abs(gained))} below your start`
-                : nextMilestone
-                  ? `${formatMoney(milestoneAmount)} to ${nextMilestone}%`
-                  : null}
+                : 'Fully funded'
+              : gained > 0
+                ? `+${formatMoney(gained)} since your start`
+                : gained < 0
+                  ? `${formatMoney(Math.abs(gained))} below your start`
+                  : nextMilestone
+                    ? `${formatMoney(milestoneAmount)} to ${nextMilestone}%`
+                    : null}
           </div>
         </div>
       )}
@@ -570,6 +610,12 @@ function GoalModal({
             <span className="text-[10px] fg-muted">
               The account whose balance drives the progress bar.
             </span>
+            {accounts.length === 0 && (
+              <span className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                No eligible accounts are available. Add one from Accounts before saving this goal.
+              </span>
+            )}
             {sharedWith.length > 0 && (
               <span className="mt-2 flex items-start gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-700 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />

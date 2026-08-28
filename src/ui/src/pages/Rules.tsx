@@ -8,7 +8,7 @@
  */
 import { useDeferredValue, useEffect, useState } from 'react';
 import { useQuery, useQueryClient, useMutation, type QueryClient } from '@tanstack/react-query';
-import { ArrowRight, Plus, Play, Trash2, Pencil, AlertTriangle, Check, X, Search } from 'lucide-react';
+import { ArrowRight, Plus, Play, Trash2, Pencil, AlertTriangle, Check, X, Search, ListFilter, EllipsisVertical } from 'lucide-react';
 import { api } from '../lib/api';
 import {
   RuleFormModal,
@@ -101,6 +101,10 @@ export function Rules() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [accountFilter, setAccountFilter] = useState('all');
+  const [sourceTypeFilter, setSourceTypeFilter] = useState<'all' | RuleTxType>('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [confirmation, setConfirmation] = useState<
     | { kind: 'delete'; rule: Rule }
     | { kind: 'run'; rule: Rule }
@@ -223,9 +227,15 @@ export function Rules() {
 
   const anyRunPending = runRule.isPending || runAllRules.isPending;
   const hasRules = (rules.data?.length ?? 0) > 0;
-  const filteredRules = (rules.data ?? []).filter((rule) =>
-    ruleMatchesSearch(rule, deferredSearch, rule.accountId ? accountNames.get(rule.accountId) : undefined),
-  );
+  const activeFilterCount = [accountFilter, sourceTypeFilter, categoryFilter].filter((value) => value !== 'all').length;
+  const filteredRules = (rules.data ?? []).filter((rule) => {
+    if (!ruleMatchesSearch(rule, deferredSearch, rule.accountId ? accountNames.get(rule.accountId) : undefined)) return false;
+    if (accountFilter === 'any' && rule.accountId) return false;
+    if (accountFilter !== 'all' && accountFilter !== 'any' && rule.accountId !== accountFilter) return false;
+    if (sourceTypeFilter !== 'all' && rule.sourceType !== sourceTypeFilter) return false;
+    if (categoryFilter !== 'all' && rule.category !== categoryFilter) return false;
+    return true;
+  });
   const totalPages = Math.max(1, Math.ceil(filteredRules.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pagedRules = filteredRules.slice(
@@ -319,104 +329,183 @@ export function Rules() {
            </div>
          ) : (
           <>
-            <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-baseline gap-2">
                 <h2 className="text-lg font-semibold fg-primary">All rules</h2>
                 <span className="text-xs fg-muted tabular-nums">
-                  {filteredRules.length.toLocaleString()} match{filteredRules.length === 1 ? '' : 'es'}
+                  {filteredRules.length.toLocaleString()} of {(rules.data?.length ?? 0).toLocaleString()}
                 </span>
               </div>
-              <InputGroup className="min-h-11 min-w-0 md:min-h-0 w-full md:max-w-xs">
-                <InputGroupAddon aria-hidden="true">
-                  <Search className="h-4 w-4" />
-                </InputGroupAddon>
-                <InputGroupInput
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value);
-                    setPage(1);
-                  }}
-                  placeholder="Search merchants, categories…"
-                  aria-label="Search rules"
-                />
-              </InputGroup>
+              <div className="flex w-full min-w-0 items-center gap-2 md:w-auto">
+                <InputGroup className="min-h-11 min-w-0 flex-1 md:min-h-0 md:w-72">
+                  <InputGroupAddon aria-hidden="true">
+                    <Search className="h-4 w-4" />
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    value={search}
+                    onChange={(event) => {
+                      setSearch(event.target.value);
+                      setPage(1);
+                    }}
+                    placeholder="Search rules…"
+                    aria-label="Search rules"
+                  />
+                </InputGroup>
+                <button
+                  type="button"
+                  onClick={() => setFiltersOpen((value) => !value)}
+                  aria-expanded={filtersOpen}
+                  aria-controls="rule-filters"
+                  className={clsx(
+                    'inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm font-medium md:min-h-9',
+                    filtersOpen || activeFilterCount > 0
+                      ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                      : 'border-default bg-surface fg-secondary hover:bg-canvas-subtle',
+                  )}
+                >
+                  <ListFilter className="h-4 w-4" aria-hidden="true" />
+                  Filters{activeFilterCount > 0 ? ` · ${activeFilterCount}` : ''}
+                </button>
+              </div>
             </div>
+
+            {filtersOpen && (
+              <div id="rule-filters" className="mb-4 grid gap-3 rounded-xl border border-default bg-canvas-subtle p-3 sm:grid-cols-3">
+                <label className="text-xs font-medium fg-secondary">
+                  Account scope
+                  <select
+                    value={accountFilter}
+                    onChange={(event) => { setAccountFilter(event.target.value); setPage(1); }}
+                    className="mt-1 min-h-11 w-full rounded-lg border border-control bg-surface px-3 text-sm fg-primary"
+                  >
+                    <option value="all">All account scopes</option>
+                    <option value="any">Any account only</option>
+                    {ruleFormAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                  </select>
+                </label>
+                <label className="text-xs font-medium fg-secondary">
+                  Original type
+                  <select
+                    value={sourceTypeFilter}
+                    onChange={(event) => { setSourceTypeFilter(event.target.value as 'all' | RuleTxType); setPage(1); }}
+                    className="mt-1 min-h-11 w-full rounded-lg border border-control bg-surface px-3 text-sm fg-primary"
+                  >
+                    <option value="all">All original types</option>
+                    {(Object.keys(RULE_TYPE_LABEL) as RuleTxType[]).map((type) => <option key={type} value={type}>{RULE_TYPE_LABEL[type]}</option>)}
+                  </select>
+                </label>
+                <label className="text-xs font-medium fg-secondary">
+                  Result category
+                  <select
+                    value={categoryFilter}
+                    onChange={(event) => { setCategoryFilter(event.target.value); setPage(1); }}
+                    className="mt-1 min-h-11 w-full rounded-lg border border-control bg-surface px-3 text-sm fg-primary"
+                  >
+                    <option value="all">All result categories</option>
+                    {ruleFormCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}
+                  </select>
+                </label>
+                {activeFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountFilter('all');
+                      setSourceTypeFilter('all');
+                      setCategoryFilter('all');
+                      setPage(1);
+                    }}
+                    className="justify-self-start text-xs font-semibold text-amber-700 hover:underline dark:text-amber-300 sm:col-span-3"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            )}
 
             {filteredRules.length === 0 ? (
               <div className="py-10 text-center text-sm fg-muted">
-                No rules match your search.
+                No rules match your search or filters.
               </div>
             ) : (
               <ul className="divide-y divide-slate-100 dark:divide-slate-700">
                 {pagedRules.map((r) => (
-              <li key={r.id} className="py-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm fg-primary truncate">{r.matchValue}</div>
-                    <div className="text-xs fg-muted mt-0.5 flex items-center gap-1 flex-wrap">
-                      <span className="font-medium fg-tertiary">When</span>
-                      <span>{r.accountId ? accountNames.get(r.accountId) ?? 'Unknown account' : 'Any account'}</span>
-                      <span>·</span>
-                      <span>{r.sourceType ? RULE_TYPE_LABEL[r.sourceType] : 'Any type'}</span>
-                      <span>·</span>
-                      <span>
-                        {r.sourceCategory
-                          ? `${r.sourceCategory}${r.sourceSubCategory ? ` › ${r.sourceSubCategory}` : ''}`
-                          : 'Any category'}
-                      </span>
+                  <li key={r.id} className="py-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                      <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide fg-muted">When</p>
+                          <p className="mt-0.5 truncate text-sm font-semibold fg-primary">{r.matchValue}</p>
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            <span className="rounded-md border border-default bg-canvas-subtle px-1.5 py-0.5 text-[11px] fg-secondary">
+                              {r.accountId ? accountNames.get(r.accountId) ?? 'Unknown account' : 'Any account'}
+                            </span>
+                            <span className="rounded-md border border-default bg-canvas-subtle px-1.5 py-0.5 text-[11px] fg-secondary">
+                              {r.sourceType ? RULE_TYPE_LABEL[r.sourceType] : 'Any type'}
+                            </span>
+                            <span className="max-w-full truncate rounded-md border border-default bg-canvas-subtle px-1.5 py-0.5 text-[11px] fg-secondary">
+                              {r.sourceCategory
+                                ? `${r.sourceCategory}${r.sourceSubCategory ? ` › ${r.sourceSubCategory}` : ''}`
+                                : 'Any category'}
+                            </span>
+                          </div>
+                        </div>
+                        <ArrowRight className="h-4 w-4 rotate-90 justify-self-center fg-muted sm:rotate-0" aria-hidden="true" />
+                        <div className="min-w-0 rounded-lg bg-canvas-subtle px-3 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide fg-muted">Then set</p>
+                          <p className="mt-0.5 truncate text-sm font-semibold fg-primary">
+                            {r.category}{r.subCategory ? ` › ${r.subCategory}` : ''}
+                          </p>
+                          <p className="mt-1 text-xs fg-muted">{r.type ? RULE_TYPE_LABEL[r.type] : 'Keep transaction type'}</p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmation({ kind: 'run', rule: r })}
+                          disabled={anyRunPending}
+                          title="Re-apply this rule to every existing matching transaction"
+                          className={clsx(
+                            'inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-xs font-medium',
+                            'bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+                            'dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50',
+                            'disabled:cursor-not-allowed disabled:opacity-50',
+                          )}
+                        >
+                          <Play className="h-3.5 w-3.5" aria-hidden="true" />
+                          {runRule.isPending && runRule.variables === r.id ? 'Running…' : 'Run'}
+                        </button>
+                        <details name="rule-actions" className="relative">
+                          <summary className="close-button flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg [&::-webkit-details-marker]:hidden" aria-label={`Actions for ${r.matchValue}`}>
+                            <EllipsisVertical className="h-5 w-5" aria-hidden="true" />
+                          </summary>
+                          <div className="absolute right-0 z-30 mt-1 min-w-44 rounded-lg border border-default bg-surface p-1 shadow-xl">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.currentTarget.closest('details')?.removeAttribute('open');
+                                setModal({ mode: 'edit', rule: r });
+                              }}
+                              disabled={cats.isLoading || accounts.isLoading || cats.isError || accounts.isError}
+                              className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm disabled:opacity-50"
+                            >
+                              <Pencil className="h-4 w-4" aria-hidden="true" /> Edit rule
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.currentTarget.closest('details')?.removeAttribute('open');
+                                setConfirmation({ kind: 'delete', rule: r });
+                              }}
+                              disabled={deleteRule.isPending}
+                              className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-400 dark:hover:bg-rose-900/30"
+                            >
+                              <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete rule
+                            </button>
+                          </div>
+                        </details>
+                      </div>
                     </div>
-                    <div className="text-xs fg-muted mt-0.5 flex items-center gap-1 flex-wrap">
-                      <ArrowRight className="h-3 w-3 shrink-0" />
-                      <span className="fg-secondary">
-                        {r.type ? (
-                          <span className="fg-tertiary">{RULE_TYPE_LABEL[r.type]} · </span>
-                        ) : null}
-                        {r.category}
-                        {r.subCategory ? (
-                          <>
-                            {' › '}
-                            <span className="fg-tertiary">{r.subCategory}</span>
-                          </>
-                        ) : null}
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmation({ kind: 'run', rule: r })}
-                    disabled={anyRunPending}
-                    title="Re-apply this rule to every existing matching transaction"
-                    className={clsx(
-                      'inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium',
-                      'bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
-                      'dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50',
-                      'disabled:opacity-50 disabled:cursor-not-allowed',
-                      'transition-colors',
-                    )}
-                  >
-                    <Play className="h-3.5 w-3.5" />
-                    {runRule.isPending && runRule.variables === r.id ? 'Running…' : 'Run'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setModal({ mode: 'edit', rule: r })}
-                    disabled={cats.isLoading || accounts.isLoading || cats.isError || accounts.isError}
-                    title="Edit rule"
-                    className="edit-icon-button rounded p-1.5 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmation({ kind: 'delete', rule: r })}
-                    disabled={deleteRule.isPending}
-                    title="Delete rule"
-                    className="fg-muted hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded p-1.5 disabled:opacity-50"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </li>
+                  </li>
                 ))}
               </ul>
             )}

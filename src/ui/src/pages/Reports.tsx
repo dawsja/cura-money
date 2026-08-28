@@ -45,7 +45,7 @@ import { MonthPicker } from '../components/MonthPicker';
 import { SummaryCard } from '../components/SummaryCard';
 import { SortableWidgetList } from '../components/SortableWidgetList';
 import clsx from 'clsx';
-import { AlertCircle, Archive, Download, FileSpreadsheet, Wallet, TrendingUp, TrendingDown, Receipt, Check, Pencil, X } from 'lucide-react';
+import { AlertCircle, Archive, Download, FileSpreadsheet, Wallet, TrendingUp, TrendingDown, Receipt, Check, Pencil, X, ChartNoAxesColumnIncreasing } from 'lucide-react';
 
 type Range = '1m' | '3m' | '6m' | '1y' | 'all';
 const RANGE_OPTIONS: { value: Range; label: string }[] = [
@@ -240,18 +240,27 @@ export function Reports() {
         return <WidgetError message="Could not load the report summary." onRetry={() => void Promise.all([cashFlow.refetch(), netWorth.refetch()])} />;
       }
       return (
-        <div className="summary-scroll grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <SummaryCard icon={<TrendingUp className="h-4 w-4" />} label="Income" sub="Over this range" tone="emerald" value={formatMoney(totalIncome)} />
-          <SummaryCard icon={<TrendingDown className="h-4 w-4" />} label="Spending" sub="Out-of-pocket" tone="rose" value={formatMoney(totalExpense)} />
-          <SummaryCard icon={<Receipt className="h-4 w-4" />} label="Net cash flow" sub={totalNet >= 0 ? 'Saved' : 'Overspent'} tone={totalNet >= 0 ? 'emerald' : 'rose'} value={`${totalNet >= 0 ? '+' : '−'}${formatMoney(Math.abs(totalNet))}`} />
-          <SummaryCard icon={<Wallet className="h-4 w-4" />} label="Estimated net worth" sub={`${netWorthDelta >= 0 ? '+' : '−'}${formatMoney(Math.abs(netWorthDelta))} reconstructed change`} value={formatMoney(latestNetWorth)} tone={latestNetWorth >= 0 ? 'slate' : 'rose'} />
-        </div>
+        <section>
+          <div className="mb-3 flex items-center gap-2">
+            <ChartNoAxesColumnIncreasing className="h-4 w-4 text-amber-700 dark:text-amber-300" aria-hidden="true" />
+            <div>
+              <h2 className="text-sm font-semibold fg-primary">Financial snapshot</h2>
+              <p className="text-xs fg-muted">Key totals for the selected report range</p>
+            </div>
+          </div>
+          <div className="summary-scroll grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <SummaryCard icon={<TrendingUp className="h-4 w-4" />} label="Income" sub="Over this range" tone="emerald" value={formatMoney(totalIncome)} />
+            <SummaryCard icon={<TrendingDown className="h-4 w-4" />} label="Spending" sub="Out-of-pocket" tone="rose" value={formatMoney(totalExpense)} />
+            <SummaryCard icon={<Receipt className="h-4 w-4" />} label="Net cash flow" sub={totalNet >= 0 ? 'Saved' : 'Overspent'} tone={totalNet >= 0 ? 'emerald' : 'rose'} value={`${totalNet >= 0 ? '+' : '−'}${formatMoney(Math.abs(totalNet))}`} />
+            <SummaryCard icon={<Wallet className="h-4 w-4" />} label="Estimated net worth" sub={`${netWorthDelta >= 0 ? '+' : '−'}${formatMoney(Math.abs(netWorthDelta))} reconstructed change`} value={formatMoney(latestNetWorth)} tone={latestNetWorth >= 0 ? 'slate' : 'rose'} />
+          </div>
+        </section>
       );
     }
     if (widget === 'cash-flow') {
       return (
         <section className="card flex-1">
-          <ChartHeader title="Cash flow over time" subtitle="Income vs. expense, by month" />
+          <ChartHeader eyebrow="Overview" title="Cash flow over time" subtitle="Income vs. expense, by month" />
           <CashFlowChart data={cashFlow.data ?? []} loading={cashFlow.isPending} error={cashFlow.isError} onRetry={() => void cashFlow.refetch()} onDrilldown={drilldown} />
         </section>
       );
@@ -259,7 +268,7 @@ export function Reports() {
     if (widget === 'net-worth') {
       return (
         <section className="card flex-1">
-          <ChartHeader title="Estimated net worth over time" subtitle="Reconstructed from today’s account balances by reversing monthly income and spending; not historical balance snapshots" />
+          <ChartHeader eyebrow="Wealth" title="Estimated net worth over time" subtitle="Reconstructed from today’s account balances by reversing monthly income and spending; not historical balance snapshots" />
           <NetWorthChart data={netWorth.data ?? []} loading={netWorth.isPending} error={netWorth.isError} onRetry={() => void netWorth.refetch()} />
         </section>
       );
@@ -267,7 +276,7 @@ export function Reports() {
     if (widget === 'spending-by-category') {
       return (
         <section className="card flex-1">
-          <ChartHeader title="Spending by category" subtitle={spending.data ? `${monthYear(spendingMonth)} — ${formatMoney(spendingTotal)} total` : monthYear(spendingMonth)} right={<MonthPicker value={spendingMonth} onChange={setSpendingMonth} />} />
+          <ChartHeader eyebrow="Spending" title="Spending by category" subtitle={spending.data ? `${monthYear(spendingMonth)} — ${formatMoney(spendingTotal)} total` : monthYear(spendingMonth)} right={<MonthPicker value={spendingMonth} onChange={setSpendingMonth} />} />
           <SpendingDonut data={spending.data ?? []} loading={spending.isPending} error={spending.isError} onRetry={() => void spending.refetch()} month={spendingMonth} onDrilldown={drilldown} />
         </section>
       );
@@ -275,7 +284,7 @@ export function Reports() {
     if (widget === 'top-merchants') {
       return (
         <section className="card flex-1">
-          <ChartHeader title="Top merchants" subtitle="Where the most money went" />
+          <ChartHeader eyebrow="Spending" title="Top merchants" subtitle="Where the most money went" />
           <TopMerchantsChart data={topMerchants.data ?? []} loading={topMerchants.isPending} error={topMerchants.isError} onRetry={() => void topMerchants.refetch()} bounds={rangeBounds} onDrilldown={drilldown} />
         </section>
       );
@@ -283,14 +292,14 @@ export function Reports() {
     if (widget === 'spending-trends') {
       return (
         <section className="card flex-1">
-          <ChartHeader title="Spending trends by category" subtitle="How your largest expense categories change over time" />
+          <ChartHeader eyebrow="Spending" title="Spending trends by category" subtitle="How your largest expense categories change over time" />
           <SpendingTrendsChart data={spendingTrends.data} loading={spendingTrends.isPending} error={spendingTrends.isError} onRetry={() => void spendingTrends.refetch()} onDrilldown={drilldown} />
         </section>
       );
     }
     return (
       <section className="card flex-1">
-        <ChartHeader title="Monthly spending pace" subtitle={`${monthYear(spendingMonth)} compared with ${spendingPace.data ? monthYear(spendingPace.data.previousMonth) : 'the prior month'}`} right={<MonthPicker value={spendingMonth} onChange={setSpendingMonth} />} />
+        <ChartHeader eyebrow="Spending" title="Monthly spending pace" subtitle={`${monthYear(spendingMonth)} compared with ${spendingPace.data ? monthYear(spendingPace.data.previousMonth) : 'the prior month'}`} right={<MonthPicker value={spendingMonth} onChange={setSpendingMonth} />} />
         <SpendingPaceChart data={spendingPace.data} loading={spendingPace.isPending} error={spendingPace.isError} onRetry={() => void spendingPace.refetch()} onDrilldown={drilldown} />
       </section>
     );
@@ -310,28 +319,37 @@ export function Reports() {
 
   return (
     <div className="space-y-6">
-      <div data-onboarding-target="reports-header" className="flex items-start justify-between gap-3 flex-wrap">
+      <div data-onboarding-target="reports-header">
         <div>
-          <div className="flex items-center">
-            <h1 className="text-2xl font-bold fg-primary">Reports</h1>
-            {!editing && (
-              <button type="button" onClick={startEditing} disabled={!layout.data} className="edit-icon-button inline-flex h-11 w-11 items-center justify-center rounded-lg disabled:cursor-wait disabled:opacity-50" aria-label="Edit reports layout" title="Edit reports layout">
-                <Pencil className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+          <h1 className="text-2xl font-bold fg-primary">Reports</h1>
           <p className="text-sm fg-tertiary mt-1">Trends, breakdowns, and comparisons across your money. Transfers are excluded from every chart.</p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+      </div>
+
+      <section className="rounded-xl border border-default bg-surface p-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div className="min-w-0 flex-1">
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide fg-muted">Report range</p>
+            <RangeSelector value={range} onChange={setRange} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 md:justify-end">
           {!editing && (
             <button
               type="button"
               onClick={() => setExportOpen(true)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-default bg-surface fg-secondary hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
-              aria-label="Export data"
-              title="Export data"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-default bg-surface px-3 text-sm font-medium fg-secondary hover:border-amber-500 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
             >
-              <Download className="h-4 w-4" />
+              <Download className="h-4 w-4" aria-hidden="true" /> Export data
+            </button>
+          )}
+          {!editing && (
+            <button
+              type="button"
+              onClick={startEditing}
+              disabled={!layout.data}
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-default bg-surface px-3 text-sm font-medium fg-secondary hover:border-amber-500 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-wait disabled:opacity-50 dark:hover:text-amber-300"
+            >
+              <Pencil className="h-4 w-4" aria-hidden="true" /> Customize reports
             </button>
           )}
           {editing && (
@@ -344,12 +362,10 @@ export function Reports() {
               </button>
             </>
           )}
-          <div className="flex w-full flex-col items-end gap-1 md:w-auto">
-            <RangeSelector value={range} onChange={setRange} />
-            {range === 'all' && <p className="max-w-sm text-right text-xs fg-muted">All-range drilldowns begin at the first displayed report month because reports do not expose the exact first transaction date.</p>}
           </div>
         </div>
-      </div>
+        {range === 'all' && <p className="mt-2 text-xs fg-muted">All-range drilldowns begin at the first displayed report month because reports do not expose the exact first transaction date.</p>}
+      </section>
       {layout.isError && (
         <p className="text-sm text-rose-600 dark:text-rose-400">
           Could not load the reports layout.{' '}
@@ -482,10 +498,12 @@ function RangeSelector({ value, onChange }: { value: Range; onChange: (r: Range)
 }
 
 function ChartHeader({
+  eyebrow,
   title,
   subtitle,
   right,
 }: {
+  eyebrow?: string;
   title: string;
   subtitle?: string;
   right?: React.ReactNode;
@@ -493,6 +511,7 @@ function ChartHeader({
   return (
     <div className="flex items-start justify-between gap-3 mb-4">
       <div>
+        {eyebrow && <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">{eyebrow}</p>}
         <h2 className="text-lg font-semibold fg-primary">{title}</h2>
         {subtitle && <p className="text-xs fg-muted mt-0.5">{subtitle}</p>}
       </div>

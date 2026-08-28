@@ -11,7 +11,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { currencySymbol, formatMoney, formatDate, todayLocalISO } from '../lib/format';
-import { RefreshCw, AlertCircle, Calendar, CreditCard, Tag, X, Plus, Pencil, Trash2, Check } from 'lucide-react';
+import { RefreshCw, AlertCircle, CalendarDays, CreditCard, Tag, X, Plus, Pencil, Trash2, Check, Ellipsis } from 'lucide-react';
 import clsx from 'clsx';
 import { Dialog } from '../components/ui/dialog';
 
@@ -72,6 +72,13 @@ function annualCost(c: RecurringCharge): number {
 
 function recurringKey(merchant: string, account: string): string {
   return `${merchant.toLowerCase()}|${account.toLowerCase()}`;
+}
+
+function daysLabel(days: number): string {
+  if (days < 0) return `${Math.abs(days)}d overdue`;
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  return `In ${days} days`;
 }
 
 export function Recurring() {
@@ -137,6 +144,20 @@ export function Recurring() {
     if (a.comingSoon && b.comingSoon) return a.daysUntil - b.daysUntil;
     return 0;
   }) : undefined;
+  const chargeSections = sortedCharges ? [
+    {
+      id: 'due-soon',
+      title: 'Due soon',
+      description: 'Charges approaching their expected date',
+      charges: sortedCharges.filter((charge) => charge.comingSoon),
+    },
+    {
+      id: 'later',
+      title: 'Later',
+      description: 'The rest of your recurring schedule',
+      charges: sortedCharges.filter((charge) => !charge.comingSoon),
+    },
+  ].filter((section) => section.charges.length > 0) : [];
 
   if (isLoading) {
     return (
@@ -185,18 +206,26 @@ export function Recurring() {
       )}
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="rounded-xl bg-surface border border-default p-4">
-          <p className="text-xs font-medium fg-tertiary uppercase tracking-wide">Monthly Total</p>
-          <p className="text-xl font-semibold fg-primary mt-1">{formatMoney(monthlyTotal)}</p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(12rem,1fr)]">
+        <div className="rounded-xl bg-surface border border-default p-4 sm:p-5">
+          <p className="text-xs font-medium fg-tertiary uppercase tracking-wide">Recurring spend</p>
+          <div className="mt-2 flex items-end gap-3">
+            <p className="text-2xl font-bold fg-primary tabular-nums">{formatMoney(monthlyTotal)}</p>
+            <p className="pb-0.5 text-sm fg-secondary">per month</p>
+          </div>
+          <p className="mt-1 text-xs fg-tertiary">
+            {formatMoney(yearlyEstimate)} estimated per year
+          </p>
         </div>
-        <div className="rounded-xl bg-surface border border-default p-4">
-          <p className="text-xs font-medium fg-tertiary uppercase tracking-wide">Yearly Estimate</p>
-          <p className="text-xl font-semibold fg-primary mt-1">{formatMoney(yearlyEstimate)}</p>
-        </div>
-        <div className="rounded-xl bg-surface border border-default p-4">
-          <p className="text-xs font-medium fg-tertiary uppercase tracking-wide">Coming Up</p>
-          <p className="text-xl font-semibold fg-primary mt-1">{comingUpCount}</p>
+        <div className="rounded-xl bg-surface border border-default p-4 sm:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-medium fg-tertiary uppercase tracking-wide">Due soon</p>
+            <CalendarDays className="h-4 w-4 text-sky-700 dark:text-sky-300" aria-hidden="true" />
+          </div>
+          <p className="mt-2 text-2xl font-bold fg-primary tabular-nums">{comingUpCount}</p>
+          <p className="mt-1 text-xs fg-tertiary">
+            {comingUpCount === 1 ? 'charge needs attention' : 'charges need attention'}
+          </p>
         </div>
       </div>
 
@@ -210,106 +239,133 @@ export function Recurring() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3">
-          {sortedCharges?.map((charge) => (
-            <div
-              key={recurringKey(charge.merchant, charge.accountId ?? charge.account)}
-              className={clsx(
-                'rounded-xl bg-surface border p-4 flex flex-col sm:flex-row sm:items-center gap-3 transition-colors',
-                charge.comingSoon ? 'border-sky-500' : 'border-default hover:border-amber-500/40',
-              )}
-            >
-              {/* Left: merchant + meta */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold fg-primary truncate">{charge.merchant}</h3>
-                  <span
-                    className={clsx(
-                      'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-                      FREQUENCY_BADGE[charge.frequency],
-                    )}
-                  >
-                    {FREQUENCY_LABEL[charge.frequency]}
-                  </span>
-                  {charge.manual && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-canvas-subtle border border-default fg-muted">
-                      Manual
-                    </span>
-                  )}
+        <div className="space-y-6">
+          {chargeSections.map((section) => (
+            <section key={section.id} aria-labelledby={`${section.id}-heading`}>
+              <div className="mb-2 flex items-end justify-between gap-3 px-1">
+                <div>
+                  <h2 id={`${section.id}-heading`} className="text-sm font-semibold fg-primary">{section.title}</h2>
+                  <p className="text-xs fg-tertiary">{section.description}</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs fg-tertiary">
-                  <span className="inline-flex items-center gap-1">
-                    <Calendar className="h-3.5 w-3.5" />
-                    Expected: {formatDate(charge.nextDate)}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <CreditCard className="h-3.5 w-3.5" />
-                    {charge.account}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <Tag className="h-3.5 w-3.5" />
-                    {charge.category}
-                  </span>
-                  {!charge.manual && (
-                    <span className="inline-flex items-center gap-1">
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      {charge.occurrences} times
-                    </span>
-                  )}
-                </div>
+                <span className="text-xs tabular-nums fg-muted">{section.charges.length}</span>
               </div>
 
-              {/* Right: amount + actions */}
-              <div className="flex items-center gap-3 shrink-0">
-                <div className="text-right">
-                  <p className="text-base font-semibold text-rose-600 dark:text-rose-400">
-                    {formatMoney(charge.amount)}
-                  </p>
-                  <p className="text-xs fg-tertiary">
-                    {formatMoney(annualCost(charge))}/yr
-                  </p>
-                </div>
-                {charge.manual ? (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setEditing(charge)}
-                      className="edit-icon-button flex h-11 w-11 items-center justify-center rounded-lg"
-                      aria-label={`Edit ${charge.merchant}`}
-                      title="Edit"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => charge.id && deleteManual.mutate(charge.id)}
-                      disabled={deleteManual.isPending}
-                      className="flex h-11 w-11 items-center justify-center rounded-lg fg-tertiary hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors disabled:opacity-50"
-                      aria-label={`Delete ${charge.merchant}`}
-                      title="Delete recurring entry"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => dismiss.mutate({
-                      merchant: charge.merchant,
-                      amount: charge.amount,
-                      account: charge.account,
-                      accountId: charge.accountId,
-                    })}
-                    disabled={dismiss.isPending}
-                    className="flex h-11 w-11 items-center justify-center rounded-lg fg-tertiary hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors disabled:opacity-50"
-                    aria-label={`Dismiss ${charge.merchant}`}
-                    title="Remove from recurring"
+              <div className="divide-y divide-[color:var(--border-default)] rounded-xl border border-default bg-surface">
+                {section.charges.map((charge) => (
+                  <div
+                    key={recurringKey(charge.merchant, charge.accountId ?? charge.account)}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-3 p-4 sm:grid-cols-[minmax(0,1fr)_9rem_auto] sm:items-center"
                   >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <h3 className="min-w-0 truncate text-sm font-semibold fg-primary">{charge.merchant}</h3>
+                        <span
+                          className={clsx(
+                            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+                            FREQUENCY_BADGE[charge.frequency],
+                          )}
+                        >
+                          {FREQUENCY_LABEL[charge.frequency]}
+                        </span>
+                        {charge.manual && (
+                          <span className="inline-flex items-center rounded-full border border-default bg-canvas-subtle px-2 py-0.5 text-xs font-medium fg-muted">
+                            Manual
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs fg-tertiary">
+                        <span className="inline-flex min-w-0 items-center gap-1">
+                          <CreditCard className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                          <span className="truncate">{charge.account}</span>
+                        </span>
+                        <span className="inline-flex min-w-0 items-center gap-1">
+                          <Tag className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                          <span className="truncate">{charge.category}</span>
+                        </span>
+                        {!charge.manual && (
+                          <span className="inline-flex items-center gap-1">
+                            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                            {charge.occurrences} times
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="col-start-1 row-start-2 sm:col-start-2 sm:row-start-1">
+                      <p className={clsx(
+                        'inline-flex items-center gap-1 text-sm font-medium',
+                        charge.comingSoon ? 'text-sky-700 dark:text-sky-300' : 'fg-secondary',
+                      )}>
+                        <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
+                        {daysLabel(charge.daysUntil)}
+                      </p>
+                      <p className="mt-0.5 text-xs fg-tertiary">{formatDate(charge.nextDate)}</p>
+                    </div>
+
+                    <div className="col-start-2 row-span-2 row-start-1 flex items-center justify-end gap-2 self-center sm:col-start-3 sm:row-span-1">
+                      <div className="text-right">
+                        <p className="text-base font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+                          {formatMoney(charge.amount)}
+                        </p>
+                        <p className="text-xs tabular-nums fg-tertiary">
+                          {formatMoney(annualCost(charge))}/yr
+                        </p>
+                      </div>
+
+                      <details className="relative">
+                        <summary
+                          className="close-button flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg [&::-webkit-details-marker]:hidden"
+                          aria-label={`Actions for ${charge.merchant}`}
+                        >
+                          <Ellipsis className="h-5 w-5" aria-hidden="true" />
+                        </summary>
+                        <div className="absolute right-0 z-20 mt-1 min-w-44 rounded-lg border border-default bg-surface p-1 shadow-xl">
+                          {charge.manual ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.currentTarget.closest('details')?.removeAttribute('open');
+                                  setEditing(charge);
+                                }}
+                                className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm"
+                              >
+                                <Pencil className="h-4 w-4" aria-hidden="true" />
+                                Edit recurring
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => charge.id && deleteManual.mutate(charge.id)}
+                                disabled={deleteManual.isPending}
+                                className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-400 dark:hover:bg-rose-900/30"
+                              >
+                                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                Delete recurring
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => dismiss.mutate({
+                                merchant: charge.merchant,
+                                amount: charge.amount,
+                                account: charge.account,
+                                accountId: charge.accountId,
+                              })}
+                              disabled={dismiss.isPending}
+                              className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-400 dark:hover:bg-rose-900/30"
+                            >
+                              <X className="h-4 w-4" aria-hidden="true" />
+                              Remove from recurring
+                            </button>
+                          )}
+                        </div>
+                      </details>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
+            </section>
           ))}
         </div>
       )}

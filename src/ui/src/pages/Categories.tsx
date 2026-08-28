@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient, useMutation, type QueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { Plus, Trash2, FolderTree, TrendingUp, TrendingDown, GripVertical, ArrowLeftRight, Pencil, Check, X } from 'lucide-react';
+import { Plus, Trash2, FolderTree, TrendingUp, TrendingDown, GripVertical, ArrowLeftRight, Pencil, Check, X, ChevronDown, ChevronRight, EllipsisVertical, ArrowUp, ArrowDown } from 'lucide-react';
 import clsx from 'clsx';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { AsyncQueryState } from '../components/ui/AsyncQueryState';
@@ -22,11 +22,13 @@ export function Categories() {
 
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<'income' | 'expense' | 'transfer'>('expense');
+  const [showAddCategory, setShowAddCategory] = useState(false);
 
   const addMain = useMutation({
     mutationFn: (input: { name: string; type: 'income' | 'expense' | 'transfer' }) => api.post<MainCategory>('/api/categories', input),
     onSuccess: () => {
       setNewName('');
+      setShowAddCategory(false);
       qc.invalidateQueries({ queryKey: ['categories'] });
     },
   });
@@ -135,14 +137,31 @@ export function Categories() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold fg-primary">Categories</h1>
-      <p className="text-sm fg-tertiary -mt-4">
-        Drag the cards to set the order. The Budget page uses the same
-        order, so put your biggest categories first.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold fg-primary">Categories</h1>
+          <p className="mt-1 max-w-xl text-sm fg-tertiary">
+            Organize how transactions and budgets are grouped. Category order is shared with Budget.
+          </p>
+        </div>
+        <button
+          type="button"
+          data-onboarding-target="categories-add"
+          onClick={() => setShowAddCategory((value) => !value)}
+          aria-expanded={showAddCategory}
+          aria-controls="add-category-form"
+          className="btn-primary inline-flex min-h-11 items-center gap-2"
+        >
+          {showAddCategory ? <X className="h-4 w-4" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
+          {showAddCategory ? 'Close' : 'Add category'}
+        </button>
+      </div>
 
-      <section className="card">
-        <h2 className="text-lg font-semibold mb-3 fg-primary">Add category</h2>
+      {showAddCategory && <section id="add-category-form" className="card">
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold fg-primary">Add category</h2>
+          <p className="mt-0.5 text-xs fg-muted">Choose how the category affects totals before adding it.</p>
+        </div>
         <form onSubmit={onAddMain} className="flex gap-2 flex-wrap">
           <input
             value={newName}
@@ -150,7 +169,7 @@ export function Categories() {
             placeholder="Name (e.g. Housing, Salary)"
             className="flex-1 min-w-[200px] rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
           />
-          <div data-onboarding-target="categories-add" className="grid grid-cols-3 gap-1 rounded-lg border border-default p-1 bg-slate-50 dark:bg-slate-700/50">
+          <div className="grid grid-cols-3 gap-1 rounded-lg border border-default p-1 bg-slate-50 dark:bg-slate-700/50">
             <button
               type="button"
               onClick={() => setNewType('expense')}
@@ -188,19 +207,19 @@ export function Categories() {
               <ArrowLeftRight className="h-3 w-3 inline mr-1" /> Transfer
             </button>
           </div>
-          <button type="submit" className="btn-primary flex items-center gap-2">
+          <button type="submit" disabled={addMain.isPending} className="btn-primary flex min-h-11 items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
             <Plus className="h-4 w-4" /> Add
           </button>
         </form>
         {addMain.isError && <p className="mt-2 text-sm text-rose-600 dark:text-rose-400" role="alert">{addMain.error.message}</p>}
-      </section>
+      </section>}
 
       {cats.isLoading ? (
         <AsyncQueryState status="loading" title="Loading categories…" />
       ) : cats.isError ? (
         <AsyncQueryState status="error" title="Could not load categories" message={cats.error.message} onRetry={() => void cats.refetch()} retrying={cats.isFetching} />
       ) : (expenseCats.length > 0 || incomeCats.length > 0 || transferCats.length > 0) ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-4">
           {expenseCats.length > 0 && (
             <CategoryGroup
               title="Expense categories"
@@ -312,6 +331,8 @@ function CategoryGroup({
     | { kind: 'subcategory'; category: MainCategory; subcategory: SubCategory }
     | null
   >(null);
+  const [groupOpen, setGroupOpen] = useState(true);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   const cardRefs = useRef(new Map<string, HTMLElement>());
   const floatRef = useRef<HTMLDivElement | null>(null);
@@ -568,16 +589,37 @@ function CategoryGroup({
     return out;
   })();
 
+  const toggleCategory = (id: string) => {
+    setExpandedCategories((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <span className={clsx('h-7 w-7 rounded-lg flex items-center justify-center', toneClass)}>
-          <Icon className="h-4 w-4" />
+    <section className="card">
+      <button
+        type="button"
+        onClick={() => setGroupOpen((value) => !value)}
+        aria-expanded={groupOpen}
+        className="flex min-h-11 w-full items-center justify-between gap-3 text-left"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className={clsx('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', toneClass)}>
+            <Icon className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <span>
+            <span className="block text-sm font-semibold fg-primary">{title}</span>
+            <span className="block text-xs fg-muted">{categories.length} {categories.length === 1 ? 'category' : 'categories'}</span>
+          </span>
         </span>
-        <h3 className="text-sm font-semibold fg-primary">{title}</h3>
-        <span className="text-xs fg-muted">· {categories.length}</span>
-      </div>
-      <div className="relative space-y-3">
+        {groupOpen
+          ? <ChevronDown className="h-4 w-4 shrink-0 fg-muted" aria-hidden="true" />
+          : <ChevronRight className="h-4 w-4 shrink-0 fg-muted" aria-hidden="true" />}
+      </button>
+      {groupOpen && <div className="relative mt-3 space-y-2 border-t border-default pt-3">
         {rows.map((row) => {
           if (row.kind === 'placeholder') {
             return (
@@ -598,7 +640,7 @@ function CategoryGroup({
                 else cardRefs.current.delete(cat.id);
               }}
               className={clsx(
-                'card',
+                'rounded-xl border border-default bg-canvas-subtle',
                 // Cards slide into the gap the placeholder opened.
                 drag && 'transition-transform duration-150 ease-out',
                 disabled && 'opacity-60',
@@ -606,37 +648,55 @@ function CategoryGroup({
             >
               <div
                 onPointerDown={(e) => onPointerDown(e, cat.id)}
-                className="flex items-center justify-between mb-2 cursor-grab active:cursor-grabbing select-none touch-none"
+                className="flex min-h-14 items-center gap-1 px-2 cursor-grab active:cursor-grabbing select-none touch-none"
                 title="Drag to reorder"
               >
-                <div className="flex flex-1 items-center gap-2 min-w-0">
-                  <GripVertical className="h-4 w-4 text-slate-300 dark:text-slate-600 shrink-0" />
-                  <EditableMainCategory
-                    category={cat}
-                    onRename={(name) => onRenameMain(cat.id, name)}
-                    onDelete={() => setDeleteTarget({ kind: 'category', category: cat })}
-                  />
-                </div>
+                <GripVertical className="h-4 w-4 shrink-0 fg-muted" aria-hidden="true" />
+                <button
+                  type="button"
+                  onClick={() => toggleCategory(cat.id)}
+                  aria-expanded={expandedCategories.has(cat.id)}
+                  aria-label={`${expandedCategories.has(cat.id) ? 'Collapse' : 'Expand'} ${cat.name}`}
+                  className="close-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
+                >
+                  {expandedCategories.has(cat.id)
+                    ? <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                    : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
+                </button>
+                <EditableMainCategory
+                  category={cat}
+                  subCategoryCount={cat.subCategories.length}
+                  onRename={(name) => onRenameMain(cat.id, name)}
+                  onDelete={() => setDeleteTarget({ kind: 'category', category: cat })}
+                  onMoveUp={categories.indexOf(cat) > 0
+                    ? () => onReorder(group, cat.id, categories[categories.indexOf(cat) - 1]!.id, 'before')
+                    : undefined}
+                  onMoveDown={categories.indexOf(cat) < categories.length - 1
+                    ? () => onReorder(group, cat.id, categories[categories.indexOf(cat) + 1]!.id, 'after')
+                    : undefined}
+                />
               </div>
-              {cat.subCategories.length > 0 ? (
-                <ul className="divide-y divide-slate-100 dark:divide-slate-700">
-                  {cat.subCategories.map((sub) => (
-                    <EditableSubCategory
-                      key={sub.id}
-                      sub={sub}
-                      onRename={(name) => onRenameSub(cat.id, sub.id, name)}
-                      onDelete={() => setDeleteTarget({ kind: 'subcategory', category: cat, subcategory: sub })}
-                    />
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-xs fg-muted italic py-1">No sub-categories yet</p>
-              )}
-              <AddSub onAdd={(name) => onAddSub(cat.id, name)} />
+              {expandedCategories.has(cat.id) && <div className="border-t border-default px-4 pb-3 pt-2">
+                {cat.subCategories.length > 0 ? (
+                  <ul className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {cat.subCategories.map((sub) => (
+                      <EditableSubCategory
+                        key={sub.id}
+                        sub={sub}
+                        onRename={(name) => onRenameSub(cat.id, sub.id, name)}
+                        onDelete={() => setDeleteTarget({ kind: 'subcategory', category: cat, subcategory: sub })}
+                      />
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="py-2 text-xs italic fg-muted">No subcategories yet</p>
+                )}
+                <AddSub onAdd={(name) => onAddSub(cat.id, name)} />
+              </div>}
             </section>
           );
         })}
-      </div>
+      </div>}
       {deleteTarget?.kind === 'category' && (
         <ConfirmDialog
           title={`Delete “${deleteTarget.category.name}”?`}
@@ -669,7 +729,7 @@ function CategoryGroup({
           </p>
         </ConfirmDialog>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -681,12 +741,18 @@ function invalidateCategoryDependents(qc: QueryClient) {
 
 function EditableMainCategory({
   category,
+  subCategoryCount,
   onRename,
   onDelete,
+  onMoveUp,
+  onMoveDown,
 }: {
   category: MainCategory;
+  subCategoryCount: number;
   onRename: (name: string) => Promise<unknown>;
   onDelete: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(category.name);
@@ -759,26 +825,60 @@ function EditableMainCategory({
   }
 
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-1">
-      <h4 className="flex-1 truncate text-sm font-semibold fg-primary">{category.name}</h4>
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        className="edit-icon-button flex h-9 w-9 shrink-0 items-center justify-center rounded"
-        title={`Rename ${category.name}`}
-        aria-label={`Rename ${category.name}`}
-      >
-        <Pencil className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded fg-muted hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30 dark:hover:text-rose-400"
-        title={`Delete ${category.name}`}
-        aria-label={`Delete ${category.name}`}
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="min-w-0 flex-1">
+        <h4 className="truncate text-sm font-semibold fg-primary">{category.name}</h4>
+        <p className="text-xs fg-muted">{subCategoryCount} {subCategoryCount === 1 ? 'subcategory' : 'subcategories'}</p>
+      </div>
+      <details name="category-actions" className="relative shrink-0">
+        <summary className="close-button flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg [&::-webkit-details-marker]:hidden" aria-label={`Actions for ${category.name}`}>
+          <EllipsisVertical className="h-5 w-5" aria-hidden="true" />
+        </summary>
+        <div className="absolute right-0 z-30 mt-1 min-w-44 rounded-lg border border-default bg-surface p-1 shadow-xl">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.currentTarget.closest('details')?.removeAttribute('open');
+              setEditing(true);
+            }}
+            className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm"
+          >
+            <Pencil className="h-4 w-4" aria-hidden="true" /> Rename
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.currentTarget.closest('details')?.removeAttribute('open');
+              onMoveUp?.();
+            }}
+            disabled={!onMoveUp}
+            className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm disabled:opacity-40"
+          >
+            <ArrowUp className="h-4 w-4" aria-hidden="true" /> Move up
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.currentTarget.closest('details')?.removeAttribute('open');
+              onMoveDown?.();
+            }}
+            disabled={!onMoveDown}
+            className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm disabled:opacity-40"
+          >
+            <ArrowDown className="h-4 w-4" aria-hidden="true" /> Move down
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.currentTarget.closest('details')?.removeAttribute('open');
+              onDelete();
+            }}
+            className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-900/30"
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete category
+          </button>
+        </div>
+      </details>
     </div>
   );
 }
@@ -865,23 +965,33 @@ function EditableSubCategory({
   return (
     <li className="flex min-h-11 items-center justify-between gap-2 py-1 text-sm">
       <span className="min-w-0 truncate fg-secondary">{sub.name}</span>
-      <div className="flex shrink-0 items-center">
-        <button
-          onClick={() => setEditing(true)}
-          className="edit-icon-button flex h-9 w-9 items-center justify-center rounded"
-          title={`Rename ${sub.name}`}
-          aria-label={`Rename ${sub.name}`}
-        >
-          <Pencil className="h-4 w-4" />
-        </button>
-        <button
-          onClick={onDelete}
-          className="flex h-9 w-9 items-center justify-center rounded fg-muted hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30 dark:hover:text-rose-400"
-          title={`Delete ${sub.name}`}
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
-      </div>
+      <details name="subcategory-actions" className="relative shrink-0">
+        <summary className="close-button flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg [&::-webkit-details-marker]:hidden" aria-label={`Actions for ${sub.name}`}>
+          <EllipsisVertical className="h-5 w-5" aria-hidden="true" />
+        </summary>
+        <div className="absolute right-0 z-30 mt-1 min-w-44 rounded-lg border border-default bg-surface p-1 shadow-xl">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.currentTarget.closest('details')?.removeAttribute('open');
+              setEditing(true);
+            }}
+            className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm"
+          >
+            <Pencil className="h-4 w-4" aria-hidden="true" /> Rename
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.currentTarget.closest('details')?.removeAttribute('open');
+              onDelete();
+            }}
+            className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-900/30"
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete subcategory
+          </button>
+        </div>
+      </details>
     </li>
   );
 }

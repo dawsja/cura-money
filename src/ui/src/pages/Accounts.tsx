@@ -2,8 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { formatMoney } from '../lib/format';
-import { formatAccountBalance, isLiability } from '../lib/accounting';
-import { Plus, Trash2, RefreshCw, ExternalLink, Wallet, Landmark, CreditCard, Banknote, PiggyBank, TrendingUp, AlertTriangle, CircleHelp, EyeOff, Eye, Pencil, X } from 'lucide-react';
+import { formatAccountBalance, isLiability, netWorthContribution } from '../lib/accounting';
+import { Plus, Trash2, RefreshCw, ExternalLink, Wallet, Landmark, CreditCard, Banknote, PiggyBank, TrendingUp, AlertTriangle, CircleHelp, EyeOff, Eye, Pencil, X, EllipsisVertical, ChevronDown, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 import { Dialog } from '../components/ui/dialog';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
@@ -173,6 +173,15 @@ export function Accounts() {
     (acc[a.type] ??= []).push(a);
     return acc;
   }, {} as Record<AccountType, Account[]>);
+  const visibleAssets = visible.reduce(
+    (sum, account) => !isLiability(account.type) && account.type !== 'uncategorized' ? sum + Math.abs(account.balance) : sum,
+    0,
+  );
+  const visibleDebt = visible.reduce(
+    (sum, account) => isLiability(account.type) ? sum + Math.abs(account.balance) : sum,
+    0,
+  );
+  const visibleNet = visible.reduce((sum, account) => sum + netWorthContribution(account), 0);
   const accountOperationError = unhide.error;
 
   const renderRow = (a: Account, opts?: { dimmed?: boolean; extraMeta?: React.ReactNode }) => {
@@ -196,16 +205,6 @@ export function Accounts() {
                 SimpleFIN
               </span>
             )}
-              <button
-                type="button"
-                onClick={() => setEditing(a)}
-                data-onboarding-target={a.type === 'uncategorized' ? 'unclassified-account-edit' : undefined}
-               className="edit-icon-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg sm:h-7 sm:w-7"
-              title="Edit account"
-              aria-label={`Edit ${displayName}`}
-            >
-              <Pencil className="h-3 w-3" />
-            </button>
           </div>
           <div className="text-xs fg-muted">
             {a.alias ? (
@@ -222,35 +221,65 @@ export function Accounts() {
         </div>
         <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start">
           <div className={clsx('font-semibold tabular-nums mr-2', opts?.dimmed && 'text-sm', balanceColor)}>{balanceText}</div>
-          {opts?.dimmed ? (
-            <button
-              onClick={() => unhide.mutate(a.id)}
-              className="flex h-11 w-11 items-center justify-center rounded-lg fg-tertiary hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 sm:h-8 sm:w-8"
-              title="Unhide account"
-              aria-label="Unhide"
+          <details name="account-actions" className="relative">
+            <summary
+              data-onboarding-target={a.type === 'uncategorized' ? 'unclassified-account-edit' : undefined}
+              className="close-button flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg [&::-webkit-details-marker]:hidden"
+              aria-label={`Actions for ${displayName}`}
             >
-              <Eye className="h-4 w-4" />
-            </button>
-          ) : (
-            <button
-              onClick={() => { hide.reset(); setConfirmation({ action: 'hide', account: a }); }}
-              className="flex h-11 w-11 items-center justify-center rounded-lg fg-tertiary hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 sm:h-8 sm:w-8"
-              title="Hide account"
-              aria-label="Hide"
-            >
-              <EyeOff className="h-4 w-4" />
-            </button>
-          )}
-          {a.source === 'manual' && (
-            <button
-              onClick={() => { del.reset(); setConfirmation({ action: 'delete', account: a }); }}
-              className="flex h-11 w-11 items-center justify-center rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 sm:h-8 sm:w-8"
-              title="Delete account"
-              aria-label="Delete"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          )}
+              <EllipsisVertical className="h-5 w-5" aria-hidden="true" />
+            </summary>
+            <div className="absolute right-0 z-20 mt-1 min-w-44 rounded-lg border border-default bg-surface p-1 shadow-xl">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.currentTarget.closest('details')?.removeAttribute('open');
+                  setEditing(a);
+                }}
+                className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm"
+              >
+                <Pencil className="h-4 w-4" aria-hidden="true" /> Edit account
+              </button>
+              {opts?.dimmed ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.currentTarget.closest('details')?.removeAttribute('open');
+                    unhide.mutate(a.id);
+                  }}
+                  disabled={unhide.isPending}
+                  className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:text-emerald-300 dark:hover:bg-emerald-900/30"
+                >
+                  <Eye className="h-4 w-4" aria-hidden="true" /> Unhide account
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.currentTarget.closest('details')?.removeAttribute('open');
+                    hide.reset();
+                    setConfirmation({ action: 'hide', account: a });
+                  }}
+                  className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm"
+                >
+                  <EyeOff className="h-4 w-4" aria-hidden="true" /> Hide account
+                </button>
+              )}
+              {a.source === 'manual' && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.currentTarget.closest('details')?.removeAttribute('open');
+                    del.reset();
+                    setConfirmation({ action: 'delete', account: a });
+                  }}
+                  className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-900/30"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete account
+                </button>
+              )}
+            </div>
+          </details>
         </div>
       </li>
     );
@@ -277,9 +306,151 @@ export function Accounts() {
         </div>
       )}
 
-      <div className="space-y-6">
-      <section data-onboarding-target="simplefin-connect" className="card">
-        <h2 className="text-lg font-semibold mb-3 fg-primary">SimpleFIN</h2>
+      <section className="space-y-3">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold fg-primary">Your accounts</h2>
+            {!accounts.isPending && !accounts.isError && (
+              <p className="text-xs fg-tertiary">{visible.length} visible {visible.length === 1 ? 'account' : 'accounts'}</p>
+            )}
+          </div>
+        </div>
+        {!accounts.isPending && !accounts.isError && visible.length > 0 && (
+          <div className="grid grid-cols-3 divide-x divide-[color:var(--border-default)] rounded-xl border border-default bg-surface">
+            <div className="min-w-0 p-3 sm:p-4">
+              <p className="text-[10px] font-medium uppercase tracking-wide fg-muted sm:text-xs">Assets</p>
+              <p className="mt-1 truncate text-sm font-semibold tabular-nums fg-primary sm:text-lg">{formatMoney(visibleAssets)}</p>
+            </div>
+            <div className="min-w-0 p-3 sm:p-4">
+              <p className="text-[10px] font-medium uppercase tracking-wide fg-muted sm:text-xs">Amount owed</p>
+              <p className="mt-1 truncate text-sm font-semibold tabular-nums text-rose-600 dark:text-rose-400 sm:text-lg">{formatMoney(visibleDebt)}</p>
+            </div>
+            <div className="min-w-0 p-3 sm:p-4">
+              <p className="text-[10px] font-medium uppercase tracking-wide fg-muted sm:text-xs">Net balance</p>
+              <p className={clsx(
+                'mt-1 truncate text-sm font-semibold tabular-nums sm:text-lg',
+                visibleNet < 0 ? 'text-rose-600 dark:text-rose-400' : 'fg-primary',
+              )}>
+                {visibleNet < 0 ? `−${formatMoney(Math.abs(visibleNet))}` : formatMoney(visibleNet)}
+              </p>
+            </div>
+          </div>
+        )}
+        {accounts.isPending && (
+          <div className="card text-sm fg-muted text-center">
+            <RefreshCw className="h-4 w-4 inline mr-2 animate-spin" /> Loading accounts…
+          </div>
+        )}
+        {accounts.isError && (
+          <div className="card text-center space-y-3">
+            <p className="text-sm text-rose-600 dark:text-rose-400 flex items-center justify-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" /> Could not load accounts: {accounts.error.message}
+            </p>
+            <button type="button" onClick={() => accounts.refetch()} disabled={accounts.isFetching} className="btn-primary disabled:opacity-50">
+              {accounts.isFetching ? 'Retrying…' : 'Retry'}
+            </button>
+          </div>
+        )}
+        {!accounts.isPending && !accounts.isError && (['uncategorized', ...EDITABLE_ACCOUNT_TYPES] as AccountType[]).map((t) => {
+          const list = byType[t] ?? [];
+          if (list.length === 0) return null;
+          const meta = TYPE_META[t];
+          const Icon = meta.icon;
+          const typeTotal = list.reduce((sum, account) => sum + Math.abs(account.balance), 0);
+          return (
+            <div key={t} className="card">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className={clsx('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', meta.color)}>
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <h3 className="truncate text-sm font-semibold fg-primary">{meta.label}</h3>
+                  <span className="shrink-0 text-xs fg-muted">· {list.length}</span>
+                </div>
+                <div className={clsx(
+                  'shrink-0 text-right text-sm font-semibold tabular-nums',
+                  t === 'uncategorized'
+                    ? 'fg-muted'
+                    : isLiability(t)
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : 'fg-primary',
+                )}>
+                  {formatMoney(typeTotal)}
+                  {t === 'uncategorized' && <span className="ml-1 text-[10px] font-normal">not counted</span>}
+                  {isLiability(t) && <span className="ml-1 text-[10px] font-normal fg-muted">owed</span>}
+                </div>
+              </div>
+              {t === 'uncategorized' && (
+                <p className="mb-2 text-xs fg-muted">Use the account menu to choose a type so balances are counted correctly.</p>
+              )}
+              <ul className="divide-y divide-slate-100 dark:divide-slate-700">
+                {list.map((a) => renderRow(a))}
+              </ul>
+            </div>
+          );
+        })}
+        {!accounts.isPending && !accounts.isError && visible.length === 0 && (
+          <div className="card text-sm fg-muted text-center">
+            <Wallet className="h-5 w-5 inline mr-1 fg-muted" /> No accounts yet. Add one below or connect SimpleFIN to auto-import.
+          </div>
+        )}
+
+        {/* Hidden section. Off by default — the user has to opt in to
+            see them. From here they can un-hide to bring the account
+            (and its future sync data) back. */}
+        {!accounts.isPending && !accounts.isError && hidden.length > 0 && (
+          <div className="card">
+            <button
+              type="button"
+              onClick={() => setShowHidden((v) => !v)}
+              aria-expanded={showHidden}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <div className="flex items-center gap-2">
+                <EyeOff className="h-4 w-4 fg-muted" />
+                <span className="text-sm font-semibold fg-secondary">
+                  {showHidden ? 'Hide' : 'Show'} hidden accounts
+                </span>
+                <span className="text-xs fg-muted">· {hidden.length}</span>
+              </div>
+              {showHidden
+                ? <ChevronDown className="h-4 w-4 fg-muted" aria-hidden="true" />
+                : <ChevronRight className="h-4 w-4 fg-muted" aria-hidden="true" />}
+            </button>
+            {showHidden && (
+              <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-700">
+                {hidden.map((a) => renderRow(a, {
+                  dimmed: true,
+                  extraMeta: <span> · hidden</span>,
+                }))}
+              </ul>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold fg-primary">Add or connect an account</h2>
+          <p className="text-xs fg-tertiary">Connect SimpleFIN for automatic imports or add a balance manually.</p>
+        </div>
+        <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+          <section data-onboarding-target="simplefin-connect" className="card">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="text-base font-semibold fg-primary">SimpleFIN</h3>
+              {!sf.isPending && !sf.isError && (
+                <span className={clsx(
+                  'rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                  sf.data.demoMode
+                    ? 'bg-canvas-subtle fg-muted'
+                    : sf.data.connected
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                      : 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+                )}>
+                  {sf.data.demoMode ? 'Demo' : sf.data.connected ? 'Connected' : 'Not connected'}
+                </span>
+              )}
+            </div>
         {sf.isPending ? (
           <p className="text-sm fg-muted flex items-center gap-2">
             <RefreshCw className="h-4 w-4 animate-spin" /> Checking connection…
@@ -391,10 +562,10 @@ export function Accounts() {
       </section>
 
       <section data-onboarding-target="manual-account-add" className="card">
-        <h2 className="text-lg font-semibold mb-3 fg-primary">Add account</h2>
+        <h3 className="text-base font-semibold mb-3 fg-primary">Manual account</h3>
         <p className="mb-3 text-xs fg-muted">Balances are entered and displayed in USD only. Enter a positive amount; account type determines whether it is an asset or amount owed.</p>
         <form onSubmit={onAdd} className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2">
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" className={INPUT_CLS} required />
             <select value={type} onChange={(e) => setType(e.target.value as EditableAccountType)} className={INPUT_CLS}>
               {EDITABLE_ACCOUNT_TYPES.map((t) => (
@@ -418,82 +589,7 @@ export function Accounts() {
           </div>
         </form>
       </section>
-      </div>
-
-      <section className="space-y-3">
-        {accounts.isPending && (
-          <div className="card text-sm fg-muted text-center">
-            <RefreshCw className="h-4 w-4 inline mr-2 animate-spin" /> Loading accounts…
-          </div>
-        )}
-        {accounts.isError && (
-          <div className="card text-center space-y-3">
-            <p className="text-sm text-rose-600 dark:text-rose-400 flex items-center justify-center gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0" /> Could not load accounts: {accounts.error.message}
-            </p>
-            <button type="button" onClick={() => accounts.refetch()} disabled={accounts.isFetching} className="btn-primary disabled:opacity-50">
-              {accounts.isFetching ? 'Retrying…' : 'Retry'}
-            </button>
-          </div>
-        )}
-        {!accounts.isPending && !accounts.isError && (['uncategorized', ...EDITABLE_ACCOUNT_TYPES] as AccountType[]).map((t) => {
-          const list = byType[t] ?? [];
-          if (list.length === 0) return null;
-          const meta = TYPE_META[t];
-          const Icon = meta.icon;
-          return (
-            <div key={t} className="card">
-              <div className="flex items-center gap-2 mb-3">
-                <span className={clsx('h-7 w-7 rounded-lg flex items-center justify-center', meta.color)}>
-                  <Icon className="h-4 w-4" />
-                </span>
-                <h3 className="text-sm font-semibold fg-primary">{meta.label}</h3>
-                <span className="text-xs fg-muted">· {list.length}</span>
-              </div>
-              {t === 'uncategorized' && (
-                <p className="mb-2 text-xs fg-muted">Choose an account type with the pencil so balances are counted correctly.</p>
-              )}
-              <ul className="divide-y divide-slate-100 dark:divide-slate-700">
-                {list.map((a) => renderRow(a))}
-              </ul>
-            </div>
-          );
-        })}
-        {!accounts.isPending && !accounts.isError && visible.length === 0 && (
-          <div className="card text-sm fg-muted text-center">
-            <Wallet className="h-5 w-5 inline mr-1 fg-muted" /> No accounts yet. Add one above or connect SimpleFIN to auto-import.
-          </div>
-        )}
-
-        {/* Hidden section. Off by default — the user has to opt in to
-            see them. From here they can un-hide to bring the account
-            (and its future sync data) back. */}
-        {!accounts.isPending && !accounts.isError && hidden.length > 0 && (
-          <div className="card">
-            <button
-              type="button"
-              onClick={() => setShowHidden((v) => !v)}
-              className="w-full flex items-center justify-between text-left"
-            >
-              <div className="flex items-center gap-2">
-                <EyeOff className="h-4 w-4 fg-muted" />
-                <span className="text-sm font-semibold fg-secondary">
-                  {showHidden ? 'Hide' : 'Show'} hidden accounts
-                </span>
-                <span className="text-xs fg-muted">· {hidden.length}</span>
-              </div>
-              <span className="text-xs fg-muted">{showHidden ? '▾' : '▸'}</span>
-            </button>
-            {showHidden && (
-              <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-700">
-                {hidden.map((a) => renderRow(a, {
-                  dimmed: true,
-                  extraMeta: <span> · hidden</span>,
-                }))}
-              </ul>
-            )}
-          </div>
-        )}
+        </div>
       </section>
 
       {editing && (
