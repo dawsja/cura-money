@@ -24,7 +24,8 @@ Run lint, root typecheck, and UI build before submitting. There is no automated 
 
 ## Coding Style & Naming Conventions
 
-Use strict TypeScript, two-space indentation, single quotes, and semicolons, following nearby code. React components/pages use PascalCase filenames; server modules use lowercase kebab-case. Validate requests, environment values, and external JSON with Zod. Log structured Pino objects and never credentials.
+Use strict TypeScript, two-space indentation, single quotes, and semicolons, following nearby code.
+React components/pages use PascalCase filenames; server modules use lowercase kebab-case. Validate requests, environment values, and external JSON with Zod. Log structured Pino objects and never credentials.
 
 User-owned database operations must accept `userId` and filter by `user_id`; handlers obtain it through `userId(c)`. Add endpoints as validating routers, query helpers, and mounts in `src/index.ts`.
 
@@ -36,8 +37,11 @@ Preserve server startup order: migrations → setup → auth → retention → o
 
 Transactions store amounts as integer cents; `transfer` is excluded from income/expense totals. Preserve categorization-rule precedence, hidden SimpleFIN accounts, and read-time account aliases during sync.
 
-Before visual changes, read `THEME.md`. The UI supports system, light, and dark themes (selected in the profile menu, resolved by `ThemeProvider`); palette tokens belong in `src/ui/src/styles.css`, and changes must update `THEME.md`. Use semantic classes such as `bg-page`, `bg-surface`, `fg-*`, and `border-default`, and provide explicit light and `dark:` pairs for accent treatments that lack a semantic token.
+Before visual changes, read `THEME.md`. The UI supports system, light, and dark themes (selected in
+the profile menu, resolved by `ThemeProvider`); palette tokens belong in `src/ui/src/styles.css`, and changes must update `THEME.md`. Use semantic classes such as `bg-page`, `bg-surface`, `fg-*`, and
+`border-default`, and provide explicit light and `dark:` pairs for accent treatments that lack a semantic token.
 
 ## Commit & Pull Request Guidelines
 
-Use short, imperative subjects such as `fix: review uncategorized SimpleFIN accounts`; keep commits focused and prefer `fix:`/`feat:` prefixes. PRs should explain behavior and migration/config impact, link issues, list verification, and include screenshots for UI changes. Never commit secrets or populated `.env` files.
+Use short, imperative subjects such as `fix: review uncategorized SimpleFIN accounts`; keep commits
+focused and prefer `fix:`/`feat:` prefixes. PRs should explain behavior and migration/config impact, link issues, list verification, and include screenshots for UI changes. Never commit secrets or populated `.env` files.

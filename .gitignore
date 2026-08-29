@@ -46,3 +46,6 @@ src/ui/node_modules/
 # Local / paid agent skills
 .agents/skills/
 skills-lock.json
+
+.claude/
+.grok/
