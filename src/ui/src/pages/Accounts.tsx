@@ -7,6 +7,7 @@ import { Plus, Trash2, RefreshCw, ExternalLink, Wallet, Landmark, CreditCard, Ba
 import clsx from 'clsx';
 import { Dialog } from '../components/ui/dialog';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { SummaryCard } from '../components/SummaryCard';
 
 type EditableAccountType = 'checking' | 'savings' | 'credit' | 'investment' | 'loan';
 type AccountType = EditableAccountType | 'uncategorized';
@@ -316,24 +317,14 @@ export function Accounts() {
           </div>
         </div>
         {!accounts.isPending && !accounts.isError && visible.length > 0 && (
-          <div className="grid grid-cols-3 divide-x divide-[color:var(--border-default)] rounded-xl border border-default bg-surface">
-            <div className="min-w-0 p-3 sm:p-4">
-              <p className="text-[10px] font-medium uppercase tracking-wide fg-muted sm:text-xs">Assets</p>
-              <p className="mt-1 truncate text-sm font-semibold tabular-nums fg-primary sm:text-lg">{formatMoney(visibleAssets)}</p>
-            </div>
-            <div className="min-w-0 p-3 sm:p-4">
-              <p className="text-[10px] font-medium uppercase tracking-wide fg-muted sm:text-xs">Amount owed</p>
-              <p className="mt-1 truncate text-sm font-semibold tabular-nums text-rose-600 dark:text-rose-400 sm:text-lg">{formatMoney(visibleDebt)}</p>
-            </div>
-            <div className="min-w-0 p-3 sm:p-4">
-              <p className="text-[10px] font-medium uppercase tracking-wide fg-muted sm:text-xs">Net balance</p>
-              <p className={clsx(
-                'mt-1 truncate text-sm font-semibold tabular-nums sm:text-lg',
-                visibleNet < 0 ? 'text-rose-600 dark:text-rose-400' : 'fg-primary',
-              )}>
-                {visibleNet < 0 ? `−${formatMoney(Math.abs(visibleNet))}` : formatMoney(visibleNet)}
-              </p>
-            </div>
+          <div className="summary-scroll grid grid-cols-3 gap-3">
+            <SummaryCard label="Assets" value={formatMoney(visibleAssets)} tone="slate" />
+            <SummaryCard label="Amount owed" value={formatMoney(visibleDebt)} tone="rose" />
+            <SummaryCard
+              label="Net balance"
+              value={visibleNet < 0 ? `−${formatMoney(Math.abs(visibleNet))}` : formatMoney(visibleNet)}
+              tone={visibleNet < 0 ? 'rose' : 'slate'}
+            />
           </div>
         )}
         {accounts.isPending && (

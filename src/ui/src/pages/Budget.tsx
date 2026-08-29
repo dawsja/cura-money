@@ -536,7 +536,7 @@ export function Budget() {
                 </button>
               </div>
             </div>
-            <button type="button" className="close-button flex h-8 w-8 items-center justify-center rounded-lg" aria-label="Dismiss" onClick={() => setFuturePrompt(null)}>
+            <button type="button" className="close-button flex h-11 w-11 items-center justify-center rounded-lg md:h-8 md:w-8" aria-label="Dismiss" onClick={() => setFuturePrompt(null)}>
               <X className="h-4 w-4" />
             </button>
           </div>

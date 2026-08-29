@@ -567,7 +567,23 @@ function ChartDataDetails({
     <details className="mt-3 border-t border-default pt-3">
       <summary className="focus-ring cursor-pointer text-xs font-medium fg-secondary">{summary}</summary>
       <div className="mt-2 max-h-64 overflow-auto">
-        <table className="w-full min-w-max text-left text-xs">
+        {/* Mobile: stacked rows — a `min-w-max` table forces sideways
+            scrolling and shrinks to unreadable text on phones. */}
+        <dl className="divide-y divide-default md:hidden">
+          {rows.map((row) => (
+            <div key={row.key} className="flex flex-col gap-1 py-2.5 text-sm">
+              <dt className="font-medium fg-primary">{row.cells[0]}</dt>
+              <dd className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs fg-secondary">
+                {row.cells.slice(1).map((cell, index) => (
+                  <span key={index} className="tabular-nums">
+                    <span className="fg-muted">{headers[index + 1]}: </span>{cell}
+                  </span>
+                ))}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <table className="hidden w-full min-w-max text-left text-xs md:table">
           <caption className="sr-only">{caption}</caption>
           <thead className="fg-muted">
             <tr className="border-b border-default">
@@ -726,28 +742,18 @@ function NetWorthChart({ data, loading, error, onRetry }: { data: NetWorthPoint[
           </AreaChart>
         </ChartContainer>
       </div>
-      <details className="mt-3 border-t border-default pt-3">
-        <summary className="cursor-pointer text-xs font-medium fg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500">View net worth data</summary>
-        <div className="mt-2 max-h-64 overflow-auto">
-          <table className="w-full text-left text-xs">
-            <caption className="sr-only">Estimated net worth by month</caption>
-            <thead className="fg-muted">
-              <tr className="border-b border-default">
-                <th scope="col" className="py-2 pr-3 font-medium">Month</th>
-                <th scope="col" className="py-2 pl-3 text-right font-medium">Estimated net worth</th>
-              </tr>
-            </thead>
-            <tbody className="fg-secondary">
-              {data.map((point) => (
-                <tr key={point.month} className="border-b border-default last:border-0">
-                  <th scope="row" className="py-2 pr-3 font-medium fg-primary">{monthYear(point.month)}</th>
-                  <td className={clsx('py-2 pl-3 text-right tabular-nums', point.netWorth < 0 && 'text-rose-600 dark:text-rose-400')}>{formatMoney(point.netWorth)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
+      <ChartDataDetails
+        summary="View net worth data"
+        caption="Estimated net worth by month"
+        headers={['Month', 'Estimated net worth']}
+        rows={data.map((point) => ({
+          key: point.month,
+          cells: [
+            monthYear(point.month),
+            <span key="value" className={clsx('tabular-nums', point.netWorth < 0 && 'text-rose-600 dark:text-rose-400')}>{formatMoney(point.netWorth)}</span>,
+          ],
+        }))}
+      />
     </>
   );
 }

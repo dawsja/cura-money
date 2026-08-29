@@ -1610,6 +1610,8 @@ function DateRangePopover({
   const active = value.preset !== 'all' && (!!value.from || !!value.to);
 
   return (
+    <>
+    <div className="fixed inset-0 z-40 bg-black/40 md:hidden" aria-hidden="true" onClick={onClose} />
     <div
       role="dialog"
       aria-label="Date range"
@@ -1684,6 +1686,7 @@ function DateRangePopover({
         </button>
       )}
     </div>
+    </>
   );
 }
 
@@ -1765,6 +1768,8 @@ function FilterPopover({
     || filters.maxAmount !== '';
 
   return (
+    <>
+    <div className="fixed inset-0 z-40 bg-black/40 md:hidden" aria-hidden="true" onClick={onClose} />
     <div
       role="dialog"
       aria-label="Filters"
@@ -1940,6 +1945,7 @@ function FilterPopover({
         </button>
       </div>
     </div>
+    </>
   );
 }
 
