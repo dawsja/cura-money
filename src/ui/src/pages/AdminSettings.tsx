@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Plus, Trash2, Edit3, RefreshCw, ShieldCheck, X, AlertTriangle, Copy, Check, KeyRound, Lock, Users, Eye, EyeOff, KeySquare, ShieldAlert, ShieldOff, Shield, Container, Coins } from 'lucide-react';
+import clsx from 'clsx';
 import { api } from '../lib/api';
 import { fetchMe, changePassword } from '../lib/auth';
 import { Dialog } from '../components/ui/dialog';
@@ -96,6 +97,7 @@ const PWD_INPUT_CLS = 'rounded-lg border border-default bg-surface fg-primary pl
 
 export function Settings() {
   const me = useQuery({ queryKey: ['me'], queryFn: fetchMe });
+  const [tab, setTab] = useState<'personal' | 'admin'>('personal');
 
   const isAdmin = me.data?.user.role === 'admin';
 
@@ -115,18 +117,25 @@ export function Settings() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold fg-primary">Settings</h1>
 
-      <div className="space-y-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide fg-muted">Personal</h2>
-        <PreferencesSection />
-        <PasswordSection
-          hasCredential={me.data?.user.hasCredential ?? false}
-          email={me.data?.user.email ?? ''}
-        />
-      </div>
-
       {isAdmin && (
-        <div className="space-y-6 border-t border-default pt-6">
-          <h2 className="text-sm font-semibold uppercase tracking-wide fg-muted">Admin</h2>
+        <div role="tablist" aria-label="Settings sections" className="flex gap-6 border-b border-default">
+          <SettingsTab label="Personal" active={tab === 'personal'} onClick={() => setTab('personal')} />
+          <SettingsTab label="Admin" active={tab === 'admin'} onClick={() => setTab('admin')} />
+        </div>
+      )}
+
+      {(!isAdmin || tab === 'personal') && (
+        <div className="space-y-4">
+          <PreferencesSection />
+          <PasswordSection
+            hasCredential={me.data?.user.hasCredential ?? false}
+            email={me.data?.user.email ?? ''}
+          />
+        </div>
+      )}
+
+      {isAdmin && tab === 'admin' && (
+        <div className="space-y-6">
           <ContainerUpdateSection />
           <OidcSection />
           <AuthenticationSection />
@@ -134,6 +143,25 @@ export function Settings() {
         </div>
       )}
     </div>
+  );
+}
+
+function SettingsTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={clsx(
+        'min-h-11 -mb-px border-b-2 px-1 text-sm font-medium transition-colors',
+        active
+          ? 'border-amber-500 text-amber-700 dark:text-amber-400'
+          : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300',
+      )}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -176,7 +204,7 @@ function ContainerUpdateSection() {
       />
 
       {data?.updateAvailable ? (
-        <div className="card border-l-4 border-sky-500 flex items-start gap-3" role="status">
+        <div className="card max-w-lg border-l-4 border-sky-500 flex items-start gap-3" role="status">
           <AlertTriangle className="h-5 w-5 text-sky-700 dark:text-sky-300 shrink-0 mt-0.5" />
           <div className="min-w-0">
             <h3 className="font-semibold fg-primary">A newer container image is available</h3>
@@ -184,7 +212,7 @@ function ContainerUpdateSection() {
           </div>
         </div>
       ) : (
-        <div className="card flex items-start gap-3">
+        <div className="card max-w-lg flex items-start gap-3">
           {data?.updateAvailable === false ? (
             <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
           ) : (
@@ -408,7 +436,7 @@ function AuthenticationSection() {
     return (
       <section>
         <SectionHeader icon={<Shield className="h-4 w-4" />} title="Authentication" />
-        <div className="card text-sm fg-muted">Loading…</div>
+        <div className="card max-w-lg text-sm fg-muted">Loading…</div>
       </section>
     );
   }
@@ -424,7 +452,7 @@ function AuthenticationSection() {
     return (
       <section>
         <SectionHeader icon={<Shield className="h-4 w-4" />} title="Authentication" />
-        <div className="card text-sm text-rose-600 dark:text-rose-400 space-y-2">
+        <div className="card max-w-lg text-sm text-rose-600 dark:text-rose-400 space-y-2">
           <p className="font-medium">Could not load authentication settings.</p>
           <p className="text-xs break-words">{errMsg}</p>
           <button
@@ -452,9 +480,10 @@ function AuthenticationSection() {
         icon={<Shield className="h-4 w-4" />}
         title="Authentication"
         subtitle="Local email/password sign-in is enabled by default. Turn it off once at least one OIDC user has been promoted to admin."
+        tone={localAuthDisabled ? 'amber' : 'rose'}
       />
 
-      <div className="card space-y-3">
+      <div className={clsx('card max-w-lg space-y-3', !localAuthDisabled && 'border-rose-300 dark:border-rose-800')}>
         <div className="flex items-start gap-3">
           {localAuthDisabled ? (
             <span className="text-xs bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded shrink-0 mt-0.5">
@@ -872,6 +901,9 @@ function UsersSection() {
   const [confirmDelete, setConfirmDelete] = useState<AdminUser | null>(null);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const [roleErr, setRoleErr] = useState<{ userId: string; message: string } | null>(null);
+  const [resetPasswordUser, setResetPasswordUser] = useState<AdminUser | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState('');
+  const [resetPasswordErr, setResetPasswordErr] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -917,6 +949,20 @@ function UsersSection() {
     onError: (e) => {
       const err = e as { message?: string };
       setDeleteErr(err.message ?? 'Failed to delete user.');
+    },
+  });
+
+  const setPassword = useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      api.post<{ ok: true }>(`/api/admin/users/${id}/password`, { password }),
+    onSuccess: () => {
+      setResetPasswordUser(null);
+      setResetPasswordValue('');
+      setResetPasswordErr(null);
+    },
+    onError: (e) => {
+      const err = e as { message?: string };
+      setResetPasswordErr(err.message ?? 'Failed to set password.');
     },
   });
 
@@ -1019,6 +1065,16 @@ function UsersSection() {
                     <option value="admin">Admin</option>
                   </select>
                 </div>
+                {isLocal && (
+                  <button
+                    onClick={() => setResetPasswordUser(u)}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700"
+                    aria-label={`Reset password for ${u.email}`}
+                    title="Reset password"
+                  >
+                    <KeyRound className="h-4 w-4" />
+                  </button>
+                )}
                 {isProtectedAdmin ? (
                   <span title={lockTitle} aria-label={lockTitle}>
                     <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
@@ -1069,7 +1125,113 @@ function UsersSection() {
           onConfirm={() => del.mutate(confirmDelete.id)}
         />
       )}
+
+      {resetPasswordUser && (
+        <ResetPasswordModal
+          user={resetPasswordUser}
+          password={resetPasswordValue}
+          busy={setPassword.isPending}
+          err={resetPasswordErr}
+          onPasswordChange={setResetPasswordValue}
+          onClose={() => {
+            setResetPasswordUser(null);
+            setResetPasswordValue('');
+            setResetPasswordErr(null);
+          }}
+          onSubmit={() => {
+            setResetPasswordErr(null);
+            setPassword.mutate({ id: resetPasswordUser.id, password: resetPasswordValue });
+          }}
+        />
+      )}
     </section>
+  );
+}
+
+function ResetPasswordModal({
+  user,
+  password,
+  busy,
+  err,
+  onPasswordChange,
+  onClose,
+  onSubmit,
+}: {
+  user: AdminUser;
+  password: string;
+  busy: boolean;
+  err: string | null;
+  onPasswordChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Dialog
+      aria-label="Reset password"
+      onClose={onClose}
+      closeDisabled={busy}
+      contentClassName="card w-full max-w-md"
+    >
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold fg-primary">Reset password</h2>
+          <p className="mt-1 text-sm fg-muted">
+            Set a new password for <span className="font-medium fg-primary">{user.name}</span> (
+            <span className="font-mono text-xs">{user.email}</span>). They'll need it the next time they sign in.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          className="close-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg disabled:opacity-50"
+          aria-label="Close reset password dialog"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <form
+        className="space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        <label className="block">
+          <span className="text-sm font-medium fg-secondary">
+            New password <span className="text-xs fg-muted font-normal">(min 12 chars)</span>
+          </span>
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => onPasswordChange(event.target.value)}
+            minLength={12}
+            maxLength={256}
+            required
+            autoFocus
+            autoComplete="new-password"
+            className={`mt-1 w-full ${PWD_INPUT_CLS}`}
+          />
+        </label>
+
+        {err && <p className="text-sm text-rose-600 dark:text-rose-400" role="alert">{err}</p>}
+
+        <div className="flex justify-end gap-2 pt-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="rounded-lg px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-700"
+          >
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary" disabled={busy}>
+            {busy ? 'Saving…' : 'Set password'}
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
@@ -1270,17 +1432,29 @@ function SectionHeader({
   title,
   subtitle,
   action,
+  tone = 'amber',
 }: {
   icon: React.ReactNode;
   title: string;
   subtitle?: string;
   action?: React.ReactNode;
+  /** 'rose' flags a section whose live control is destructive/irreversible
+   *  (e.g. disabling local auth) — see THEME.md-adjacent audit note: routine
+   *  preferences and high-stakes controls shouldn't look identical. */
+  tone?: 'amber' | 'rose';
 }) {
   return (
     <div className="flex items-start justify-between gap-3 mb-3">
       <div>
         <h3 className="text-lg font-semibold fg-primary flex items-center gap-2">
-          <span className="h-7 w-7 rounded-lg flex items-center justify-center bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+          <span
+            className={clsx(
+              'h-7 w-7 rounded-lg flex items-center justify-center',
+              tone === 'rose'
+                ? 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
+                : 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+            )}
+          >
             {icon}
           </span>
           {title}
