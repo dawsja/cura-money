@@ -36,24 +36,8 @@ const menuItems = [
   { to: '/rules', label: 'Rules', icon: ScrollText },
 ];
 
-/** Spring used by the active-tab indicator and the More sheet. */
+/** Spring used by the More sheet. */
 const SPRING = { type: 'spring', stiffness: 500, damping: 38 } as const;
-
-/**
- * The active-tab highlight. `layoutId` makes the pill glide between tabs
- * with a spring instead of teleporting — the signature "native tab bar"
- * interaction. Rendered inside whichever slot is currently active.
- */
-function ActiveIndicator({ animated }: { animated: boolean }) {
-  return (
-    <motion.span
-      layoutId={animated ? 'app-tab-indicator' : undefined}
-      transition={SPRING}
-      className="absolute inset-x-1 top-1 h-8 rounded-full bg-amber-50 dark:bg-amber-900/25"
-      aria-hidden="true"
-    />
-  );
-}
 
 function TabContent({
   icon: Icon,
@@ -66,9 +50,9 @@ function TabContent({
 }) {
   return (
     <>
-      <Icon className="relative z-10 h-[22px] w-[22px]" strokeWidth={active ? 2.4 : 2} />
+      <Icon className="h-[22px] w-[22px]" strokeWidth={active ? 2.4 : 2} />
       <span className={clsx(
-        'relative z-10 max-w-full px-0.5 text-center font-semibold leading-none tracking-tight',
+        'max-w-full px-0.5 text-center font-semibold leading-none tracking-tight',
         label.length > 10 ? 'text-[9px]' : 'text-[10px]',
       )}>
         {label}
@@ -192,10 +176,7 @@ export function MobileBottomNav() {
                 )}
               >
                 {({ isActive }) => (
-                  <>
-                    {isActive && !menuOpen && <ActiveIndicator animated={!reducedMotion} />}
-                    <TabContent icon={it.icon} label={it.label} active={isActive && !menuOpen} />
-                  </>
+                  <TabContent icon={it.icon} label={it.label} active={isActive && !menuOpen} />
                 )}
               </NavLink>
             </li>
@@ -214,7 +195,6 @@ export function MobileBottomNav() {
                 menuOpen || menuRouteActive ? 'text-amber-700 dark:text-amber-300' : 'fg-tertiary',
               )}
             >
-              {(menuOpen || menuRouteActive) && <ActiveIndicator animated={!reducedMotion} />}
               <TabContent
                 icon={menuOpen ? X : LayoutGrid}
                 label="More"
