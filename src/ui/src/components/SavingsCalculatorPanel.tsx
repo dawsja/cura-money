@@ -11,8 +11,11 @@
  * restores the inputs, payoff dates, and chart.
  */
 import { Calculator } from 'lucide-react';
-import clsx from 'clsx';
 import { currencySymbol } from '../lib/format';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Field, FieldGroup, FieldLabel } from './ui/field';
+import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from './ui/input-group';
+import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 
 type Method = 'planned' | 'avalanche' | 'snowball';
 
@@ -77,63 +80,56 @@ export function SavingsCalculatorPanel({
   ymToMonths,
 }: SavingsCalculatorPanelProps) {
   return (
-    <aside className="card">
-      <div className="flex items-center gap-2 mb-1">
-        <Calculator className="h-4 w-4 fg-tertiary" />
-        <h2 className="text-base font-semibold fg-primary">Savings calculator</h2>
-      </div>
-      <p className="text-xs fg-muted mb-4">
-        Try different payoff methods. Extra payments are only applied
-        for Avalanche and Snowball.
-      </p>
-
-      <div className="space-y-4">
-        <div>
-          <div className="text-xs uppercase tracking-wider fg-muted mb-2">Method</div>
-          <div role="radiogroup" aria-label="Payoff method" className="space-y-2">
-            {METHOD_OPTIONS.map((opt) => {
-              const selected = method === opt.value;
-              return (
-                <label
-                  key={opt.value}
-                  className={clsx(
-                    'block rounded-lg border p-3 cursor-pointer transition-colors',
-                    selected
-                      ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/30'
-                      : 'border-default hover:border-amber-500',
-                  )}
-                >
-                  <div className="flex items-start gap-2">
-                    <input
-                      type="radio"
-                      name="payoff-method"
-                      value={opt.value}
-                      checked={selected}
-                      onChange={() => {
-                        setMethod(opt.value);
-                        setShowSim(true);
-                      }}
-                      className="mt-0.5 accent-amber-500"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className={clsx('text-sm font-medium', selected ? 'fg-primary' : 'fg-secondary')}>
-                        {opt.label}
-                      </div>
-                      <div className="text-xs fg-muted mt-0.5">{opt.description}</div>
-                    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Calculator className="text-muted-foreground" />
+          Savings calculator
+        </CardTitle>
+        <CardDescription>
+          Try different payoff methods. Extra payments are only applied
+          for Avalanche and Snowball.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+      <FieldGroup className="gap-4">
+        <Field>
+          <FieldLabel>Method</FieldLabel>
+          <RadioGroup
+            value={method}
+            onValueChange={(value) => {
+              setMethod(value as Method);
+              setShowSim(true);
+            }}
+            aria-label="Payoff method"
+            className="flex flex-col gap-2"
+          >
+            {METHOD_OPTIONS.map((opt) => (
+              <FieldLabel
+                key={opt.value}
+                htmlFor={`payoff-method-${opt.value}`}
+                className="cursor-pointer rounded-lg border border-border p-3 has-data-checked:border-primary has-data-checked:bg-primary/5"
+              >
+                <Field orientation="horizontal">
+                  <RadioGroupItem id={`payoff-method-${opt.value}`} value={opt.value} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium">{opt.label}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">{opt.description}</div>
                   </div>
-                </label>
-              );
-            })}
-          </div>
-        </div>
+                </Field>
+              </FieldLabel>
+            ))}
+          </RadioGroup>
+        </Field>
 
         <div className="grid grid-cols-2 gap-2">
-          <label className="block">
-            <span className="text-xs fg-muted">Additional monthly payment</span>
-            <div className="relative mt-1">
-              <span className="absolute left-2 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
-              <input
+          <Field>
+            <FieldLabel>Additional monthly payment</FieldLabel>
+            <InputGroup>
+              <InputGroupAddon>
+                <InputGroupText>{currencySymbol()}</InputGroupText>
+              </InputGroupAddon>
+              <InputGroupInput
                 type="number"
                 step="0.01"
                 min="0"
@@ -143,15 +139,17 @@ export function SavingsCalculatorPanel({
                   setShowSim(true);
                 }}
                 placeholder="0"
-                className="w-full rounded border border-default bg-surface fg-primary placeholder-slate-400 pl-6 pr-2 py-2 text-sm focus:border-amber-500 focus:outline-none tabular-nums"
+                className="tabular-nums"
               />
-            </div>
-          </label>
-          <label className="block">
-            <span className="text-xs fg-muted">Additional one-time payment</span>
-            <div className="relative mt-1">
-              <span className="absolute left-2 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
-              <input
+            </InputGroup>
+          </Field>
+          <Field>
+            <FieldLabel>Additional one-time payment</FieldLabel>
+            <InputGroup>
+              <InputGroupAddon>
+                <InputGroupText>{currencySymbol()}</InputGroupText>
+              </InputGroupAddon>
+              <InputGroupInput
                 type="number"
                 step="0.01"
                 min="0"
@@ -161,15 +159,15 @@ export function SavingsCalculatorPanel({
                   setShowSim(true);
                 }}
                 placeholder="0"
-                className="w-full rounded border border-default bg-surface fg-primary placeholder-slate-400 pl-6 pr-2 py-2 text-sm focus:border-amber-500 focus:outline-none tabular-nums"
+                className="tabular-nums"
               />
-            </div>
-          </label>
+            </InputGroup>
+          </Field>
         </div>
 
         {isSimulated && projection && (
-          <div className="rounded-lg bg-amber-50 dark:bg-amber-900/30 p-3 text-xs text-amber-800 dark:text-amber-200">
-            <div className="font-semibold mb-1 capitalize">
+          <div className="rounded-lg bg-primary/10 p-3 text-xs text-foreground">
+            <div className="mb-1 font-semibold capitalize">
               {method === 'planned' ? 'Planned payments' : method === 'avalanche' ? 'Debt avalanche' : 'Debt snowball'}
               {monthlyExtraNum > 0 ? ` with ${formatMoney(monthlyExtraNum)}/mo extra` : ''}
               {oneTimeExtraNum > 0 ? ` + ${formatMoney(oneTimeExtraNum)} one-time` : ''}
@@ -192,7 +190,8 @@ export function SavingsCalculatorPanel({
             )}
           </div>
         )}
-      </div>
-    </aside>
+      </FieldGroup>
+      </CardContent>
+    </Card>
   );
 }

@@ -13,7 +13,25 @@ import { api } from '../lib/api';
 import { currencySymbol, formatMoney, formatDate, todayLocalISO } from '../lib/format';
 import { RefreshCw, AlertCircle, CalendarDays, CreditCard, Tag, X, Plus, Pencil, Trash2, Check, Ellipsis } from 'lucide-react';
 import clsx from 'clsx';
-import { Dialog } from '../components/ui/dialog';
+import { Alert, AlertDescription } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { Card, CardAction, CardContent, CardHeader } from '../components/ui/card';
+import { DatePicker } from '../components/ui/date-picker';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../components/ui/empty';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '../components/ui/field';
+import { Input } from '../components/ui/input';
+import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from '../components/ui/input-group';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Spinner } from '../components/ui/spinner';
 
 type Frequency = 'weekly' | 'monthly' | 'yearly';
 
@@ -161,17 +179,19 @@ export function Recurring() {
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center fg-muted">
-        <RefreshCw className="h-5 w-5 animate-spin" />
+      <div className="flex h-full items-center justify-center text-muted-foreground">
+        <Spinner />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center fg-muted gap-2">
-        <AlertCircle className="h-5 w-5 text-rose-500" />
-        <span>Failed to load recurring charges.</span>
+      <div className="flex h-full items-center justify-center">
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertDescription>Failed to load recurring charges.</AlertDescription>
+        </Alert>
       </div>
     );
   }
@@ -181,76 +201,93 @@ export function Recurring() {
       {/* Header */}
       <div data-onboarding-target="recurring-summary" className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold fg-primary">Recurring</h1>
-          <p className="text-sm fg-secondary mt-1">
+          <h1 className="text-2xl font-bold text-foreground">Recurring</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Automatically detected charges plus any you add yourself. Review these to catch unused subscriptions or unexpected charges.
           </p>
         </div>
-        <button
+        <Button
           type="button"
           onClick={() => setEditing('new')}
-          className="btn-primary flex shrink-0 items-center gap-2"
+          className="shrink-0"
         >
-          <Plus className="h-4 w-4" /> Add recurring
-        </button>
+          <Plus data-icon="inline-start" /> Add recurring
+        </Button>
       </div>
       {dismiss.isError && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300" role="alert">
-          Could not dismiss the recurring charge: {dismiss.error.message}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>
+            Could not dismiss the recurring charge: {dismiss.error.message}
+          </AlertDescription>
+        </Alert>
       )}
       {deleteManual.isError && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300" role="alert">
-          Could not delete the recurring entry: {deleteManual.error.message}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>
+            Could not delete the recurring entry: {deleteManual.error.message}
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(12rem,1fr)]">
-        <div className="rounded-xl bg-surface border border-default p-4 sm:p-5">
-          <p className="text-xs font-medium fg-tertiary uppercase tracking-wide">Recurring spend</p>
-          <div className="mt-2 flex items-end gap-3">
-            <p className="text-2xl font-bold fg-primary tabular-nums">{formatMoney(monthlyTotal)}</p>
-            <p className="pb-0.5 text-sm fg-secondary">per month</p>
-          </div>
-          <p className="mt-1 text-xs fg-tertiary">
-            {formatMoney(yearlyEstimate)} estimated per year
-          </p>
-        </div>
-        <div className="rounded-xl bg-surface border border-default p-4 sm:p-5">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-medium fg-tertiary uppercase tracking-wide">Due soon</p>
-            <CalendarDays className="h-4 w-4 text-sky-700 dark:text-sky-300" aria-hidden="true" />
-          </div>
-          <p className="mt-2 text-2xl font-bold fg-primary tabular-nums">{comingUpCount}</p>
-          <p className="mt-1 text-xs fg-tertiary">
-            {comingUpCount === 1 ? 'charge needs attention' : 'charges need attention'}
-          </p>
-        </div>
+        <Card>
+          <CardHeader>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Recurring spend</p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-end gap-3">
+              <p className="text-2xl font-bold tabular-nums text-foreground">{formatMoney(monthlyTotal)}</p>
+              <p className="pb-0.5 text-sm text-muted-foreground">per month</p>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {formatMoney(yearlyEstimate)} estimated per year
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Due soon</p>
+            <CardAction>
+              <CalendarDays className="size-4 text-sky-700 dark:text-sky-300" aria-hidden="true" />
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold tabular-nums text-foreground">{comingUpCount}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {comingUpCount === 1 ? 'charge needs attention' : 'charges need attention'}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Recurring charges list */}
       {data && data.length === 0 ? (
-        <div className="rounded-xl bg-surface border border-default p-8 text-center">
-          <RefreshCw className="h-10 w-10 fg-tertiary mx-auto mb-3" />
-          <p className="fg-secondary text-sm">No recurring charges detected yet.</p>
-          <p className="fg-tertiary text-xs mt-1">
-            As more transactions come in, recurring patterns will appear here automatically — or add one manually with <span className="font-semibold">Add recurring</span>.
-          </p>
-        </div>
+        <Empty className="border border-dashed">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <RefreshCw />
+            </EmptyMedia>
+            <EmptyTitle>No recurring charges detected yet</EmptyTitle>
+            <EmptyDescription>
+              As more transactions come in, recurring patterns will appear here automatically — or add one manually with <span className="font-semibold">Add recurring</span>.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-6">
           {chargeSections.map((section) => (
             <section key={section.id} aria-labelledby={`${section.id}-heading`}>
               <div className="mb-2 flex items-end justify-between gap-3 px-1">
                 <div>
-                  <h2 id={`${section.id}-heading`} className="text-sm font-semibold fg-primary">{section.title}</h2>
-                  <p className="text-xs fg-tertiary">{section.description}</p>
+                  <h2 id={`${section.id}-heading`} className="text-sm font-semibold text-foreground">{section.title}</h2>
+                  <p className="text-xs text-muted-foreground">{section.description}</p>
                 </div>
-                <span className="text-xs tabular-nums fg-muted">{section.charges.length}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">{section.charges.length}</span>
               </div>
 
-              <div className="divide-y divide-[color:var(--border-default)] rounded-xl border border-default bg-surface">
+              <Card className="py-0">
+                <CardContent className="divide-y divide-border px-0">
                 {section.charges.map((charge) => (
                   <div
                     key={recurringKey(charge.merchant, charge.accountId ?? charge.account)}
@@ -258,33 +295,32 @@ export function Recurring() {
                   >
                     <div className="min-w-0">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <h3 className="min-w-0 truncate text-sm font-semibold fg-primary">{charge.merchant}</h3>
-                        <span
+                        <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">{charge.merchant}</h3>
+                        <Badge
+                          variant="secondary"
                           className={clsx(
-                            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+                            'border-transparent',
                             FREQUENCY_BADGE[charge.frequency],
                           )}
                         >
                           {FREQUENCY_LABEL[charge.frequency]}
-                        </span>
+                        </Badge>
                         {charge.manual && (
-                          <span className="inline-flex items-center rounded-full border border-default bg-canvas-subtle px-2 py-0.5 text-xs font-medium fg-muted">
-                            Manual
-                          </span>
+                          <Badge variant="outline">Manual</Badge>
                         )}
                       </div>
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs fg-tertiary">
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                         <span className="inline-flex min-w-0 items-center gap-1">
-                          <CreditCard className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                          <CreditCard className="size-3.5 shrink-0" aria-hidden="true" />
                           <span className="truncate">{charge.account}</span>
                         </span>
                         <span className="inline-flex min-w-0 items-center gap-1">
-                          <Tag className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                          <Tag className="size-3.5 shrink-0" aria-hidden="true" />
                           <span className="truncate">{charge.category}</span>
                         </span>
                         {!charge.manual && (
                           <span className="inline-flex items-center gap-1">
-                            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                            <RefreshCw className="size-3.5" aria-hidden="true" />
                             {charge.occurrences} times
                           </span>
                         )}
@@ -294,58 +330,62 @@ export function Recurring() {
                     <div className="col-start-1 row-start-2 sm:col-start-2 sm:row-start-1">
                       <p className={clsx(
                         'inline-flex items-center gap-1 text-sm font-medium',
-                        charge.comingSoon ? 'text-sky-700 dark:text-sky-300' : 'fg-secondary',
+                        charge.comingSoon ? 'text-sky-700 dark:text-sky-300' : 'text-muted-foreground',
                       )}>
-                        <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
+                        <CalendarDays className="size-4 shrink-0" aria-hidden="true" />
                         {daysLabel(charge.daysUntil)}
                       </p>
-                      <p className="mt-0.5 text-xs fg-tertiary">{formatDate(charge.nextDate)}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{formatDate(charge.nextDate)}</p>
                     </div>
 
                     <div className="col-start-2 row-span-2 row-start-1 flex items-center justify-end gap-2 self-center sm:col-start-3 sm:row-span-1">
                       <div className="text-right">
-                        <p className="text-base font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+                        <p className="text-base font-semibold tabular-nums text-destructive">
                           {formatMoney(charge.amount)}
                         </p>
-                        <p className="text-xs tabular-nums fg-tertiary">
+                        <p className="text-xs tabular-nums text-muted-foreground">
                           {formatMoney(annualCost(charge))}/yr
                         </p>
                       </div>
 
                       <details className="relative">
                         <summary
-                          className="close-button flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg [&::-webkit-details-marker]:hidden"
+                          className="close-button flex size-11 cursor-pointer list-none items-center justify-center rounded-lg [&::-webkit-details-marker]:hidden"
                           aria-label={`Actions for ${charge.merchant}`}
                         >
-                          <Ellipsis className="h-5 w-5" aria-hidden="true" />
+                          <Ellipsis className="size-5" aria-hidden="true" />
                         </summary>
-                        <div className="absolute right-0 z-20 mt-1 min-w-44 rounded-lg border border-default bg-surface p-1 shadow-xl">
+                        <div className="absolute right-0 z-20 mt-1 min-w-44 rounded-lg border border-border bg-card p-1 shadow-xl">
                           {charge.manual ? (
                             <>
-                              <button
+                              <Button
                                 type="button"
+                                variant="ghost"
+                                className="h-11 w-full justify-start"
                                 onClick={(event) => {
                                   event.currentTarget.closest('details')?.removeAttribute('open');
                                   setEditing(charge);
                                 }}
-                                className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm"
                               >
-                                <Pencil className="h-4 w-4" aria-hidden="true" />
+                                <Pencil data-icon="inline-start" aria-hidden="true" />
                                 Edit recurring
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 type="button"
+                                variant="ghost"
+                                className="h-11 w-full justify-start text-destructive hover:text-destructive"
                                 onClick={() => charge.id && deleteManual.mutate(charge.id)}
                                 disabled={deleteManual.isPending}
-                                className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-400 dark:hover:bg-rose-900/30"
                               >
-                                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                <Trash2 data-icon="inline-start" aria-hidden="true" />
                                 Delete recurring
-                              </button>
+                              </Button>
                             </>
                           ) : (
-                            <button
+                            <Button
                               type="button"
+                              variant="ghost"
+                              className="h-11 w-full justify-start text-destructive hover:text-destructive"
                               onClick={() => dismiss.mutate({
                                 merchant: charge.merchant,
                                 amount: charge.amount,
@@ -353,18 +393,18 @@ export function Recurring() {
                                 accountId: charge.accountId,
                               })}
                               disabled={dismiss.isPending}
-                              className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-400 dark:hover:bg-rose-900/30"
                             >
-                              <X className="h-4 w-4" aria-hidden="true" />
+                              <X data-icon="inline-start" aria-hidden="true" />
                               Remove from recurring
-                            </button>
+                            </Button>
                           )}
                         </div>
                       </details>
                     </div>
                   </div>
                 ))}
-              </div>
+                </CardContent>
+              </Card>
             </section>
           ))}
         </div>
@@ -439,121 +479,152 @@ function ManualRecurringModal({
     && Number.isFinite(amountNum)
     && amountNum > 0
     && /^\d{4}-\d{2}-\d{2}$/.test(draft.anchorDate);
+  const amountInvalid = draft.amount !== '' && !(Number.isFinite(amountNum) && amountNum > 0);
 
   return (
     <Dialog
-      aria-label={isEdit ? 'Edit recurring entry' : 'Add recurring entry'}
-      onClose={onClose}
-      closeDisabled={saving}
-      contentClassName="card w-full max-w-sm"
+      open
+      onOpenChange={(open) => {
+        if (!open && !saving) onClose();
+      }}
     >
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-semibold fg-primary">{isEdit ? 'Edit recurring' : 'Add recurring'}</h3>
-        <button type="button" onClick={onClose} disabled={saving} className="close-button rounded-lg p-2 disabled:opacity-50" aria-label="Close">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <form
-        className="space-y-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (canSave && !saving) onSave(draft);
+      <DialogContent
+        className="sm:max-w-md"
+        onPointerDownOutside={(event) => {
+          if (saving) event.preventDefault();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (saving) event.preventDefault();
         }}
       >
-        <label className="block">
-          <span className="text-sm fg-secondary">Merchant</span>
-          <input
-            value={draft.merchant}
-            onChange={(e) => setDraft((d) => ({ ...d, merchant: e.target.value }))}
-            placeholder="e.g. Netflix"
-            maxLength={120}
-            className={`mt-1 w-full ${MODAL_INPUT_CLS}`}
-            required
-            autoFocus
-          />
-        </label>
+        <form
+          className="contents"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (canSave && !saving) onSave(draft);
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{isEdit ? 'Edit recurring' : 'Add recurring'}</DialogTitle>
+            <DialogDescription>
+              {isEdit
+                ? 'Update this manual recurring charge.'
+                : 'Add a subscription or bill that should appear on your recurring schedule.'}
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="text-sm fg-secondary">Amount</span>
-            <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={draft.amount}
-                onChange={(e) => setDraft((d) => ({ ...d, amount: e.target.value }))}
-                placeholder="0"
-                className={`w-full ${MODAL_INPUT_CLS} pl-7 pr-3 tabular-nums`}
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="recurring-merchant">Merchant</FieldLabel>
+              <Input
+                id="recurring-merchant"
+                value={draft.merchant}
+                onChange={(e) => setDraft((d) => ({ ...d, merchant: e.target.value }))}
+                placeholder="e.g. Netflix"
+                maxLength={120}
                 required
+                autoFocus
+                disabled={saving}
               />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field data-invalid={amountInvalid || undefined}>
+                <FieldLabel htmlFor="recurring-amount">Amount</FieldLabel>
+                <InputGroup>
+                  <InputGroupAddon>
+                    <InputGroupText>{currencySymbol()}</InputGroupText>
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    id="recurring-amount"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={draft.amount}
+                    onChange={(e) => setDraft((d) => ({ ...d, amount: e.target.value }))}
+                    placeholder="0"
+                    className="tabular-nums"
+                    required
+                    disabled={saving}
+                    aria-invalid={amountInvalid || undefined}
+                  />
+                </InputGroup>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="recurring-frequency">Frequency</FieldLabel>
+                <Select
+                  value={draft.frequency}
+                  onValueChange={(value) => setDraft((d) => ({ ...d, frequency: value as Frequency }))}
+                  disabled={saving}
+                >
+                  <SelectTrigger id="recurring-frequency" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="yearly">Yearly</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
             </div>
-          </label>
-          <label className="block">
-            <span className="text-sm fg-secondary">Frequency</span>
-            <select
-              value={draft.frequency}
-              onChange={(e) => setDraft((d) => ({ ...d, frequency: e.target.value as Frequency }))}
-              className={`mt-1 w-full ${MODAL_INPUT_CLS}`}
-            >
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="yearly">Yearly</option>
-            </select>
-          </label>
-        </div>
 
-        <label className="block">
-          <span className="text-sm fg-secondary">Next due date</span>
-          <input
-            type="date"
-            value={draft.anchorDate}
-            onChange={(e) => setDraft((d) => ({ ...d, anchorDate: e.target.value }))}
-            className={`mt-1 w-full ${MODAL_INPUT_CLS}`}
-            required
-          />
-          <span className="mt-1 block text-[10px] fg-muted">Any real charge date works — the schedule projects forward from it.</span>
-        </label>
+            <Field>
+              <FieldLabel>Next due date</FieldLabel>
+              <DatePicker
+                value={draft.anchorDate}
+                onChange={(ymd) => setDraft((d) => ({ ...d, anchorDate: ymd }))}
+                disabled={saving}
+              />
+              <FieldDescription>Any real charge date works — the schedule projects forward from it.</FieldDescription>
+            </Field>
 
-        <label className="block">
-          <span className="text-sm fg-secondary">Account</span>
-          <input
-            value={draft.account}
-            onChange={(e) => setDraft((d) => ({ ...d, account: e.target.value }))}
-            placeholder="e.g. Chase Credit"
-            maxLength={120}
-            className={`mt-1 w-full ${MODAL_INPUT_CLS}`}
-            required
-          />
-        </label>
+            <Field>
+              <FieldLabel htmlFor="recurring-account">Account</FieldLabel>
+              <Input
+                id="recurring-account"
+                value={draft.account}
+                onChange={(e) => setDraft((d) => ({ ...d, account: e.target.value }))}
+                placeholder="e.g. Chase Credit"
+                maxLength={120}
+                required
+                disabled={saving}
+              />
+            </Field>
 
-        <label className="block">
-          <span className="text-sm fg-secondary">Category</span>
-          <input
-            value={draft.category}
-            onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}
-            placeholder="e.g. Subscriptions"
-            maxLength={120}
-            className={`mt-1 w-full ${MODAL_INPUT_CLS}`}
-            required
-          />
-        </label>
+            <Field>
+              <FieldLabel htmlFor="recurring-category">Category</FieldLabel>
+              <Input
+                id="recurring-category"
+                value={draft.category}
+                onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}
+                placeholder="e.g. Subscriptions"
+                maxLength={120}
+                required
+                disabled={saving}
+              />
+            </Field>
+          </FieldGroup>
 
-        {error && <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-        <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} disabled={saving} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50">
-            Cancel
-          </button>
-          <button type="submit" disabled={!canSave || saving} className="btn-primary flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
-            <Check className="h-4 w-4" /> {saving ? 'Saving…' : isEdit ? 'Save' : 'Add'}
-          </button>
-        </div>
-      </form>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!canSave || saving}>
+              {saving ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
+              {saving ? 'Saving…' : isEdit ? 'Save' : 'Add'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
     </Dialog>
   );
 }
-
-const MODAL_INPUT_CLS = 'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';

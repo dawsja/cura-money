@@ -1,7 +1,28 @@
-import { useState } from 'react';
-import { Check, X } from 'lucide-react';
-import clsx from 'clsx';
-import { Dialog } from './ui/dialog';
+import { useState, type FormEvent } from 'react';
+import { Check } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
+import { Alert, AlertDescription } from './ui/alert';
+import { Button } from './ui/button';
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSeparator } from './ui/field';
+import { Input } from './ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
+import { Spinner } from './ui/spinner';
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 
 /**
  * Reusable form modal for creating or editing a categorization rule.
@@ -52,8 +73,12 @@ export interface RuleFormSubmit {
   type?: RuleFormTxType;
 }
 
-const INPUT_CLS =
-  'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
+const ANY = '__any__';
+const TYPE_OPTIONS: { value: RuleFormTxType; label: string }[] = [
+  { value: 'expense', label: 'Expense' },
+  { value: 'income', label: 'Income' },
+  { value: 'transfer', label: 'Transfer' },
+];
 
 export function RuleFormModal({
   mode,
@@ -114,7 +139,25 @@ export function RuleFormModal({
     && accountExists
     && !submitting;
 
-  const onSubmit = async (e: React.FormEvent) => {
+  const applySourceType = (next: RuleFormTxType | '') => {
+    setSourceType(next);
+    const selectedCategory = categories.find((candidate) => candidate.name === sourceCategory);
+    if (next && selectedCategory && selectedCategory.type !== next && selectedCategory.name !== 'Pay down goals') {
+      setSourceCategory('');
+      setSourceSubCategory('');
+    }
+  };
+
+  const applyType = (next: RuleFormTxType | '') => {
+    setType(next);
+    const selectedCategory = categories.find((candidate) => candidate.name === category);
+    if (next && selectedCategory && selectedCategory.type !== next && selectedCategory.name !== 'Pay down goals') {
+      setCategory('');
+      setSubCategory('');
+    }
+  };
+
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!canSave) return;
     setSubmitting(true);
@@ -139,212 +182,221 @@ export function RuleFormModal({
 
   return (
     <Dialog
-      aria-label={mode === 'create' ? 'Create rule' : 'Edit rule'}
-      onClose={onClose}
-      closeDisabled={submitting}
-      contentClassName="card w-full max-w-md"
+      open
+      onOpenChange={(open) => {
+        if (!open && !submitting) onClose();
+      }}
     >
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold fg-primary">
-            {mode === 'create' ? 'Create rule' : 'Edit rule'}
-          </h3>
-          <button
-            type="button"
-            onClick={() => !submitting && onClose()}
-            disabled={submitting}
-            className="close-button rounded-lg p-2 disabled:opacity-50"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <form onSubmit={onSubmit} className="space-y-3">
-          <div className="text-xs font-semibold uppercase tracking-wide fg-muted">When</div>
-          <label className="block">
-            <span className="text-sm fg-secondary">Merchant</span>
-            <input
-              type="text"
-              value={merchant}
-              onChange={(e) => setMerchant(e.target.value)}
-              placeholder="e.g. Whole Foods Market"
-              maxLength={255}
-              className={`mt-1 w-full ${INPUT_CLS}`}
-              autoFocus
-            />
-            <span className="text-[10px] fg-muted">
-              Case-insensitive. Matches this merchant exactly, or when the payee
-              starts with this text (e.g. &quot;Starbucks&quot; matches &quot;STARBUCKS #1234&quot;).
-            </span>
-          </label>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{mode === 'create' ? 'Create rule' : 'Edit rule'}</DialogTitle>
+          <DialogDescription>
+            Match a merchant (and optional account, type, and category), then set the resulting assignment.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <FieldGroup className="gap-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">When</p>
+            <Field>
+              <FieldLabel htmlFor="rule-merchant">Merchant</FieldLabel>
+              <Input
+                id="rule-merchant"
+                type="text"
+                value={merchant}
+                onChange={(e) => setMerchant(e.target.value)}
+                placeholder="e.g. Whole Foods Market"
+                maxLength={255}
+                autoFocus
+              />
+              <FieldDescription>
+                Case-insensitive. Matches this merchant exactly, or when the payee
+                starts with this text (e.g. &quot;Starbucks&quot; matches &quot;STARBUCKS #1234&quot;).
+              </FieldDescription>
+            </Field>
 
-          <label className="block">
-            <span className="text-sm fg-secondary">
-              Account <span className="fg-muted font-normal">(optional)</span>
-            </span>
-            <select
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              className={`mt-1 w-full ${INPUT_CLS}`}
-            >
-              <option value="">Any account</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>{account.name}</option>
-              ))}
-            </select>
-          </label>
+            <Field>
+              <FieldLabel>
+                Account <span className="font-normal text-muted-foreground">(optional)</span>
+              </FieldLabel>
+              <Select
+                value={accountId || ANY}
+                onValueChange={(value) => setAccountId(value === ANY ? '' : value)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Any account" />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  <SelectGroup>
+                    <SelectItem value={ANY}>Any account</SelectItem>
+                    {accounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
 
-          <label className="block">
-            <span className="text-sm fg-secondary">
-              Original type <span className="fg-muted font-normal">(optional)</span>
-            </span>
-            <select
-              value={sourceType}
-              onChange={(e) => {
-                const next = e.target.value as RuleFormTxType | '';
-                setSourceType(next);
-                const selectedCategory = categories.find((candidate) => candidate.name === sourceCategory);
-                if (next && selectedCategory && selectedCategory.type !== next && selectedCategory.name !== 'Pay down goals') {
-                  setSourceCategory('');
-                  setSourceSubCategory('');
-                }
-              }}
-              className={`mt-1 w-full ${INPUT_CLS}`}
-            >
-              <option value="">Any type</option>
-              <option value="expense">Expense</option>
-              <option value="income">Income</option>
-              <option value="transfer">Transfer</option>
-            </select>
-          </label>
+            <Field>
+              <FieldLabel>
+                Original type <span className="font-normal text-muted-foreground">(optional)</span>
+              </FieldLabel>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                value={sourceType || ANY}
+                onValueChange={(next) => {
+                  if (!next) return;
+                  applySourceType(next === ANY ? '' : next as RuleFormTxType);
+                }}
+                className="w-full"
+              >
+                <ToggleGroupItem value={ANY} className="flex-1">Any</ToggleGroupItem>
+                {TYPE_OPTIONS.map((option) => (
+                  <ToggleGroupItem key={option.value} value={option.value} className="flex-1">
+                    {option.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </Field>
 
-          <label className="block">
-            <span className="text-sm fg-secondary">
-              Original category <span className="fg-muted font-normal">(optional)</span>
-            </span>
-            <select
-              value={sourceCategoryPick}
-              onChange={(e) => {
-                if (!e.target.value) {
-                  setSourceCategory('');
-                  setSourceSubCategory('');
-                  return;
-                }
-                const selected = JSON.parse(e.target.value) as { category: string; subCategory: string };
-                setSourceCategory(selected.category);
-                setSourceSubCategory(selected.subCategory);
-              }}
-              className={`mt-1 w-full ${INPUT_CLS}`}
-            >
-              <option value="">Any category</option>
-              {sourceCategoryPick && !sourceExistsInTree && (
-                <option value={sourceCategoryPick}>
-                  Historical: {sourceCategory} › {sourceSubCategory}
-                </option>
-              )}
-              {categories
-                .filter((candidate) => !sourceType || candidate.type === sourceType || candidate.name === 'Pay down goals')
-                .map((c) => (
-                <optgroup key={c.id} label={c.name}>
-                  {c.subCategories.map((s) => (
-                    <option
-                      key={s.id}
-                      value={JSON.stringify({ category: c.name, subCategory: s.name })}
-                    >
-                      {s.name}
-                    </option>
+            <Field>
+              <FieldLabel>
+                Original category <span className="font-normal text-muted-foreground">(optional)</span>
+              </FieldLabel>
+              <Select
+                value={sourceCategoryPick || ANY}
+                onValueChange={(value) => {
+                  if (!value || value === ANY) {
+                    setSourceCategory('');
+                    setSourceSubCategory('');
+                    return;
+                  }
+                  const selected = JSON.parse(value) as { category: string; subCategory: string };
+                  setSourceCategory(selected.category);
+                  setSourceSubCategory(selected.subCategory);
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Any category" />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  <SelectGroup>
+                    <SelectItem value={ANY}>Any category</SelectItem>
+                    {sourceCategoryPick && !sourceExistsInTree && (
+                      <SelectItem value={sourceCategoryPick}>
+                        Historical: {sourceCategory} › {sourceSubCategory}
+                      </SelectItem>
+                    )}
+                  </SelectGroup>
+                  {categories
+                    .filter((candidate) => !sourceType || candidate.type === sourceType || candidate.name === 'Pay down goals')
+                    .map((c) => (
+                    <SelectGroup key={c.id}>
+                      <SelectLabel>{c.name}</SelectLabel>
+                      {c.subCategories.map((s) => (
+                        <SelectItem
+                          key={s.id}
+                          value={JSON.stringify({ category: c.name, subCategory: s.name })}
+                        >
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
+                </SelectContent>
+              </Select>
+            </Field>
 
-          <div className="border-t border-default pt-3 text-xs font-semibold uppercase tracking-wide fg-muted">Then set</div>
+            <FieldSeparator>Then set</FieldSeparator>
 
-          <label className="block">
-            <span className="text-sm fg-secondary">
-              Type
-            </span>
-            <select
-              value={type}
-              onChange={(e) => {
-                const next = e.target.value as RuleFormTxType | '';
-                setType(next);
-                const selectedCategory = categories.find((candidate) => candidate.name === category);
-                if (next && selectedCategory && selectedCategory.type !== next && selectedCategory.name !== 'Pay down goals') {
-                  setCategory('');
-                  setSubCategory('');
-                }
-              }}
-              className={`mt-1 w-full ${INPUT_CLS}`}
-            >
-              <option value="">
-                {preservesLegacyPaydownType ? 'Leave type unchanged (legacy rule)' : 'Pick a type'}
-              </option>
-              <option value="expense">Expense</option>
-              <option value="income">Income</option>
-              <option value="transfer">Transfer</option>
-            </select>
-          </label>
+            <Field>
+              <FieldLabel>Type</FieldLabel>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                value={type || undefined}
+                onValueChange={(next) => {
+                  if (!next && preservesLegacyPaydownType) {
+                    applyType('');
+                    return;
+                  }
+                  if (!next) return;
+                  applyType(next as RuleFormTxType);
+                }}
+                className="w-full"
+              >
+                {TYPE_OPTIONS.map((option) => (
+                  <ToggleGroupItem key={option.value} value={option.value} className="flex-1">
+                    {option.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+              {preservesLegacyPaydownType && !type ? (
+                <FieldDescription>Leave type unchanged (legacy rule)</FieldDescription>
+              ) : null}
+            </Field>
 
-          <label className="block">
-            <span className="text-sm fg-secondary">Category</span>
-            <select
-              value={categoryPick}
-              onChange={(e) => {
-                if (!e.target.value) {
-                  setCategory('');
-                  setSubCategory('');
-                  return;
-                }
-                const selected = JSON.parse(e.target.value) as { category: string; subCategory: string };
-                setCategory(selected.category);
-                setSubCategory(selected.subCategory);
-              }}
-              className={`mt-1 w-full ${INPUT_CLS}`}
-            >
-              <option value="">Pick a category…</option>
-              {categories
-                .filter((candidate) => !type || candidate.type === type || candidate.name === 'Pay down goals')
-                .map((c) => (
-                <optgroup key={c.id} label={c.name}>
-                  {c.subCategories.map((s) => (
-                    <option
-                      key={s.id}
-                      value={JSON.stringify({ category: c.name, subCategory: s.name })}
-                    >
-                      {s.name}
-                    </option>
+            <Field>
+              <FieldLabel>Category</FieldLabel>
+              <Select
+                value={categoryPick || undefined}
+                onValueChange={(value) => {
+                  if (!value) {
+                    setCategory('');
+                    setSubCategory('');
+                    return;
+                  }
+                  const selected = JSON.parse(value) as { category: string; subCategory: string };
+                  setCategory(selected.category);
+                  setSubCategory(selected.subCategory);
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Pick a category…" />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  {categories
+                    .filter((candidate) => !type || candidate.type === type || candidate.name === 'Pay down goals')
+                    .map((c) => (
+                    <SelectGroup key={c.id}>
+                      <SelectLabel>{c.name}</SelectLabel>
+                      {c.subCategories.map((s) => (
+                        <SelectItem
+                          key={s.id}
+                          value={JSON.stringify({ category: c.name, subCategory: s.name })}
+                        >
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
+                </SelectContent>
+              </Select>
+            </Field>
 
-          {err && (
-            <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p>
-          )}
+            {err ? (
+              <Alert variant="destructive">
+                <AlertDescription>{err}</AlertDescription>
+              </Alert>
+            ) : null}
+          </FieldGroup>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button
+          <DialogFooter>
+            <Button
               type="button"
+              variant="outline"
               onClick={() => !submitting && onClose()}
               disabled={submitting}
-              className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50"
             >
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!canSave}
-              className={clsx(
-                'btn-primary flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed',
-              )}
-            >
-              <Check className="h-4 w-4" />
+            </Button>
+            <Button type="submit" disabled={!canSave}>
+              {submitting ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
               {submitting ? 'Saving…' : mode === 'create' ? 'Create rule' : 'Save'}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
+      </DialogContent>
     </Dialog>
   );
 }

@@ -1,215 +1,196 @@
-/**
- * shadcn-style Pagination — numeric page links, prev/next, and an
- * ellipsis for collapsed windows.
- *
- * Used for table-style navigation (e.g. the Transactions list).
- * Designed to be controlled: the parent owns the current page and
- * provides an `onPageChange` callback. The link components accept
- * either an `onClick` handler (preferred for React state) or an
- * `href` (for server-rendered links).
- *
- * Usage:
- *
- *   const [page, setPage] = useState(1);
- *   const totalPages = Math.ceil(total / pageSize);
- *   <Pagination>
- *     <PaginationContent>
- *       <PaginationItem>
- *         <PaginationPrevious onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} />
- *       </PaginationItem>
- *       {pageNumbers({ page, totalPages }).map((n, i) =>
- *         n === 'ellipsis' ? (
- *           <PaginationItem key={`e-${i}`}><PaginationEllipsis /></PaginationItem>
- *         ) : (
- *           <PaginationItem key={n}>
- *             <PaginationLink isActive={n === page} onClick={() => setPage(n)}>{n}</PaginationLink>
- *           </PaginationItem>
- *         ),
- *       )}
- *       <PaginationItem>
- *         <PaginationNext onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} />
- *       </PaginationItem>
- *     </PaginationContent>
- *   </Pagination>
- */
-import * as React from 'react';
-import clsx from 'clsx';
-import { ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
+import * as React from "react"
+import { cn } from "cn"
 
-export function Pagination({ className, ...props }: React.HTMLAttributes<HTMLElement>) {
+import { Button } from "@/components/ui/button"
+import { ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from "lucide-react"
+
+function Pagination({ className, ...props }: React.ComponentProps<"nav">) {
   return (
     <nav
       role="navigation"
       aria-label="pagination"
-      className={clsx('mx-auto flex w-full justify-center', className)}
+      data-slot="pagination"
+      className={cn("mx-auto flex w-full justify-center", className)}
       {...props}
     />
-  );
+  )
 }
 
-export function PaginationContent({ className, ...props }: React.HTMLAttributes<HTMLUListElement>) {
+function PaginationContent({
+  className,
+  ...props
+}: React.ComponentProps<"ul">) {
   return (
     <ul
-      className={clsx('flex flex-row items-center gap-1', className)}
+      data-slot="pagination-content"
+      className={cn("flex items-center gap-0.5", className)}
       {...props}
     />
-  );
+  )
 }
 
-export function PaginationItem({ className, ...props }: React.HTMLAttributes<HTMLLIElement>) {
-  return <li className={clsx('', className)} {...props} />;
+function PaginationItem({ ...props }: React.ComponentProps<"li">) {
+  return <li data-slot="pagination-item" {...props} />
 }
 
 type PaginationLinkProps = {
-  isActive?: boolean;
-  disabled?: boolean;
-  onClick?: () => void;
-  href?: string;
-  children: React.ReactNode;
-  className?: string;
-};
+  isActive?: boolean
+  disabled?: boolean
+  href?: string
+  onClick?: () => void
+} & Pick<React.ComponentProps<typeof Button>, "size"> &
+  Omit<React.ComponentProps<"a">, "href" | "onClick">
 
-/**
- * Numeric page link. Uses an `<a>` when `href` is provided (so the
- * browser's middle-click / right-click "open in new tab" still works),
- * otherwise a `<button>` so onClick is the primary path. The
- * disabled state suppresses the click + adds 50% opacity per the
- * existing microinteraction grammar.
- */
-export function PaginationLink({
-  isActive = false,
-  disabled = false,
-  onClick,
-  href,
-  children,
+function PaginationLink({
   className,
+  isActive,
+  size = "icon",
+  href,
+  disabled,
+  onClick,
+  ...props
 }: PaginationLinkProps) {
-  const base =
-    'inline-flex items-center justify-center h-11 min-w-11 rounded-md text-sm font-medium tabular-nums md:h-9 md:min-w-9 ' +
-    'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ' +
-    'focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-page)]';
-  const state = isActive
-    ? 'bg-amber-500 text-slate-900 hover:bg-amber-600'
-    : disabled
-      ? 'fg-muted cursor-not-allowed opacity-50'
-      : 'fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 hover:fg-primary';
-  const cls = clsx(base, state, className);
-
-  if (href !== undefined) {
+  if (href) {
     return (
-      <a
-        href={href}
-        aria-current={isActive ? 'page' : undefined}
-        aria-disabled={disabled || undefined}
-        onClick={(e) => {
-          if (disabled) {
-            e.preventDefault();
-            return;
-          }
-          onClick?.();
-        }}
-        className={cls}
+      <Button
+        asChild
+        variant={isActive ? "outline" : "ghost"}
+        size={size}
+        className={cn(className)}
       >
-        {children}
-      </a>
-    );
+        <a
+          href={href}
+          aria-current={isActive ? "page" : undefined}
+          aria-disabled={disabled || undefined}
+          data-slot="pagination-link"
+          data-active={isActive}
+          onClick={(event) => {
+            if (disabled) {
+              event.preventDefault()
+              return
+            }
+            onClick?.()
+          }}
+          {...props}
+        />
+      </Button>
+    )
   }
+
   return (
-    <button
+    <Button
       type="button"
-      aria-current={isActive ? 'page' : undefined}
-      aria-disabled={disabled || undefined}
+      variant={isActive ? "outline" : "ghost"}
+      size={size}
       disabled={disabled}
+      aria-current={isActive ? "page" : undefined}
+      data-slot="pagination-link"
+      data-active={isActive}
+      className={cn(className)}
       onClick={() => {
-        if (disabled) return;
-        onClick?.();
+        if (disabled) return
+        onClick?.()
       }}
-      className={cls}
     >
-      {children}
-    </button>
-  );
+      {props.children}
+    </Button>
+  )
 }
 
-export function PaginationPrevious({ className, ...rest }: Omit<PaginationLinkProps, 'children'>) {
+function PaginationPrevious({
+  className,
+  text = "Previous",
+  ...props
+}: React.ComponentProps<typeof PaginationLink> & { text?: string }) {
   return (
     <PaginationLink
       aria-label="Go to previous page"
-      className={clsx('gap-1 px-2.5', className)}
-      {...rest}
+      size="default"
+      className={cn("pl-1.5!", className)}
+      {...props}
     >
-      <ChevronLeft className="h-4 w-4" />
-      <span className="hidden sm:inline">Previous</span>
+      <ChevronLeftIcon data-icon="inline-start" />
+      <span className="hidden sm:block">{text}</span>
     </PaginationLink>
-  );
+  )
 }
 
-export function PaginationNext({ className, ...rest }: Omit<PaginationLinkProps, 'children'>) {
+function PaginationNext({
+  className,
+  text = "Next",
+  ...props
+}: React.ComponentProps<typeof PaginationLink> & { text?: string }) {
   return (
     <PaginationLink
       aria-label="Go to next page"
-      className={clsx('gap-1 px-2.5', className)}
-      {...rest}
-    >
-      <span className="hidden sm:inline">Next</span>
-      <ChevronRight className="h-4 w-4" />
-    </PaginationLink>
-  );
-}
-
-export function PaginationEllipsis({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) {
-  return (
-    <span
-      aria-hidden="true"
-      className={clsx('flex h-9 w-9 items-center justify-center fg-muted', className)}
+      size="default"
+      className={cn("pr-1.5!", className)}
       {...props}
     >
-      <MoreHorizontal className="h-4 w-4" />
-      <span className="sr-only">More pages</span>
-    </span>
-  );
+      <span className="hidden sm:block">{text}</span>
+      <ChevronRightIcon data-icon="inline-end" />
+    </PaginationLink>
+  )
 }
 
-/**
- * Compute the visible page-number window with ellipsis collapsing.
- * Returns an array of numbers (page) and the string `'ellipsis'`
- * for gaps. Always includes the first and last page so the user
- * can always jump to either edge.
- *
- * Examples:
- *   totalPages=10, page=1  → [1, 2, 3, '…', 10]
- *   totalPages=10, page=5  → [1, '…', 4, 5, 6, '…', 10]
- *   totalPages=3,  page=2  → [1, 2, 3]
- *   totalPages=1,  page=1  → [1]
- */
+function PaginationEllipsis({
+  className,
+  ...props
+}: React.ComponentProps<"span">) {
+  return (
+    <span
+      aria-hidden
+      data-slot="pagination-ellipsis"
+      className={cn(
+        "flex size-8 items-center justify-center [&_svg:not([class*='size-'])]:size-4",
+        className
+      )}
+      {...props}
+    >
+      <MoreHorizontalIcon
+      />
+      <span className="sr-only">More pages</span>
+    </span>
+  )
+}
+
+export {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+}
+
+/** Visible page-number window with ellipsis collapsing. */
 export function pageWindow(
   page: number,
   totalPages: number,
   siblingCount = 1,
-): Array<number | 'ellipsis'> {
-  if (totalPages <= 1) return [1];
-  // Always show: 1, last, current, and `siblingCount` on each side
-  // of current.
-  const totalNumbers = siblingCount * 2 + 5; // first + last + current + 2*siblings + 2 ellipses
+): Array<number | "ellipsis"> {
+  if (totalPages <= 1) return [1]
+  const totalNumbers = siblingCount * 2 + 5
   if (totalPages <= totalNumbers) {
-    const out: number[] = [];
-    for (let i = 1; i <= totalPages; i++) out.push(i);
-    return out;
+    const out: number[] = []
+    for (let i = 1; i <= totalPages; i++) out.push(i)
+    return out
   }
 
-  const leftSibling = Math.max(page - siblingCount, 1);
-  const rightSibling = Math.min(page + siblingCount, totalPages);
-  const showLeftEllipsis = leftSibling > 2;
-  const showRightEllipsis = rightSibling < totalPages - 1;
+  const leftSibling = Math.max(page - siblingCount, 1)
+  const rightSibling = Math.min(page + siblingCount, totalPages)
+  const showLeftEllipsis = leftSibling > 2
+  const showRightEllipsis = rightSibling < totalPages - 1
 
-  const out: Array<number | 'ellipsis'> = [];
-  out.push(1);
-  if (showLeftEllipsis) out.push('ellipsis');
+  const out: Array<number | "ellipsis"> = []
+  out.push(1)
+  if (showLeftEllipsis) out.push("ellipsis")
   for (let i = leftSibling; i <= rightSibling; i++) {
-    if (i === 1 || i === totalPages) continue;
-    out.push(i);
+    if (i === 1 || i === totalPages) continue
+    out.push(i)
   }
-  if (showRightEllipsis) out.push('ellipsis');
-  if (totalPages > 1) out.push(totalPages);
-  return out;
+  if (showRightEllipsis) out.push("ellipsis")
+  if (totalPages > 1) out.push(totalPages)
+  return out
 }

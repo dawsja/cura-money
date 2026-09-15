@@ -1,10 +1,35 @@
-import { useState } from 'react';
+import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { Plus, Trash2, Edit3, RefreshCw, ShieldCheck, X, AlertTriangle, Copy, Check, KeyRound, Lock, Users, Eye, EyeOff, KeySquare, ShieldAlert, ShieldOff, Shield, Container, Coins } from 'lucide-react';
+import { Plus, Trash2, Edit3, RefreshCw, ShieldCheck, AlertTriangle, Copy, Check, KeyRound, Lock, Users, Eye, EyeOff, KeySquare, ShieldAlert, ShieldOff, Shield, Container, Coins } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/api';
 import { fetchMe, changePassword } from '../lib/auth';
-import { Dialog } from '../components/ui/dialog';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../components/ui/empty';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '../components/ui/field';
+import { Input } from '../components/ui/input';
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '../components/ui/input-group';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { Spinner } from '../components/ui/spinner';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { SUPPORTED_CURRENCIES, useCurrency } from '../lib/currency';
 import { formatMoney } from '../lib/format';
 
@@ -93,8 +118,6 @@ const EMPTY_PROVIDER_FORM = {
   scopes: 'openid,email,profile',
 };
 
-const PWD_INPUT_CLS = 'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
-
 export function Settings() {
   const me = useQuery({ queryKey: ['me'], queryFn: fetchMe });
   const [tab, setTab] = useState<'personal' | 'admin'>('personal');
@@ -102,66 +125,81 @@ export function Settings() {
   const isAdmin = me.data?.user.role === 'admin';
 
   if (me.isLoading) {
-    return <div className="fg-muted">Loading…</div>;
-  }
-  if (me.isError) {
     return (
-      <div className="card max-w-md" role="alert">
-        <h1 className="text-lg font-semibold text-rose-600 dark:text-rose-400">Could not load settings</h1>
-        <p className="mt-2 text-sm fg-tertiary">Your current permissions could not be verified.</p>
-        <button type="button" className="btn-primary mt-3 px-3 py-1.5 text-sm" onClick={() => void me.refetch()} disabled={me.isFetching}>Retry</button>
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Spinner />
+        Loading…
       </div>
     );
   }
+  if (me.isError) {
+    return (
+      <Alert variant="destructive" className="max-w-md">
+        <AlertTriangle />
+        <AlertTitle>Could not load settings</AlertTitle>
+        <AlertDescription>Your current permissions could not be verified.</AlertDescription>
+        <AlertAction>
+          <Button type="button" size="sm" variant="outline" onClick={() => void me.refetch()} disabled={me.isFetching}>
+            {me.isFetching ? <Spinner data-icon="inline-start" /> : null}
+            Retry
+          </Button>
+        </AlertAction>
+      </Alert>
+    );
+  }
+
+  const personal = (
+    <div className="flex flex-col gap-4">
+      <PreferencesSection />
+      <PasswordSection
+        hasCredential={me.data?.user.hasCredential ?? false}
+        email={me.data?.user.email ?? ''}
+      />
+    </div>
+  );
+
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold fg-primary">Settings</h1>
+    <div className="flex flex-col gap-6">
+      <h1 className="text-2xl font-bold">Settings</h1>
 
-      {isAdmin && (
-        <div role="tablist" aria-label="Settings sections" className="flex gap-6 border-b border-default">
-          <SettingsTab label="Personal" active={tab === 'personal'} onClick={() => setTab('personal')} />
-          <SettingsTab label="Admin" active={tab === 'admin'} onClick={() => setTab('admin')} />
-        </div>
-      )}
-
-      {(!isAdmin || tab === 'personal') && (
-        <div className="space-y-4">
-          <PreferencesSection />
-          <PasswordSection
-            hasCredential={me.data?.user.hasCredential ?? false}
-            email={me.data?.user.email ?? ''}
-          />
-        </div>
-      )}
-
-      {isAdmin && tab === 'admin' && (
-        <div className="space-y-6">
-          <ContainerUpdateSection />
-          <OidcSection />
-          <AuthenticationSection />
-          <UsersSection />
-        </div>
+      {isAdmin ? (
+        <Tabs
+          value={tab}
+          onValueChange={(value) => {
+            if (value === 'personal' || value === 'admin') setTab(value);
+          }}
+        >
+          <TabsList variant="line" aria-label="Settings sections">
+            <TabsTrigger value="personal">Personal</TabsTrigger>
+            <TabsTrigger value="admin">Admin</TabsTrigger>
+          </TabsList>
+          <TabsContent value="personal">{personal}</TabsContent>
+          <TabsContent value="admin">
+            <div className="flex flex-col gap-6">
+              <ContainerUpdateSection />
+              <OidcSection />
+              <AuthenticationSection />
+              <UsersSection />
+            </div>
+          </TabsContent>
+        </Tabs>
+      ) : (
+        personal
       )}
     </div>
   );
 }
 
-function SettingsTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function SectionIcon({ children, tone = 'default' }: { children: ReactNode; tone?: 'default' | 'rose' }) {
   return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
+    <span
       className={clsx(
-        'min-h-11 -mb-px border-b-2 px-1 text-sm font-medium transition-colors',
-        active
-          ? 'border-amber-500 text-amber-700 dark:text-amber-400'
-          : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300',
+        'flex size-7 items-center justify-center rounded-lg',
+        tone === 'rose' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary',
       )}
     >
-      {label}
-    </button>
+      {children}
+    </span>
   );
 }
 
@@ -185,60 +223,56 @@ function ContainerUpdateSection() {
     : null;
 
   return (
-    <section>
-      <SectionHeader
-        icon={<Container className="h-4 w-4" />}
-        title="Updates"
-        subtitle="Checks the published latest image periodically."
-        action={
-          <button
-            type="button"
-            onClick={() => refresh.mutate()}
-            disabled={checking}
-            className="px-3 py-2 text-sm rounded-lg border border-default bg-surface fg-primary hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2 shrink-0"
-          >
-            <RefreshCw className={`h-4 w-4${checking ? ' animate-spin' : ''}`} />
+    <Card className="max-w-lg">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <SectionIcon><Container className="h-4 w-4" /></SectionIcon>
+          Updates
+        </CardTitle>
+        <CardDescription>Checks the published latest image periodically.</CardDescription>
+        <CardAction>
+          <Button type="button" variant="outline" onClick={() => refresh.mutate()} disabled={checking}>
+            {checking ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
             {checking ? 'Checking…' : 'Check'}
-          </button>
-        }
-      />
-
-      {data?.updateAvailable ? (
-        <div className="card max-w-lg border-l-4 border-sky-500 flex items-start gap-3" role="status">
-          <AlertTriangle className="h-5 w-5 text-sky-700 dark:text-sky-300 shrink-0 mt-0.5" />
-          <div className="min-w-0">
-            <h3 className="font-semibold fg-primary">A newer container image is available</h3>
-            {checkedAt && <p className="text-xs fg-muted mt-1">Checked {checkedAt}</p>}
-          </div>
-        </div>
-      ) : (
-        <div className="card max-w-lg flex items-start gap-3">
-          {data?.updateAvailable === false ? (
-            <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-          ) : (
-            <Container className="h-5 w-5 fg-muted shrink-0 mt-0.5" />
-          )}
-          <div className="min-w-0">
-            <p className="text-sm fg-secondary">
-              {status.isLoading
-                ? 'Checking the published image…'
-                : status.isError
-                  ? 'Could not check for container updates.'
-                  : data?.updateAvailable === false
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        {data?.updateAvailable ? (
+          <Alert role="status">
+            <AlertTriangle />
+            <AlertTitle>A newer container image is available</AlertTitle>
+            {checkedAt ? <AlertDescription>Checked {checkedAt}</AlertDescription> : null}
+          </Alert>
+        ) : (
+          <div className="flex items-start gap-3 text-sm text-muted-foreground">
+            {data?.updateAvailable === false ? (
+              <Check className="mt-0.5 size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            ) : (
+              <Container className="mt-0.5 size-5 shrink-0" />
+            )}
+            <div className="min-w-0">
+              <p>
+                {status.isLoading
+                  ? 'Checking the published image…'
+                  : status.isError
+                    ? 'Could not check for container updates.'
+                    : data?.updateAvailable === false
                       ? 'Up to date.'
                       : data?.reason === 'build_revision_unavailable'
                         ? checkedAt
                           ? `Checked ${checkedAt}`
                           : 'Not checked yet.'
                         : 'The image registry could not be checked right now.'}
-            </p>
-            {checkedAt && data?.reason !== 'build_revision_unavailable' && (
-              <p className="text-xs fg-muted mt-1">Checked {checkedAt}</p>
-            )}
+              </p>
+              {checkedAt && data?.reason !== 'build_revision_unavailable' && (
+                <p className="mt-1 text-xs">Checked {checkedAt}</p>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </section>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -271,111 +305,131 @@ function OidcSection() {
   });
 
   return (
-    <section>
-      <SectionHeader
-        icon={<KeyRound className="h-4 w-4" />}
-        title="OIDC providers"
-        action={
-          <button onClick={() => setAdding(true)} className="btn-primary flex items-center gap-2 shrink-0">
-            <Plus className="h-4 w-4" /> Add provider
-          </button>
-        }
-      />
-
+    <section className="flex flex-col gap-3">
       {needsRestart && (
-        <div className="card border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-900/30 flex items-start gap-3 mb-3">
-          <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h3 className="font-semibold text-amber-900 dark:text-amber-200">Restart required</h3>
-            <p className="text-sm text-amber-800 dark:text-amber-300 mt-0.5">
-              The provider list changed. Run{' '}
-              <code className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 text-xs">
-                docker compose restart app
-              </code>{' '}
-              to activate the new config. The sign-in page won't show the new
-              buttons until you do.
-            </p>
-            <button
-              onClick={() => setNeedsRestart(false)}
-              className="mt-2 text-xs text-amber-700 dark:text-amber-300 hover:underline"
-            >
+        <Alert>
+          <AlertTriangle />
+          <AlertTitle>Restart required</AlertTitle>
+          <AlertDescription>
+            The provider list changed. Run{' '}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              docker compose restart app
+            </code>{' '}
+            to activate the new config. The sign-in page won't show the new
+            buttons until you do.
+          </AlertDescription>
+          <AlertAction>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setNeedsRestart(false)}>
               Dismiss
-            </button>
-          </div>
-        </div>
+            </Button>
+          </AlertAction>
+        </Alert>
       )}
 
-      <div className="card">
-        {providers.isLoading && <div className="fg-muted text-sm">Loading…</div>}
-        {providers.isError && (
-          <div className="py-6 text-center" role="alert">
-            <p className="text-sm text-rose-600 dark:text-rose-400">Could not load OIDC providers.</p>
-            <button type="button" className="btn-primary mt-3 px-3 py-1.5 text-sm" onClick={() => void providers.refetch()} disabled={providers.isFetching}>Retry</button>
-          </div>
-        )}
-        {del.isError && <p className="mb-3 text-sm text-rose-600 dark:text-rose-400" role="alert">Could not delete provider: {del.error.message}</p>}
-        {providers.data?.length === 0 && (
-          <div className="text-sm fg-muted text-center py-6">
-            <KeyRound className="h-5 w-5 inline mr-1 fg-muted" /> No OIDC providers configured yet. Click "Add provider" to wire one up.
-          </div>
-        )}
-        <ul className="divide-y divide-slate-100 dark:divide-slate-700">
-          {providers.data?.map((p) => (
-            <li key={p.id} className="py-3 flex items-start gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold fg-primary">{p.providerId}</span>
-                  {p.isActive ? (
-                    <span className="text-xs bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded">
-                      active
-                    </span>
-                  ) : (
-                    <span className="text-xs bg-slate-100 dark:bg-slate-700 fg-tertiary px-2 py-0.5 rounded">
-                      inactive
-                    </span>
-                  )}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <SectionIcon><KeyRound className="h-4 w-4" /></SectionIcon>
+            OIDC providers
+          </CardTitle>
+          <CardAction>
+            <Button type="button" onClick={() => setAdding(true)}>
+              <Plus data-icon="inline-start" /> Add provider
+            </Button>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {providers.isLoading && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Spinner /> Loading…
+            </div>
+          )}
+          {providers.isError && (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>Could not load OIDC providers.</AlertTitle>
+              <AlertAction>
+                <Button type="button" size="sm" variant="outline" onClick={() => void providers.refetch()} disabled={providers.isFetching}>
+                  {providers.isFetching ? <Spinner data-icon="inline-start" /> : null}
+                  Retry
+                </Button>
+              </AlertAction>
+            </Alert>
+          )}
+          {del.isError && (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertDescription>Could not delete provider: {del.error.message}</AlertDescription>
+            </Alert>
+          )}
+          {providers.data?.length === 0 && (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><KeyRound /></EmptyMedia>
+                <EmptyTitle>No OIDC providers configured yet</EmptyTitle>
+                <EmptyDescription>Click "Add provider" to wire one up.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )}
+          <ul className="divide-y">
+            {providers.data?.map((p) => (
+              <li key={p.id} className="flex items-start gap-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">{p.providerId}</span>
+                    {p.isActive ? (
+                      <Badge>active</Badge>
+                    ) : (
+                      <Badge variant="secondary">inactive</Badge>
+                    )}
+                  </div>
+                  <div className="mt-1 break-all text-xs text-muted-foreground">{p.discoveryUrl}</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    client_id: <code className="rounded bg-muted px-1">{p.clientId}</code>
+                    {' · '}
+                    secret: {p.hasClientSecret ? 'set' : 'missing'}
+                    {' · '}
+                    scopes: {p.scopes.join(', ')}
+                  </div>
+                  <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+                    <span>Callback URI:</span>
+                    <code className="break-all rounded border bg-background px-1.5 py-0.5">
+                      {p.callbackUri}
+                    </code>
+                    <CopyButton value={p.callbackUri} />
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    Added {new Date(p.createdAt).toLocaleDateString()}
+                  </div>
                 </div>
-                <div className="text-xs fg-muted mt-1 break-all">{p.discoveryUrl}</div>
-                <div className="text-xs fg-muted mt-0.5">
-                  client_id: <code className="bg-slate-100 dark:bg-slate-700 px-1 rounded fg-secondary">{p.clientId}</code>
-                  {' · '}
-                  secret: {p.hasClientSecret ? 'set' : 'missing'}
-                  {' · '}
-                  scopes: {p.scopes.join(', ')}
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setEditing(p)}
+                    title="Edit"
+                  >
+                    <Edit3 />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => {
+                      if (confirm(`Delete OIDC provider "${p.providerId}"?`)) del.mutate(p.id);
+                    }}
+                    title="Delete"
+                  >
+                    <Trash2 />
+                  </Button>
                 </div>
-                <div className="text-xs fg-muted mt-2 flex items-center gap-1">
-                  <span className="fg-muted">Callback URI:</span>
-                  <code className="bg-slate-50 dark:bg-slate-700 border border-default px-1.5 py-0.5 rounded fg-secondary break-all">
-                    {p.callbackUri}
-                  </code>
-                  <CopyButton value={p.callbackUri} />
-                </div>
-                <div className="text-xs fg-muted mt-0.5">
-                  Added {new Date(p.createdAt).toLocaleDateString()}
-                </div>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  onClick={() => setEditing(p)}
-                  className="edit-icon-button rounded p-2"
-                  title="Edit"
-                >
-                  <Edit3 className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm(`Delete OIDC provider "${p.providerId}"?`)) del.mutate(p.id);
-                  }}
-                  className="p-2 rounded text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30"
-                  title="Delete"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
 
       {(adding || editing) && (
         <ProviderForm
@@ -434,10 +488,19 @@ function AuthenticationSection() {
 
   if (info.isLoading) {
     return (
-      <section>
-        <SectionHeader icon={<Shield className="h-4 w-4" />} title="Authentication" />
-        <div className="card max-w-lg text-sm fg-muted">Loading…</div>
-      </section>
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <SectionIcon><Shield className="h-4 w-4" /></SectionIcon>
+            Authentication
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Spinner /> Loading…
+          </div>
+        </CardContent>
+      </Card>
     );
   }
   const data = info.data;
@@ -450,20 +513,26 @@ function AuthenticationSection() {
       (info.error as { message?: string } | null)?.message
       ?? 'Could not load authentication settings.';
     return (
-      <section>
-        <SectionHeader icon={<Shield className="h-4 w-4" />} title="Authentication" />
-        <div className="card max-w-lg text-sm text-rose-600 dark:text-rose-400 space-y-2">
-          <p className="font-medium">Could not load authentication settings.</p>
-          <p className="text-xs break-words">{errMsg}</p>
-          <button
-            type="button"
-            onClick={() => info.refetch()}
-            className="text-xs underline hover:no-underline"
-          >
-            Retry
-          </button>
-        </div>
-      </section>
+      <Card className="max-w-lg">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <SectionIcon><Shield className="h-4 w-4" /></SectionIcon>
+            Authentication
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>Could not load authentication settings.</AlertTitle>
+            <AlertDescription>{errMsg}</AlertDescription>
+            <AlertAction>
+              <Button type="button" size="sm" variant="outline" onClick={() => void info.refetch()}>
+                Retry
+              </Button>
+            </AlertAction>
+          </Alert>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -475,30 +544,28 @@ function AuthenticationSection() {
   const disableLocked = !localAuthDisabled && !canDisable;
 
   return (
-    <section>
-      <SectionHeader
-        icon={<Shield className="h-4 w-4" />}
-        title="Authentication"
-        subtitle="Local email/password sign-in is enabled by default. Turn it off once at least one OIDC user has been promoted to admin."
-        tone={localAuthDisabled ? 'amber' : 'rose'}
-      />
-
-      <div className={clsx('card max-w-lg space-y-3', !localAuthDisabled && 'border-rose-300 dark:border-rose-800')}>
+    <Card className={clsx('max-w-lg', !localAuthDisabled && 'ring-destructive/30')}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <SectionIcon tone={localAuthDisabled ? 'default' : 'rose'}><Shield className="h-4 w-4" /></SectionIcon>
+          Authentication
+        </CardTitle>
+        <CardDescription>
+          Local email/password sign-in is enabled by default. Turn it off once at least one OIDC user has been promoted to admin.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
         <div className="flex items-start gap-3">
           {localAuthDisabled ? (
-            <span className="text-xs bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded shrink-0 mt-0.5">
-              disabled
-            </span>
+            <Badge variant="destructive" className="mt-0.5 shrink-0">disabled</Badge>
           ) : (
-            <span className="text-xs bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded shrink-0 mt-0.5">
-              enabled
-            </span>
+            <Badge className="mt-0.5 shrink-0">enabled</Badge>
           )}
-          <div className="flex-1 min-w-0">
-            <div className="font-medium fg-primary">
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">
               Local authentication (email + password)
             </div>
-            <p className="text-sm fg-tertiary mt-1">
+            <p className="mt-1 text-sm text-muted-foreground">
               {localAuthDisabled
                 ? 'The email/password form on the sign-in page is hidden. Users can only sign in with an OIDC provider.'
                 : 'Users can sign in with email and password.'}
@@ -507,36 +574,35 @@ function AuthenticationSection() {
         </div>
 
         {disableLocked && (
-          <div className="rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/30 p-3 flex items-start gap-2">
-            <ShieldAlert className="h-4 w-4 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5" />
-            <div className="text-sm text-amber-900 dark:text-amber-200">
-              <p>Disabling local auth requires an OIDC user with admin role</p>
-            </div>
-          </div>
+          <Alert>
+            <ShieldAlert />
+            <AlertDescription>Disabling local auth requires an OIDC user with admin role</AlertDescription>
+          </Alert>
         )}
 
         {err && (
-          <p className="text-sm text-rose-600 dark:text-rose-400 flex items-center gap-1">
-            <AlertTriangle className="h-3 w-3" /> {err}
-          </p>
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertDescription>{err}</AlertDescription>
+          </Alert>
         )}
 
         <div className="flex flex-wrap gap-2 pt-1">
           {localAuthDisabled ? (
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={() => setConfirming('enable')}
-              className="px-3 py-2 text-sm rounded-lg border border-default bg-surface fg-primary hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2"
               disabled={toggle.isPending}
             >
-              <Shield className="h-4 w-4" />
+              {toggle.isPending ? <Spinner data-icon="inline-start" /> : <Shield data-icon="inline-start" />}
               Re-enable local sign-in
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
               type="button"
+              variant="destructive"
               onClick={() => setConfirming('disable')}
-              className="px-3 py-2 text-sm rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               disabled={disableLocked || toggle.isPending}
               title={
                 disableLocked
@@ -544,12 +610,12 @@ function AuthenticationSection() {
                   : undefined
               }
             >
-              <ShieldOff className="h-4 w-4" />
+              {toggle.isPending ? <Spinner data-icon="inline-start" /> : <ShieldOff data-icon="inline-start" />}
               Disable
-            </button>
+            </Button>
           )}
         </div>
-      </div>
+      </CardContent>
 
       {confirming && (
         <LocalAuthConfirmModal
@@ -563,7 +629,7 @@ function AuthenticationSection() {
           onConfirm={() => toggle.mutate(confirming === 'disable')}
         />
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -583,84 +649,82 @@ function LocalAuthConfirmModal({
   // Type-to-confirm for destructive intent only. The enable path is
   // non-destructive so a single click is enough.
   const [typed, setTyped] = useState('');
+  const confirmId = useId();
   const canConfirm = intent === 'enable' || (typed === 'CONFIRM' && !busy);
 
   return (
-    <Dialog
-      role="alertdialog"
-      aria-label={intent === 'disable' ? 'Disable local sign-in?' : 'Re-enable local sign-in?'}
-      onClose={onCancel}
-      closeDisabled={busy}
-      contentClassName="card w-full max-w-md"
-    >
-        <div className="flex items-center gap-2 mb-3">
-          <AlertTriangle className={`h-5 w-5 shrink-0 ${intent === 'disable' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`} />
-          <h3 className="text-lg font-semibold fg-primary">
+    <Dialog open onOpenChange={(open) => { if (!open && !busy) onCancel(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className={intent === 'disable' ? 'text-destructive' : 'text-primary'} />
             {intent === 'disable' ? 'Disable local sign-in?' : 'Re-enable local sign-in?'}
-          </h3>
-        </div>
-        {intent === 'disable' ? (
-          <>
-            <p className="text-sm fg-tertiary">
-              Once disabled, <strong>no one can sign in with email and
-              password</strong>. The sign-in page will only show OIDC
-              buttons. Existing sessions stay valid until they expire or
-              the user signs out.
-            </p>
-            <p className="text-sm fg-tertiary mt-2">
-              You can re-enable local sign-in later from this same screen.
-              The guard requires at least one admin who has signed in via
-              OIDC &mdash; that has been confirmed.
-            </p>
-          </>
-        ) : (
-          <p className="text-sm fg-tertiary">
-            Re-enabling restores the email/password form on the sign-in
-            page. No precondition is required.
-          </p>
-        )}
+          </DialogTitle>
+          <DialogDescription asChild>
+            <div className="flex flex-col gap-2">
+              {intent === 'disable' ? (
+                <>
+                  <p>
+                    Once disabled, <strong>no one can sign in with email and
+                    password</strong>. The sign-in page will only show OIDC
+                    buttons. Existing sessions stay valid until they expire or
+                    the user signs out.
+                  </p>
+                  <p>
+                    You can re-enable local sign-in later from this same screen.
+                    The guard requires at least one admin who has signed in via
+                    OIDC &mdash; that has been confirmed.
+                  </p>
+                </>
+              ) : (
+                <p>
+                  Re-enabling restores the email/password form on the sign-in
+                  page. No precondition is required.
+                </p>
+              )}
+            </div>
+          </DialogDescription>
+        </DialogHeader>
         {intent === 'disable' && (
-          <label className="block mt-4">
-            <span className="text-sm font-medium fg-secondary">
-              Type <span className="font-mono">CONFIRM</span> to confirm:
-            </span>
-            <input
+          <Field>
+            <FieldLabel htmlFor={confirmId}>
+              Type <span className="font-mono">CONFIRM</span> to confirm
+            </FieldLabel>
+            <Input
+              id={confirmId}
               type="text"
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
-              className={`mt-1 w-full ${PWD_INPUT_CLS}`}
               autoComplete="off"
               autoFocus
             />
-          </label>
+          </Field>
         )}
-        {err && <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">{err}</p>}
-        <div className="flex justify-end gap-2 pt-4">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50"
-          >
+        {err && (
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertDescription>{err}</AlertDescription>
+          </Alert>
+        )}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel} disabled={busy}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant={intent === 'disable' ? 'destructive' : 'default'}
             onClick={onConfirm}
             disabled={!canConfirm}
-            className={`px-3 py-2 text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${
-              intent === 'disable'
-                ? 'bg-rose-600 text-white hover:bg-rose-700'
-                : 'bg-amber-600 text-slate-900 hover:bg-amber-700'
-            }`}
           >
+            {busy ? <Spinner data-icon="inline-start" /> : null}
             {busy
               ? 'Updating…'
               : intent === 'disable'
                 ? 'Disable local sign-in'
                 : 'Re-enable local sign-in'}
-          </button>
-        </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -671,34 +735,43 @@ function LocalAuthConfirmModal({
 
 function PreferencesSection() {
   const { currency, setCurrency, saving } = useCurrency();
+  const currencyId = useId();
   return (
-    <section>
-      <SectionHeader
-        icon={<Coins className="h-4 w-4" />}
-        title="Display currency"
-        subtitle="Controls how amounts are shown throughout the app. Balances are stored numerically; this only changes the currency symbol and formatting."
-      />
-      <div className="card max-w-md space-y-3">
-        <label className="block">
-          <span className="text-sm font-medium fg-secondary">Currency</span>
-          <select
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
-            disabled={saving}
-            className="mt-1 w-full rounded-lg border border-default bg-surface fg-primary px-3 py-2 text-sm focus:border-amber-500 focus:outline-none disabled:opacity-50"
-          >
-            {SUPPORTED_CURRENCIES.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.code} — {c.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p className="text-sm fg-tertiary">
-          Preview: <span className="font-medium fg-primary tabular-nums">{formatMoney(1234.56)}</span>
-        </p>
-      </div>
-    </section>
+    <Card className="max-w-md">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <SectionIcon><Coins className="h-4 w-4" /></SectionIcon>
+          Display currency
+        </CardTitle>
+        <CardDescription>
+          Controls how amounts are shown throughout the app. Balances are stored numerically; this only changes the currency symbol and formatting.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor={currencyId}>Currency</FieldLabel>
+            <Select value={currency} onValueChange={setCurrency} disabled={saving}>
+              <SelectTrigger id={currencyId} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>
+                      {c.code} — {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              Preview: <span className="font-medium text-foreground tabular-nums">{formatMoney(1234.56)}</span>
+            </FieldDescription>
+          </Field>
+        </FieldGroup>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -719,22 +792,27 @@ function PasswordSection({ hasCredential, email }: { hasCredential: boolean; ema
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
   const [busy, setBusy] = useState(false);
+  const currentId = useId();
+  const nextId = useId();
+  const confirmId = useId();
 
   if (!hasCredential) {
     return (
-      <section>
-        <SectionHeader
-          icon={<Lock className="h-4 w-4" />}
-          title="Change password"
-          subtitle="Only available for accounts with an email/password login."
-        />
-        <div className="card text-sm fg-tertiary">
-          <p>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <SectionIcon><Lock className="h-4 w-4" /></SectionIcon>
+            Change password
+          </CardTitle>
+          <CardDescription>Only available for accounts with an email/password login.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
             You signed in via an OIDC provider (<span className="font-mono text-xs">{email}</span>),
             so there's no password to change here. Manage it from your identity provider.
           </p>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -750,14 +828,15 @@ function PasswordSection({ hasCredential, email }: { hasCredential: boolean; ema
     return (
       <PasswordUnavailable>
         <p>Could not verify whether password changes are enabled, so the form is unavailable.</p>
-        <button
+        <Button
           type="button"
-          className="btn-primary mt-3 px-3 py-1.5 text-sm"
+          className="mt-3"
           onClick={() => void authOptions.refetch()}
           disabled={authOptions.isFetching}
         >
+          {authOptions.isFetching ? <Spinner data-icon="inline-start" /> : null}
           {authOptions.isFetching ? 'Retrying…' : 'Retry'}
-        </button>
+        </Button>
       </PasswordUnavailable>
     );
   }
@@ -778,7 +857,7 @@ function PasswordSection({ hasCredential, email }: { hasCredential: boolean; ema
     );
   }
 
-  const onSubmit = async (e: React.FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setErr(null);
     setOk(false);
@@ -797,93 +876,120 @@ function PasswordSection({ hasCredential, email }: { hasCredential: boolean; ema
     }
   };
 
+  const invalid = Boolean(err);
+
   return (
-    <section>
-      <SectionHeader
-        icon={<Lock className="h-4 w-4" />}
-        title="Change password"
-        subtitle="Change the password for your local account."
-      />
-      <form onSubmit={onSubmit} className="card max-w-md space-y-3">
-        <label className="block">
-          <span className="text-sm font-medium fg-secondary">Current password</span>
-          <div className="relative mt-1">
-            <input
-              type={showCurrent ? 'text' : 'password'}
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-              className={`w-full pr-10 ${PWD_INPUT_CLS}`}
-              required
-              autoComplete="current-password"
-            />
-            <button
-              type="button"
-              onClick={() => setShowCurrent((s) => !s)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 fg-muted hover:fg-secondary p-1"
-              aria-label={showCurrent ? 'Hide current password' : 'Show current password'}
-            >
-              {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium fg-secondary">
-            New password <span className="text-xs fg-muted font-normal">(min 12 chars)</span>
-          </span>
-          <div className="relative mt-1">
-            <input
-              type={showNext ? 'text' : 'password'}
-              value={next}
-              onChange={(e) => setNext(e.target.value)}
-              className={`w-full pr-10 ${PWD_INPUT_CLS}`}
-              required
-              minLength={12}
-              autoComplete="new-password"
-            />
-            <button
-              type="button"
-              onClick={() => setShowNext((s) => !s)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 fg-muted hover:fg-secondary p-1"
-              aria-label={showNext ? 'Hide new password' : 'Show new password'}
-            >
-              {showNext ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium fg-secondary">Confirm new password</span>
-          <input
-            type={showNext ? 'text' : 'password'}
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            className={`mt-1 w-full ${PWD_INPUT_CLS}`}
-            required
-            minLength={12}
-            autoComplete="new-password"
-          />
-        </label>
-        {err && <p className="text-sm text-rose-600 dark:text-rose-400 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> {err}</p>}
-        {ok && <p className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1"><Check className="h-3 w-3" /> Password changed.</p>}
-        <button type="submit" className="btn-primary flex items-center gap-2" disabled={busy}>
-          <KeySquare className="h-4 w-4" /> {busy ? 'Changing…' : 'Change password'}
-        </button>
-      </form>
-    </section>
+    <Card className="max-w-md">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <SectionIcon><Lock className="h-4 w-4" /></SectionIcon>
+          Change password
+        </CardTitle>
+        <CardDescription>Change the password for your local account.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={onSubmit}>
+          <FieldGroup>
+            <Field data-invalid={invalid || undefined}>
+              <FieldLabel htmlFor={currentId}>Current password</FieldLabel>
+              <InputGroup>
+                <InputGroupInput
+                  id={currentId}
+                  type={showCurrent ? 'text' : 'password'}
+                  value={current}
+                  onChange={(e) => setCurrent(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  aria-invalid={invalid || undefined}
+                />
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton
+                    type="button"
+                    onClick={() => setShowCurrent((s) => !s)}
+                    aria-label={showCurrent ? 'Hide current password' : 'Show current password'}
+                  >
+                    {showCurrent ? <EyeOff /> : <Eye />}
+                  </InputGroupButton>
+                </InputGroupAddon>
+              </InputGroup>
+            </Field>
+            <Field data-invalid={invalid || undefined}>
+              <FieldLabel htmlFor={nextId}>New password</FieldLabel>
+              <InputGroup>
+                <InputGroupInput
+                  id={nextId}
+                  type={showNext ? 'text' : 'password'}
+                  value={next}
+                  onChange={(e) => setNext(e.target.value)}
+                  required
+                  minLength={12}
+                  autoComplete="new-password"
+                  aria-invalid={invalid || undefined}
+                />
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton
+                    type="button"
+                    onClick={() => setShowNext((s) => !s)}
+                    aria-label={showNext ? 'Hide new password' : 'Show new password'}
+                  >
+                    {showNext ? <EyeOff /> : <Eye />}
+                  </InputGroupButton>
+                </InputGroupAddon>
+              </InputGroup>
+              <FieldDescription>Min 12 characters</FieldDescription>
+            </Field>
+            <Field data-invalid={invalid || undefined}>
+              <FieldLabel htmlFor={confirmId}>Confirm new password</FieldLabel>
+              <Input
+                id={confirmId}
+                type={showNext ? 'text' : 'password'}
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                required
+                minLength={12}
+                autoComplete="new-password"
+                aria-invalid={invalid || undefined}
+              />
+            </Field>
+            {err && (
+              <Alert variant="destructive">
+                <AlertTriangle />
+                <AlertDescription>{err}</AlertDescription>
+              </Alert>
+            )}
+            {ok && (
+              <Alert>
+                <Check />
+                <AlertDescription>Password changed.</AlertDescription>
+              </Alert>
+            )}
+            <Button type="submit" disabled={busy}>
+              {busy ? <Spinner data-icon="inline-start" /> : <KeySquare data-icon="inline-start" />}
+              {busy ? 'Changing…' : 'Change password'}
+            </Button>
+          </FieldGroup>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
-function PasswordUnavailable({ children }: { children: React.ReactNode }) {
+function PasswordUnavailable({ children }: { children: ReactNode }) {
   return (
-    <section>
-      <SectionHeader
-        icon={<Lock className="h-4 w-4" />}
-        title="Change password"
-        subtitle="Change the password for your local account."
-      />
-      <div className="card max-w-md text-sm fg-tertiary" role="status">
-        {children}
-      </div>
-    </section>
+    <Card className="max-w-md">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <SectionIcon><Lock className="h-4 w-4" /></SectionIcon>
+          Change password
+        </CardTitle>
+        <CardDescription>Change the password for your local account.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="text-sm text-muted-foreground" role="status">
+          {children}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -989,111 +1095,133 @@ function UsersSection() {
   });
 
   return (
-    <section>
-      <SectionHeader
-        icon={<Users className="h-4 w-4" />}
-        title="Users"
-        action={
-          <button
-            type="button"
-            className="btn-primary flex shrink-0 items-center gap-1.5 px-3"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Plus className="h-4 w-4" /> Add user
-          </button>
-        }
-      />
-      <div className="card">
-        {users.isLoading && <div className="fg-muted text-sm">Loading…</div>}
-        {users.isError && (
-          <div className="py-6 text-center" role="alert">
-            <p className="text-sm text-rose-600 dark:text-rose-400">Could not load users.</p>
-            <button type="button" className="btn-primary mt-3 px-3 py-1.5 text-sm" onClick={() => void users.refetch()} disabled={users.isFetching}>Retry</button>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <SectionIcon><Users className="h-4 w-4" /></SectionIcon>
+          Users
+        </CardTitle>
+        <CardAction>
+          <Button type="button" onClick={() => setCreateOpen(true)}>
+            <Plus data-icon="inline-start" /> Add user
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {users.isLoading && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Spinner /> Loading…
           </div>
+        )}
+        {users.isError && (
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>Could not load users.</AlertTitle>
+            <AlertAction>
+              <Button type="button" size="sm" variant="outline" onClick={() => void users.refetch()} disabled={users.isFetching}>
+                {users.isFetching ? <Spinner data-icon="inline-start" /> : null}
+                Retry
+              </Button>
+            </AlertAction>
+          </Alert>
         )}
         {users.data?.length === 0 && (
-          <div className="text-sm fg-muted text-center py-6">
-            <Users className="h-5 w-5 inline mr-1 fg-muted" /> No users.
-          </div>
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon"><Users /></EmptyMedia>
+              <EmptyTitle>No users</EmptyTitle>
+            </EmptyHeader>
+          </Empty>
         )}
-        <ul className="divide-y divide-slate-100 dark:divide-slate-700">
+        <ul className="divide-y">
           {users.data?.map((u) => {
             const isLocal = u.hasCredential;
             const isProtectedAdmin = u.isProtected;
             const currentRole: 'admin' | 'user' = u.role === 'admin' ? 'admin' : 'user';
             const roleErrForRow = roleErr?.userId === u.id ? roleErr.message : null;
             const lockTitle = protectionTooltip(u.protectionReason);
+            const roleId = `user-role-${u.id}`;
             return (
               <li key={u.id} className="flex flex-col items-stretch gap-3 py-3 sm:flex-row sm:items-center sm:gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium fg-primary truncate">{u.name}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate font-medium">{u.name}</span>
                     {isLocal ? (
-                      <span className="text-xs bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 px-2 py-0.5 rounded">local</span>
+                      <Badge variant="outline">local</Badge>
                     ) : (
-                      <span className="text-xs bg-slate-100 dark:bg-slate-700 fg-tertiary px-2 py-0.5 rounded">OIDC</span>
+                      <Badge variant="secondary">OIDC</Badge>
                     )}
                     {isProtectedAdmin && (
                       <span title={lockTitle} aria-label={lockTitle}>
-                        <Lock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                        <Lock className="size-3.5 text-primary" />
                       </span>
                     )}
                   </div>
-                  <div className="text-xs fg-muted mt-0.5 truncate">
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
                     {u.email}
                   </div>
                   {roleErrForRow && (
-                    <div className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1">
-                      <AlertTriangle className="h-3 w-3" /> {roleErrForRow}
-                    </div>
+                    <Alert variant="destructive" className="mt-1">
+                      <AlertTriangle />
+                      <AlertDescription>{roleErrForRow}</AlertDescription>
+                    </Alert>
                   )}
                 </div>
-                <div className="flex shrink-0 items-center gap-2 sm:w-auto">
-                  <label className="text-xs fg-muted">Role</label>
-                  <select
+                <Field orientation="horizontal" className="w-auto shrink-0 sm:w-auto">
+                  <FieldLabel htmlFor={roleId} className="text-xs text-muted-foreground">Role</FieldLabel>
+                  <Select
                     value={currentRole}
-                    onChange={(e) => {
-                      const next = e.target.value as 'admin' | 'user';
+                    onValueChange={(next) => {
                       setRoleErr(null);
-                      setRole.mutate({ id: u.id, role: next });
+                      setRole.mutate({ id: u.id, role: next as 'admin' | 'user' });
                     }}
                     disabled={setRole.isPending}
-                    className="min-w-0 flex-1 rounded-lg border border-default bg-surface fg-primary px-2 py-1 text-sm focus:border-amber-500 focus:outline-none disabled:opacity-50 sm:flex-none"
-                    title={isProtectedAdmin ? lockTitle : 'Change user role'}
                   >
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
+                    <SelectTrigger id={roleId} size="sm" title={isProtectedAdmin ? lockTitle : 'Change user role'}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="user">User</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
                 {isLocal && (
-                  <button
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
                     onClick={() => setResetPasswordUser(u)}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700"
                     aria-label={`Reset password for ${u.email}`}
                     title="Reset password"
                   >
-                    <KeyRound className="h-4 w-4" />
-                  </button>
+                    <KeyRound />
+                  </Button>
                 )}
                 {isProtectedAdmin ? (
                   <span title={lockTitle} aria-label={lockTitle}>
-                    <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <Lock className="size-4 shrink-0 text-primary" />
                   </span>
                 ) : (
-                  <button
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                     onClick={() => setConfirmDelete(u)}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30"
                     aria-label={`Delete ${u.email}`}
                     title="Delete user and all data"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                    <Trash2 />
+                  </Button>
                 )}
               </li>
             );
           })}
         </ul>
-      </div>
+      </CardContent>
 
       {createOpen && (
         <AddUserModal
@@ -1144,7 +1272,7 @@ function UsersSection() {
           }}
         />
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -1165,72 +1293,60 @@ function ResetPasswordModal({
   onClose: () => void;
   onSubmit: () => void;
 }) {
+  const passwordId = useId();
+  const invalid = Boolean(err);
   return (
-    <Dialog
-      aria-label="Reset password"
-      onClose={onClose}
-      closeDisabled={busy}
-      contentClassName="card w-full max-w-md"
-    >
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold fg-primary">Reset password</h2>
-          <p className="mt-1 text-sm fg-muted">
-            Set a new password for <span className="font-medium fg-primary">{user.name}</span> (
-            <span className="font-mono text-xs">{user.email}</span>). They'll need it the next time they sign in.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={busy}
-          className="close-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg disabled:opacity-50"
-          aria-label="Close reset password dialog"
+    <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <form
+          className="contents"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
         >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <form
-        className="space-y-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSubmit();
-        }}
-      >
-        <label className="block">
-          <span className="text-sm font-medium fg-secondary">
-            New password <span className="text-xs fg-muted font-normal">(min 12 chars)</span>
-          </span>
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => onPasswordChange(event.target.value)}
-            minLength={12}
-            maxLength={256}
-            required
-            autoFocus
-            autoComplete="new-password"
-            className={`mt-1 w-full ${PWD_INPUT_CLS}`}
-          />
-        </label>
-
-        {err && <p className="text-sm text-rose-600 dark:text-rose-400" role="alert">{err}</p>}
-
-        <div className="flex justify-end gap-2 pt-3">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="rounded-lg px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-700"
-          >
-            Cancel
-          </button>
-          <button type="submit" className="btn-primary" disabled={busy}>
-            {busy ? 'Saving…' : 'Set password'}
-          </button>
-        </div>
-      </form>
+          <DialogHeader>
+            <DialogTitle>Reset password</DialogTitle>
+            <DialogDescription>
+              Set a new password for <span className="font-medium text-foreground">{user.name}</span>{' '}
+              (<span className="font-mono text-xs">{user.email}</span>). They'll need it the next time they sign in.
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field data-invalid={invalid || undefined}>
+              <FieldLabel htmlFor={passwordId}>New password</FieldLabel>
+              <Input
+                id={passwordId}
+                type="password"
+                value={password}
+                onChange={(event) => onPasswordChange(event.target.value)}
+                minLength={12}
+                maxLength={256}
+                required
+                autoFocus
+                autoComplete="new-password"
+                aria-invalid={invalid || undefined}
+              />
+              <FieldDescription>Min 12 characters</FieldDescription>
+            </Field>
+          </FieldGroup>
+          {err && (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertDescription>{err}</AlertDescription>
+            </Alert>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? <Spinner data-icon="inline-start" /> : null}
+              {busy ? 'Saving…' : 'Set password'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -1258,91 +1374,83 @@ function AddUserModal({
   onClose: () => void;
   onSubmit: () => void;
 }) {
+  const nameId = useId();
+  const emailId = useId();
+  const passwordId = useId();
+  const invalid = Boolean(err);
   return (
-    <Dialog
-      aria-label="Add user"
-      onClose={onClose}
-      closeDisabled={busy}
-      contentClassName="card w-full max-w-md"
-    >
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold fg-primary">Add user</h2>
-          <p className="mt-1 text-sm fg-muted">Create a local account with a temporary password.</p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={busy}
-          className="close-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg disabled:opacity-50"
-          aria-label="Close add user dialog"
+    <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <form
+          className="contents"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
         >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <form
-        className="space-y-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSubmit();
-        }}
-      >
-        <label className="block">
-          <span className="text-sm font-medium fg-secondary">Name</span>
-          <input
-            value={name}
-            onChange={(event) => onNameChange(event.target.value)}
-            maxLength={120}
-            required
-            autoFocus
-            autoComplete="name"
-            className={`mt-1 w-full ${PWD_INPUT_CLS}`}
-          />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium fg-secondary">Email</span>
-          <input
-            type="email"
-            value={email}
-            onChange={(event) => onEmailChange(event.target.value)}
-            required
-            autoComplete="email"
-            className={`mt-1 w-full ${PWD_INPUT_CLS}`}
-          />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium fg-secondary">
-            Temporary password <span className="text-xs fg-muted font-normal">(min 12 chars)</span>
-          </span>
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => onPasswordChange(event.target.value)}
-            minLength={12}
-            maxLength={256}
-            required
-            autoComplete="new-password"
-            className={`mt-1 w-full ${PWD_INPUT_CLS}`}
-          />
-        </label>
-
-        {err && <p className="text-sm text-rose-600 dark:text-rose-400" role="alert">{err}</p>}
-
-        <div className="flex justify-end gap-2 pt-3">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="rounded-lg px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-700"
-          >
-            Cancel
-          </button>
-          <button type="submit" className="btn-primary" disabled={busy}>
-            {busy ? 'Adding…' : 'Add user'}
-          </button>
-        </div>
-      </form>
+          <DialogHeader>
+            <DialogTitle>Add user</DialogTitle>
+            <DialogDescription>Create a local account with a temporary password.</DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field data-invalid={invalid || undefined}>
+              <FieldLabel htmlFor={nameId}>Name</FieldLabel>
+              <Input
+                id={nameId}
+                value={name}
+                onChange={(event) => onNameChange(event.target.value)}
+                maxLength={120}
+                required
+                autoFocus
+                autoComplete="name"
+                aria-invalid={invalid || undefined}
+              />
+            </Field>
+            <Field data-invalid={invalid || undefined}>
+              <FieldLabel htmlFor={emailId}>Email</FieldLabel>
+              <Input
+                id={emailId}
+                type="email"
+                value={email}
+                onChange={(event) => onEmailChange(event.target.value)}
+                required
+                autoComplete="email"
+                aria-invalid={invalid || undefined}
+              />
+            </Field>
+            <Field data-invalid={invalid || undefined}>
+              <FieldLabel htmlFor={passwordId}>Temporary password</FieldLabel>
+              <Input
+                id={passwordId}
+                type="password"
+                value={password}
+                onChange={(event) => onPasswordChange(event.target.value)}
+                minLength={12}
+                maxLength={256}
+                required
+                autoComplete="new-password"
+                aria-invalid={invalid || undefined}
+              />
+              <FieldDescription>Min 12 characters</FieldDescription>
+            </Field>
+          </FieldGroup>
+          {err && (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertDescription>{err}</AlertDescription>
+            </Alert>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? <Spinner data-icon="inline-start" /> : null}
+              {busy ? 'Adding…' : 'Add user'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -1364,61 +1472,65 @@ function DeleteUserModal({
   // destructive action and the typed email matches the standard
   // "type the name to confirm" pattern used by GitHub, AWS, etc.
   const [typed, setTyped] = useState('');
+  const confirmId = useId();
   const canConfirm = typed === user.email && !busy;
   return (
-    <Dialog
-      role="alertdialog"
-      aria-label="Delete user?"
-      onClose={onCancel}
-      closeDisabled={busy}
-      contentClassName="card w-full max-w-md"
-    >
-        <div className="flex items-center gap-2 mb-3">
-          <AlertTriangle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0" />
-          <h3 className="text-lg font-semibold fg-primary">Delete user?</h3>
-        </div>
-        <p className="text-sm fg-tertiary">
-          This will permanently delete <span className="font-medium fg-primary">{user.name}</span>{' '}
-          (<span className="font-mono text-xs">{user.email}</span>) and <strong>all of their data</strong>:
-        </p>
-        <ul className="text-sm fg-tertiary mt-2 ml-5 list-disc space-y-0.5">
-          <li>Transactions</li>
-          <li>Accounts</li>
-          <li>Categories and sub-categories</li>
-          <li>Monthly budget rows</li>
-          <li>Settings</li>
-          <li>Better Auth session + OIDC account link</li>
-        </ul>
-        <p className="text-sm text-rose-700 dark:text-rose-300 mt-3 font-medium">
-          This cannot be undone.
-        </p>
-        <label className="block mt-4">
-          <span className="text-sm font-medium fg-secondary">
-            Type <span className="font-mono">{user.email}</span> to confirm:
-          </span>
-          <input
+    <Dialog open onOpenChange={(open) => { if (!open && !busy) onCancel(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="text-destructive" />
+            Delete user?
+          </DialogTitle>
+          <DialogDescription asChild>
+            <div className="flex flex-col gap-2">
+              <p>
+                This will permanently delete <span className="font-medium text-foreground">{user.name}</span>{' '}
+                (<span className="font-mono text-xs">{user.email}</span>) and <strong>all of their data</strong>:
+              </p>
+              <ul className="ml-5 list-disc">
+                <li>Transactions</li>
+                <li>Accounts</li>
+                <li>Categories and sub-categories</li>
+                <li>Monthly budget rows</li>
+                <li>Settings</li>
+                <li>Better Auth session + OIDC account link</li>
+              </ul>
+              <p className="font-medium text-destructive">
+                This cannot be undone.
+              </p>
+            </div>
+          </DialogDescription>
+        </DialogHeader>
+        <Field>
+          <FieldLabel htmlFor={confirmId}>
+            Type <span className="font-mono">{user.email}</span> to confirm
+          </FieldLabel>
+          <Input
+            id={confirmId}
             type="text"
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
-            className={`mt-1 w-full ${PWD_INPUT_CLS}`}
             autoComplete="off"
             autoFocus
           />
-        </label>
-        {err && <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">{err}</p>}
-        <div className="flex justify-end gap-2 pt-4">
-          <button type="button" onClick={onCancel} disabled={busy} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50">
+        </Field>
+        {err && (
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertDescription>{err}</AlertDescription>
+          </Alert>
+        )}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel} disabled={busy}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={!canConfirm}
-            className="px-3 py-2 text-sm font-medium rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+          </Button>
+          <Button type="button" variant="destructive" onClick={onConfirm} disabled={!canConfirm}>
+            {busy ? <Spinner data-icon="inline-start" /> : null}
             {busy ? 'Deleting…' : 'Delete user + data'}
-          </button>
-        </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -1426,45 +1538,6 @@ function DeleteUserModal({
 // ============================================================================
 // Provider form — used by the OIDC section.
 // ============================================================================
-
-function SectionHeader({
-  icon,
-  title,
-  subtitle,
-  action,
-  tone = 'amber',
-}: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string;
-  action?: React.ReactNode;
-  /** 'rose' flags a section whose live control is destructive/irreversible
-   *  (e.g. disabling local auth) — see THEME.md-adjacent audit note: routine
-   *  preferences and high-stakes controls shouldn't look identical. */
-  tone?: 'amber' | 'rose';
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3 mb-3">
-      <div>
-        <h3 className="text-lg font-semibold fg-primary flex items-center gap-2">
-          <span
-            className={clsx(
-              'h-7 w-7 rounded-lg flex items-center justify-center',
-              tone === 'rose'
-                ? 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
-                : 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-            )}
-          >
-            {icon}
-          </span>
-          {title}
-        </h3>
-        {subtitle && <p className="text-sm fg-tertiary mt-1 max-w-2xl">{subtitle}</p>}
-      </div>
-      {action}
-    </div>
-  );
-}
 
 function ProviderForm({
   initial,
@@ -1492,6 +1565,7 @@ function ProviderForm({
   const [busy, setBusy] = useState(false);
 
   const isEdit = !!initial;
+  const locked = busy || testing;
 
   const onTest = async () => {
     setTesting(true);
@@ -1513,7 +1587,7 @@ function ProviderForm({
     }
   };
 
-  const onSubmit = async (e: React.FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setErr(null);
     setBusy(true);
@@ -1560,110 +1634,118 @@ function ProviderForm({
   };
 
   return (
-    <Dialog
-      aria-label={isEdit ? `Edit ${initial?.providerId}` : 'Add OIDC provider'}
-      onClose={onClose}
-      closeOnBackdrop={false}
-      closeDisabled={busy || testing}
-      contentClassName="card w-full max-w-lg"
-    >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold fg-primary">
-            {isEdit ? `Edit ${initial?.providerId}` : 'Add OIDC provider'}
-          </h2>
-          <button type="button" onClick={onClose} disabled={busy || testing} className="close-button rounded p-1 disabled:opacity-50" aria-label="Close provider dialog">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <Dialog open onOpenChange={(open) => { if (!open && !locked) onClose(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <form onSubmit={onSubmit} className="contents">
+          <DialogHeader>
+            <DialogTitle>
+              {isEdit ? `Edit ${initial?.providerId}` : 'Add OIDC provider'}
+            </DialogTitle>
+            <DialogDescription>
+              {isEdit
+                ? 'Update this identity provider. Leave the client secret blank to keep the current value.'
+                : 'Connect an OpenID Connect identity provider for sign-in.'}
+            </DialogDescription>
+          </DialogHeader>
 
-        <form onSubmit={onSubmit} className="space-y-3">
-          <ProviderField
-            label="Provider ID (slug)"
-            value={form.providerId}
-            onChange={(v) => setForm({ ...form, providerId: v })}
-            hint="Used in /api/auth/sign-in/oauth/<providerId>"
-            disabled={isEdit}
-            required
-          />
-          <ProviderField
-            label="Discovery URL"
-            value={form.discoveryUrl}
-            onChange={(v) => setForm({ ...form, discoveryUrl: v })}
-            placeholder="https://id.example.com/.well-known/openid-configuration"
-            required
-          />
-          <ProviderField
-            label="Client ID"
-            value={form.clientId}
-            onChange={(v) => setForm({ ...form, clientId: v })}
-            required
-          />
-          <ProviderField
-            label={isEdit ? 'Client secret (leave blank to keep current)' : 'Client secret'}
-            value={form.clientSecret}
-            onChange={(v) => setForm({ ...form, clientSecret: v })}
-            type="password"
-            required={!isEdit}
-          />
-          <ProviderField
-            label="Scopes (comma-separated)"
-            value={form.scopes}
-            onChange={(v) => setForm({ ...form, scopes: v })}
-            hint="Standard: openid, email, profile"
-          />
+          <FieldGroup>
+            <ProviderField
+              label="Provider ID (slug)"
+              value={form.providerId}
+              onChange={(v) => setForm({ ...form, providerId: v })}
+              hint="Used in /api/auth/sign-in/oauth/<providerId>"
+              disabled={isEdit}
+              required
+            />
+            <ProviderField
+              label="Discovery URL"
+              value={form.discoveryUrl}
+              onChange={(v) => setForm({ ...form, discoveryUrl: v })}
+              placeholder="https://id.example.com/.well-known/openid-configuration"
+              required
+            />
+            <ProviderField
+              label="Client ID"
+              value={form.clientId}
+              onChange={(v) => setForm({ ...form, clientId: v })}
+              required
+            />
+            <ProviderField
+              label={isEdit ? 'Client secret (leave blank to keep current)' : 'Client secret'}
+              value={form.clientSecret}
+              onChange={(v) => setForm({ ...form, clientSecret: v })}
+              type="password"
+              required={!isEdit}
+              invalid={Boolean(err) && !isEdit && !form.clientSecret}
+            />
+            <ProviderField
+              label="Scopes (comma-separated)"
+              value={form.scopes}
+              onChange={(v) => setForm({ ...form, scopes: v })}
+              hint="Standard: openid, email, profile"
+            />
+          </FieldGroup>
 
           {form.providerId.trim() && (
-            <div className="rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/30 p-3">
-              <div className="text-xs font-semibold text-amber-900 dark:text-amber-200 mb-1">
-                Register this callback URI in your IdP first
-              </div>
-              <p className="text-xs text-amber-800 dark:text-amber-300 mb-2">
-                Before saving here, copy this exact value into your IdP's
-                &quot;Allowed redirect URIs&quot; (Pocket ID) / &quot;Redirect URIs&quot;
-                (Authentik / Keycloak). If the strings differ by even a
-                trailing slash, the IdP will reject the sign-in with{' '}
-                <code className="bg-amber-100 dark:bg-amber-900/50 px-1 rounded">redirect_uri not registered</code>.
-              </p>
-              <div className="flex items-center gap-1 bg-surface dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded px-2 py-1.5">
-                <code className="text-xs fg-primary break-all flex-1 font-mono">
-                  {predictedCallbackUri(form.providerId)}
-                </code>
-                <CopyButton value={predictedCallbackUri(form.providerId)} />
-              </div>
-            </div>
+            <Alert>
+              <AlertTitle>Register this callback URI in your IdP first</AlertTitle>
+              <AlertDescription>
+                <p>
+                  Before saving here, copy this exact value into your IdP's
+                  &quot;Allowed redirect URIs&quot; (Pocket ID) / &quot;Redirect URIs&quot;
+                  (Authentik / Keycloak). If the strings differ by even a
+                  trailing slash, the IdP will reject the sign-in with{' '}
+                  <code className="rounded bg-muted px-1">redirect_uri not registered</code>.
+                </p>
+                <div className="mt-2 flex items-center gap-1 rounded border bg-background px-2 py-1.5">
+                  <code className="flex-1 break-all font-mono text-xs text-foreground">
+                    {predictedCallbackUri(form.providerId)}
+                  </code>
+                  <CopyButton value={predictedCallbackUri(form.providerId)} />
+                </div>
+              </AlertDescription>
+            </Alert>
           )}
 
-          <div className="flex items-center gap-2 pt-2">
-            <button
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
               type="button"
-              onClick={onTest}
-              className="text-sm text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1 disabled:opacity-50"
+              variant="outline"
+              size="sm"
+              onClick={() => void onTest()}
               disabled={testing || !form.discoveryUrl || !form.clientId}
             >
-              <RefreshCw className={'h-3 w-3' + (testing ? ' animate-spin' : '')} />
+              {testing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
               {testing ? 'Testing…' : 'Test discovery'}
-            </button>
+            </Button>
             {testResult?.ok && (
-              <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                <ShieldCheck className="h-3 w-3" /> reachable
+              <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+                <ShieldCheck className="size-3" /> reachable
               </span>
             )}
             {testResult && !testResult.ok && (
-              <span className="text-xs text-rose-600 dark:text-rose-400">{testResult.error}</span>
+              <span className="text-xs text-destructive">{testResult.error}</span>
             )}
           </div>
 
-          {err && <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p>}
+          {err && (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertDescription>{err}</AlertDescription>
+            </Alert>
+          )}
 
-          <div className="flex justify-end gap-2 pt-3">
-            <button type="button" onClick={onClose} disabled={busy || testing} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50">
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={locked}>
               Cancel
-            </button>
-            <button type="submit" className="btn-primary" disabled={busy}>
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? <Spinner data-icon="inline-start" /> : null}
               {busy ? 'Saving…' : isEdit ? 'Save changes' : 'Add provider'}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -1677,6 +1759,7 @@ function ProviderField({
   disabled,
   placeholder,
   required,
+  invalid,
 }: {
   label: string;
   value: string;
@@ -1686,21 +1769,24 @@ function ProviderField({
   disabled?: boolean;
   placeholder?: string;
   required?: boolean;
+  invalid?: boolean;
 }) {
+  const id = useId();
   return (
-    <label className="block">
-      <span className="text-sm font-medium fg-secondary">{label}</span>
-      <input
+    <Field data-invalid={invalid || undefined}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <Input
+        id={id}
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
         required={required}
-        className="mt-1 w-full rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none disabled:bg-slate-50 dark:disabled:bg-slate-800 disabled:text-slate-500"
+        aria-invalid={invalid || undefined}
       />
-      {hint && <span className="mt-1 block text-xs fg-muted">{hint}</span>}
-    </label>
+      {hint ? <FieldDescription>{hint}</FieldDescription> : null}
+    </Field>
   );
 }
 
@@ -1736,14 +1822,15 @@ function CopyButton({ value }: { value: string }) {
     }
   };
   return (
-    <button
+    <Button
       type="button"
-      onClick={onCopy}
-      className="shrink-0 p-1 rounded fg-tertiary hover:fg-primary hover:bg-slate-100 dark:hover:bg-slate-700"
+      variant="ghost"
+      size="icon-xs"
+      onClick={() => void onCopy()}
       title={copied ? 'Copied!' : 'Copy'}
       aria-label="Copy to clipboard"
     >
-      {copied ? <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-    </button>
+      {copied ? <Check className="text-emerald-600 dark:text-emerald-400" /> : <Copy />}
+    </Button>
   );
 }

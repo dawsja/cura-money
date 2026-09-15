@@ -13,6 +13,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { Separator } from '@/components/ui/separator';
 
 // Top group: daily working surfaces. Order matters — this is the order
 // users see in the sidebar. Home first, then transactions, budget,
@@ -50,14 +51,14 @@ export function Sidebar() {
       // `h-full` fills the Layout frame. The brand and support link are
       // `shrink-0` so they stay pinned; the middle
       // <nav> scrolls if it ever overflows.
-      className="group/sidebar hidden md:flex w-[72px] hover:w-64 focus-within:w-64 flex-col h-full min-h-0 overflow-hidden bg-page transition-[width] duration-200"
+      className="group/sidebar hidden h-full min-h-0 min-w-0 w-[72px] max-w-[72px] flex-col overflow-hidden bg-page transition-[width] duration-200 hover:w-64 hover:max-w-64 focus-within:w-64 focus-within:max-w-64 md:flex"
     >
       {/* Logo only — always visible. No text label. */}
       <div className="flex shrink-0 items-center justify-center gap-2 py-4 group-hover/sidebar:justify-start group-hover/sidebar:px-4 group-focus-within/sidebar:justify-start group-focus-within/sidebar:px-4">
-        <img src="/logo.png" alt="Cura Money" className="h-8 w-8 shrink-0" />
+        <img src="/logo.png" alt="Cura Money" className="size-8 shrink-0" />
       </div>
 
-      <nav className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-2 pt-4 space-y-1">
+      <nav className="hide-scrollbar flex min-h-0 min-w-0 flex-1 flex-col gap-1 overflow-x-clip overflow-y-auto overscroll-y-contain p-2 pt-4">
         {primaryItems.map((it) => (
           <NavLink
             key={it.to}
@@ -67,7 +68,7 @@ export function Sidebar() {
             onClick={(event) => event.currentTarget.blur()}
             className={({ isActive }) =>
               clsx(
-                'flex items-center justify-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors group-hover/sidebar:justify-start group-focus-within/sidebar:justify-start',
+                'flex min-w-0 items-center justify-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm font-medium transition-colors group-hover/sidebar:justify-start group-focus-within/sidebar:justify-start',
                 isActive
                   ? 'bg-amber-50 text-amber-700 shadow-sm shadow-amber-500/20 dark:bg-amber-900/30 dark:text-amber-300'
                   : 'fg-secondary hover:bg-slate-100 dark:hover:bg-slate-800',
@@ -75,18 +76,15 @@ export function Sidebar() {
             }
             aria-label={it.label}
           >
-            <it.icon className="h-5 w-5 shrink-0" />
-            <span className="hidden whitespace-nowrap group-hover/sidebar:inline group-focus-within/sidebar:inline">
+            <it.icon className="size-5 shrink-0" />
+            <span className="hidden min-w-0 truncate group-hover/sidebar:inline group-focus-within/sidebar:inline">
               {it.label}
             </span>
           </NavLink>
         ))}
-        {/* Separator above the settings-shaped group so Accounts,
-            Categories, and Rules stay visually distinct from the
-            daily-working surfaces above. Horizontal margins shorten
-            the bar on both sides so it reads as a clean inset
-            divider rather than a full-width rule. */}
-        <div className="my-2 mx-4 border-t border-default" aria-hidden="true" />
+        <div className="min-w-0 px-2 py-2">
+          <Separator />
+        </div>
         {settingsItems.map((it) => (
           <NavLink
             key={it.to}
@@ -95,7 +93,7 @@ export function Sidebar() {
             onClick={(event) => event.currentTarget.blur()}
             className={({ isActive }) =>
               clsx(
-                'flex items-center justify-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors group-hover/sidebar:justify-start group-focus-within/sidebar:justify-start',
+                'flex min-w-0 items-center justify-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm font-medium transition-colors group-hover/sidebar:justify-start group-focus-within/sidebar:justify-start',
                 isActive
                   ? 'bg-amber-50 text-amber-700 shadow-sm shadow-amber-500/20 dark:bg-amber-900/30 dark:text-amber-300'
                   : 'fg-secondary hover:bg-slate-100 dark:hover:bg-slate-800',
@@ -103,8 +101,8 @@ export function Sidebar() {
             }
             aria-label={it.label}
           >
-            <it.icon className="h-5 w-5 shrink-0" />
-            <span className="hidden whitespace-nowrap group-hover/sidebar:inline group-focus-within/sidebar:inline">
+            <it.icon className="size-5 shrink-0" />
+            <span className="hidden min-w-0 truncate group-hover/sidebar:inline group-focus-within/sidebar:inline">
               {it.label}
             </span>
           </NavLink>
@@ -112,16 +110,16 @@ export function Sidebar() {
       </nav>
 
       {/* Support link stays pinned to the bottom of the icon rail. */}
-      <div className="shrink-0 p-2">
+      <div className="min-w-0 shrink-0 overflow-hidden p-2">
         <a
           href="https://buymeacoffee.com/curamoney"
           target="_blank"
           rel="noopener noreferrer"
-          className="w-full flex items-center justify-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors group-hover/sidebar:justify-start group-focus-within/sidebar:justify-start"
+          className="flex w-full min-w-0 items-center justify-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-50 group-hover/sidebar:justify-start group-focus-within/sidebar:justify-start dark:text-amber-300 dark:hover:bg-amber-900/30"
           aria-label="Buy me a coffee"
         >
-          <Coffee className="coffee-accent h-5 w-5 shrink-0" />
-          <span className="hidden whitespace-nowrap group-hover/sidebar:inline group-focus-within/sidebar:inline">
+          <Coffee className="coffee-accent size-5 shrink-0" />
+          <span className="hidden min-w-0 truncate group-hover/sidebar:inline group-focus-within/sidebar:inline">
             Buy me a coffee
           </span>
         </a>

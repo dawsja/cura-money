@@ -3,10 +3,26 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { formatMoney } from '../lib/format';
 import { formatAccountBalance, isLiability, netWorthContribution } from '../lib/accounting';
-import { Plus, Trash2, RefreshCw, ExternalLink, Wallet, Landmark, CreditCard, Banknote, PiggyBank, TrendingUp, AlertTriangle, CircleHelp, EyeOff, Eye, Pencil, X, EllipsisVertical, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, ExternalLink, Wallet, Landmark, CreditCard, Banknote, PiggyBank, TrendingUp, AlertTriangle, CircleHelp, EyeOff, Eye, Pencil, EllipsisVertical, ChevronDown, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
-import { Dialog } from '../components/ui/dialog';
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../components/ui/empty';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '../components/ui/field';
+import { Input } from '../components/ui/input';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Spinner } from '../components/ui/spinner';
 import { SummaryCard } from '../components/SummaryCard';
 
 type EditableAccountType = 'checking' | 'savings' | 'credit' | 'investment' | 'loan';
@@ -16,15 +32,13 @@ interface Account { id: string; source: 'manual' | 'simplefin'; name: string; ty
 interface SfStatus { demoMode: boolean; connected: boolean; lastSync?: string | null; lastAttempt?: string | null; lastError?: string | null; }
 interface SfClaim { setupToken: string; }
 
-const INPUT_CLS = 'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
-
 const TYPE_META: Record<AccountType, { label: string; icon: React.ComponentType<{ className?: string }>; color: string }> = {
   checking: { label: 'Checking', icon: Landmark, color: 'text-sky-600 bg-sky-50 dark:text-sky-300 dark:bg-sky-900/30' },
   savings: { label: 'Savings', icon: PiggyBank, color: 'text-emerald-600 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-900/30' },
   credit: { label: 'Credit', icon: CreditCard, color: 'text-rose-600 bg-rose-50 dark:text-rose-300 dark:bg-rose-900/30' },
   investment: { label: 'Investment', icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:text-violet-300 dark:bg-violet-900/30' },
   loan: { label: 'Loan', icon: Banknote, color: 'text-amber-600 bg-amber-50 dark:text-amber-300 dark:bg-amber-900/30' },
-  uncategorized: { label: 'Uncategorized', icon: CircleHelp, color: 'fg-secondary bg-canvas-subtle' },
+  uncategorized: { label: 'Uncategorized', icon: CircleHelp, color: 'text-muted-foreground bg-muted' },
 };
 
 const EDITABLE_ACCOUNT_TYPES: EditableAccountType[] = ['checking', 'savings', 'credit', 'investment', 'loan'];
@@ -199,15 +213,13 @@ export function Accounts() {
         )}
       >
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <div className="font-medium text-sm fg-primary truncate">{displayName}</div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="truncate text-sm font-medium text-foreground">{displayName}</div>
             {a.source === 'simplefin' && (
-              <span className="shrink-0 rounded-full border border-default bg-canvas-subtle px-1.5 py-0.5 text-[10px] font-medium fg-muted">
-                SimpleFIN
-              </span>
+              <Badge variant="outline">SimpleFIN</Badge>
             )}
           </div>
-          <div className="text-xs fg-muted">
+          <div className="text-xs text-muted-foreground">
             {a.alias ? (
               <span className="italic" title="Canonical name from your bank / SimpleFIN">({a.name})</span>
             ) : (
@@ -216,68 +228,72 @@ export function Accounts() {
             {isLiability(a.type) && a.interestRate != null && a.interestRate > 0 && (
               <> · {(a.interestRate * 100).toFixed(2)}% APR</>
             )}
-            {isLiability(a.type) && <span className="ml-1 text-rose-500 dark:text-rose-400">· owed</span>}
+            {isLiability(a.type) && <span className="ml-1 text-destructive">· owed</span>}
             {opts?.extraMeta}
           </div>
         </div>
         <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start">
-          <div className={clsx('font-semibold tabular-nums mr-2', opts?.dimmed && 'text-sm', balanceColor)}>{balanceText}</div>
+          <div className={clsx('mr-2 font-semibold tabular-nums', opts?.dimmed && 'text-sm', balanceColor)}>{balanceText}</div>
           <details name="account-actions" className="relative">
             <summary
               data-onboarding-target={a.type === 'uncategorized' ? 'unclassified-account-edit' : undefined}
-              className="close-button flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg [&::-webkit-details-marker]:hidden"
+              className="close-button flex size-11 cursor-pointer list-none items-center justify-center rounded-lg [&::-webkit-details-marker]:hidden"
               aria-label={`Actions for ${displayName}`}
             >
-              <EllipsisVertical className="h-5 w-5" aria-hidden="true" />
+              <EllipsisVertical className="size-5" aria-hidden="true" />
             </summary>
-            <div className="absolute right-0 z-20 mt-1 min-w-44 rounded-lg border border-default bg-surface p-1 shadow-xl">
-              <button
+            <div className="absolute right-0 z-20 mt-1 min-w-44 rounded-lg border border-border bg-card p-1 shadow-xl">
+              <Button
                 type="button"
+                variant="ghost"
+                className="h-11 w-full justify-start"
                 onClick={(event) => {
                   event.currentTarget.closest('details')?.removeAttribute('open');
                   setEditing(a);
                 }}
-                className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm"
               >
-                <Pencil className="h-4 w-4" aria-hidden="true" /> Edit account
-              </button>
+                <Pencil data-icon="inline-start" aria-hidden="true" /> Edit account
+              </Button>
               {opts?.dimmed ? (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  className="h-11 w-full justify-start"
                   onClick={(event) => {
                     event.currentTarget.closest('details')?.removeAttribute('open');
                     unhide.mutate(a.id);
                   }}
                   disabled={unhide.isPending}
-                  className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:text-emerald-300 dark:hover:bg-emerald-900/30"
                 >
-                  <Eye className="h-4 w-4" aria-hidden="true" /> Unhide account
-                </button>
+                  <Eye data-icon="inline-start" aria-hidden="true" /> Unhide account
+                </Button>
               ) : (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  className="h-11 w-full justify-start"
                   onClick={(event) => {
                     event.currentTarget.closest('details')?.removeAttribute('open');
                     hide.reset();
                     setConfirmation({ action: 'hide', account: a });
                   }}
-                  className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm"
                 >
-                  <EyeOff className="h-4 w-4" aria-hidden="true" /> Hide account
-                </button>
+                  <EyeOff data-icon="inline-start" aria-hidden="true" /> Hide account
+                </Button>
               )}
               {a.source === 'manual' && (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  className="h-11 w-full justify-start text-destructive hover:text-destructive"
                   onClick={(event) => {
                     event.currentTarget.closest('details')?.removeAttribute('open');
                     del.reset();
                     setConfirmation({ action: 'delete', account: a });
                   }}
-                  className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-900/30"
                 >
-                  <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete account
-                </button>
+                  <Trash2 data-icon="inline-start" aria-hidden="true" /> Delete account
+                </Button>
               )}
             </div>
           </details>
@@ -287,32 +303,35 @@ export function Accounts() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold fg-primary">Accounts</h1>
+        <h1 className="text-2xl font-bold text-foreground">Accounts</h1>
         {!sf.data?.demoMode && (
-          <button
+          <Button
+            type="button"
+            variant="outline"
             onClick={() => sync.mutate()}
             disabled={sync.isPending || !sf.data?.connected}
-            className="rounded-lg border border-default px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 fg-secondary flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw className={'h-4 w-4' + (sync.isPending ? ' animate-spin' : '')} />
+            {sync.isPending ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
             {sync.isPending ? 'Syncing…' : 'Sync'}
-          </button>
+          </Button>
         )}
       </div>
       {accountOperationError && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300" role="alert">
-          Account operation failed: {accountOperationError.message}
-        </div>
+        <Alert variant="destructive">
+          <AlertTriangle />
+          <AlertTitle>Account operation failed</AlertTitle>
+          <AlertDescription>{accountOperationError.message}</AlertDescription>
+        </Alert>
       )}
 
-      <section className="space-y-3">
+      <section className="flex flex-col gap-3">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold fg-primary">Your accounts</h2>
+            <h2 className="text-lg font-semibold text-foreground">Your accounts</h2>
             {!accounts.isPending && !accounts.isError && (
-              <p className="text-xs fg-tertiary">{visible.length} visible {visible.length === 1 ? 'account' : 'accounts'}</p>
+              <p className="text-xs text-muted-foreground">{visible.length} visible {visible.length === 1 ? 'account' : 'accounts'}</p>
             )}
           </div>
         </div>
@@ -328,19 +347,26 @@ export function Accounts() {
           </div>
         )}
         {accounts.isPending && (
-          <div className="card text-sm fg-muted text-center">
-            <RefreshCw className="h-4 w-4 inline mr-2 animate-spin" /> Loading accounts…
-          </div>
+          <Card>
+            <CardContent className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Spinner /> Loading accounts…
+            </CardContent>
+          </Card>
         )}
         {accounts.isError && (
-          <div className="card text-center space-y-3">
-            <p className="text-sm text-rose-600 dark:text-rose-400 flex items-center justify-center gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0" /> Could not load accounts: {accounts.error.message}
-            </p>
-            <button type="button" onClick={() => accounts.refetch()} disabled={accounts.isFetching} className="btn-primary disabled:opacity-50">
-              {accounts.isFetching ? 'Retrying…' : 'Retry'}
-            </button>
-          </div>
+          <Card>
+            <CardContent className="flex flex-col items-center gap-3 text-center">
+              <Alert variant="destructive">
+                <AlertTriangle />
+                <AlertTitle>Could not load accounts</AlertTitle>
+                <AlertDescription>{accounts.error.message}</AlertDescription>
+              </Alert>
+              <Button type="button" onClick={() => accounts.refetch()} disabled={accounts.isFetching}>
+                {accounts.isFetching ? <Spinner data-icon="inline-start" /> : null}
+                {accounts.isFetching ? 'Retrying…' : 'Retry'}
+              </Button>
+            </CardContent>
+          </Card>
         )}
         {!accounts.isPending && !accounts.isError && (['uncategorized', ...EDITABLE_ACCOUNT_TYPES] as AccountType[]).map((t) => {
           const list = byType[t] ?? [];
@@ -349,237 +375,305 @@ export function Accounts() {
           const Icon = meta.icon;
           const typeTotal = list.reduce((sum, account) => sum + Math.abs(account.balance), 0);
           return (
-            <div key={t} className="card">
-              <div className="mb-3 flex items-center justify-between gap-3">
+            <Card key={t}>
+              <CardHeader>
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className={clsx('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', meta.color)}>
-                    <Icon className="h-4 w-4" aria-hidden="true" />
+                  <span className={clsx('flex size-7 shrink-0 items-center justify-center rounded-lg', meta.color)}>
+                    <Icon className="size-4" aria-hidden="true" />
                   </span>
-                  <h3 className="truncate text-sm font-semibold fg-primary">{meta.label}</h3>
-                  <span className="shrink-0 text-xs fg-muted">· {list.length}</span>
+                  <CardTitle className="truncate text-sm">{meta.label}</CardTitle>
+                  <span className="shrink-0 text-xs text-muted-foreground">· {list.length}</span>
                 </div>
+                <CardAction>
                 <div className={clsx(
                   'shrink-0 text-right text-sm font-semibold tabular-nums',
                   t === 'uncategorized'
-                    ? 'fg-muted'
+                    ? 'text-muted-foreground'
                     : isLiability(t)
-                      ? 'text-rose-600 dark:text-rose-400'
-                      : 'fg-primary',
+                      ? 'text-destructive'
+                      : 'text-foreground',
                 )}>
                   {formatMoney(typeTotal)}
                   {t === 'uncategorized' && <span className="ml-1 text-[10px] font-normal">not counted</span>}
-                  {isLiability(t) && <span className="ml-1 text-[10px] font-normal fg-muted">owed</span>}
+                  {isLiability(t) && <span className="ml-1 text-[10px] font-normal text-muted-foreground">owed</span>}
                 </div>
-              </div>
-              {t === 'uncategorized' && (
-                <p className="mb-2 text-xs fg-muted">Use the account menu to choose a type so balances are counted correctly.</p>
-              )}
-              <ul className="divide-y divide-slate-100 dark:divide-slate-700">
-                {list.map((a) => renderRow(a))}
-              </ul>
-            </div>
+                </CardAction>
+              </CardHeader>
+              <CardContent>
+                {t === 'uncategorized' && (
+                  <p className="mb-2 text-xs text-muted-foreground">Use the account menu to choose a type so balances are counted correctly.</p>
+                )}
+                <ul className="divide-y divide-border">
+                  {list.map((a) => renderRow(a))}
+                </ul>
+              </CardContent>
+            </Card>
           );
         })}
         {!accounts.isPending && !accounts.isError && visible.length === 0 && (
-          <div className="card text-sm fg-muted text-center">
-            <Wallet className="h-5 w-5 inline mr-1 fg-muted" /> No accounts yet. Add one below or connect SimpleFIN to auto-import.
-          </div>
+          <Empty className="border border-dashed">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Wallet />
+              </EmptyMedia>
+              <EmptyTitle>No accounts yet</EmptyTitle>
+              <EmptyDescription>Add one below or connect SimpleFIN to auto-import.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         )}
 
         {/* Hidden section. Off by default — the user has to opt in to
             see them. From here they can un-hide to bring the account
             (and its future sync data) back. */}
         {!accounts.isPending && !accounts.isError && hidden.length > 0 && (
-          <div className="card">
-            <button
-              type="button"
-              onClick={() => setShowHidden((v) => !v)}
-              aria-expanded={showHidden}
-              className="w-full flex items-center justify-between text-left"
-            >
-              <div className="flex items-center gap-2">
-                <EyeOff className="h-4 w-4 fg-muted" />
-                <span className="text-sm font-semibold fg-secondary">
-                  {showHidden ? 'Hide' : 'Show'} hidden accounts
+          <Card>
+            <CardContent>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setShowHidden((v) => !v)}
+                aria-expanded={showHidden}
+                className="w-full justify-between"
+              >
+                <span className="flex items-center gap-2">
+                  <EyeOff data-icon="inline-start" />
+                  <span className="text-sm font-semibold">
+                    {showHidden ? 'Hide' : 'Show'} hidden accounts
+                  </span>
+                  <span className="text-xs text-muted-foreground">· {hidden.length}</span>
                 </span>
-                <span className="text-xs fg-muted">· {hidden.length}</span>
-              </div>
-              {showHidden
-                ? <ChevronDown className="h-4 w-4 fg-muted" aria-hidden="true" />
-                : <ChevronRight className="h-4 w-4 fg-muted" aria-hidden="true" />}
-            </button>
-            {showHidden && (
-              <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-700">
-                {hidden.map((a) => renderRow(a, {
-                  dimmed: true,
-                  extraMeta: <span> · hidden</span>,
-                }))}
-              </ul>
-            )}
-          </div>
+                {showHidden
+                  ? <ChevronDown data-icon="inline-end" aria-hidden="true" />
+                  : <ChevronRight data-icon="inline-end" aria-hidden="true" />}
+              </Button>
+              {showHidden && (
+                <ul className="mt-3 divide-y divide-border">
+                  {hidden.map((a) => renderRow(a, {
+                    dimmed: true,
+                    extraMeta: <span> · hidden</span>,
+                  }))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
         )}
       </section>
 
-      <section className="space-y-3">
+      <section className="flex flex-col gap-3">
         <div>
-          <h2 className="text-lg font-semibold fg-primary">Add or connect an account</h2>
-          <p className="text-xs fg-tertiary">Connect SimpleFIN for automatic imports or add a balance manually.</p>
+          <h2 className="text-lg font-semibold text-foreground">Add or connect an account</h2>
+          <p className="text-xs text-muted-foreground">Connect SimpleFIN for automatic imports or add a balance manually.</p>
         </div>
         <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
-          <section data-onboarding-target="simplefin-connect" className="card">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-base font-semibold fg-primary">SimpleFIN</h3>
+          <Card data-onboarding-target="simplefin-connect">
+            <CardHeader>
+              <CardTitle>SimpleFIN</CardTitle>
               {!sf.isPending && !sf.isError && (
-                <span className={clsx(
-                  'rounded-full px-2 py-0.5 text-[10px] font-semibold',
-                  sf.data.demoMode
-                    ? 'bg-canvas-subtle fg-muted'
-                    : sf.data.connected
-                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                      : 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-                )}>
-                  {sf.data.demoMode ? 'Demo' : sf.data.connected ? 'Connected' : 'Not connected'}
-                </span>
+                <CardAction>
+                  <Badge variant={sf.data.demoMode ? 'outline' : sf.data.connected ? 'secondary' : 'outline'}>
+                    {sf.data.demoMode ? 'Demo' : sf.data.connected ? 'Connected' : 'Not connected'}
+                  </Badge>
+                </CardAction>
               )}
-            </div>
+            </CardHeader>
+            <CardContent>
         {sf.isPending ? (
-          <p className="text-sm fg-muted flex items-center gap-2">
-            <RefreshCw className="h-4 w-4 animate-spin" /> Checking connection…
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Spinner /> Checking connection…
           </p>
         ) : sf.isError ? (
-          <div className="space-y-3">
-            <p className="text-sm text-rose-600 dark:text-rose-400 flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0" /> Could not load SimpleFIN status: {sf.error.message}
-            </p>
-            <button type="button" onClick={() => sf.refetch()} disabled={sf.isFetching} className="btn-primary disabled:opacity-50">
+          <div className="flex flex-col gap-3">
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>Could not load SimpleFIN status</AlertTitle>
+              <AlertDescription>{sf.error.message}</AlertDescription>
+            </Alert>
+            <Button type="button" onClick={() => sf.refetch()} disabled={sf.isFetching}>
+              {sf.isFetching ? <Spinner data-icon="inline-start" /> : null}
               {sf.isFetching ? 'Retrying…' : 'Retry'}
-            </button>
+            </Button>
           </div>
         ) : sf.data.demoMode ? (
-          <p className="text-sm fg-secondary">
+          <p className="text-sm text-muted-foreground">
             Bank connections are disabled in the public demo. The accounts below use sample data.
           </p>
         ) : sf.data.connected ? (
-          <div className="text-sm fg-tertiary space-y-1">
+          <div className="flex flex-col gap-1 text-sm text-muted-foreground">
             <p>Connected. Last sync: {sf.data.lastSync ?? 'never'}.</p>
             {sf.data.lastAttempt && sf.data.lastAttempt !== sf.data.lastSync && (
-              <p className="text-xs fg-muted">Last attempt: {sf.data.lastAttempt}.</p>
+              <p className="text-xs text-muted-foreground">Last attempt: {sf.data.lastAttempt}.</p>
             )}
             {sync.data && (
-              <p className="text-xs fg-muted">
+              <p className="text-xs text-muted-foreground">
                 Synced {sync.data.accountsSynced} account(s), {sync.data.transactionsSynced} transaction(s).
                 {sync.data.transactionsReconciled > 0 && ` Reconciled ${sync.data.transactionsReconciled} pending charge(s).`}
               </p>
             )}
             {sync.data && sync.data.reconciliationAmbiguous > 0 && (
-              <p className="text-xs text-amber-700 dark:text-amber-300 flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3 shrink-0" />
-                {sync.data.reconciliationAmbiguous} pending charge(s) need manual duplicate review.
-              </p>
+              <Alert>
+                <AlertTriangle />
+                <AlertDescription>
+                  {sync.data.reconciliationAmbiguous} pending charge(s) need manual duplicate review.
+                </AlertDescription>
+              </Alert>
             )}
             {sync.data && sync.data.stalePendingTransactions > 0 && (
-              <p className="text-xs text-amber-700 dark:text-amber-300 flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3 shrink-0" />
-                {sync.data.stalePendingTransactions} pending charge(s) have not been seen for at least 7 days.
-              </p>
+              <Alert>
+                <AlertTriangle />
+                <AlertDescription>
+                  {sync.data.stalePendingTransactions} pending charge(s) have not been seen for at least 7 days.
+                </AlertDescription>
+              </Alert>
             )}
             {sync.data?.errors && sync.data.errors.length > 0 && (
-              <ul className="text-xs text-rose-600 dark:text-rose-400 space-y-0.5">
-                {sync.data.errors.map((e, i) => <li key={i} className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> {e}</li>)}
-              </ul>
+              <Alert variant="destructive">
+                <AlertTriangle />
+                <AlertTitle>Sync errors</AlertTitle>
+                <AlertDescription>
+                  <ul className="flex flex-col gap-0.5">
+                    {sync.data.errors.map((e, i) => <li key={i}>{e}</li>)}
+                  </ul>
+                </AlertDescription>
+              </Alert>
             )}
             {(sync.error?.message || (!sync.data && sf.data.lastError)) && (
-              <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3 shrink-0" /> {sync.error?.message ?? sf.data.lastError}
-              </p>
+              <Alert variant="destructive">
+                <AlertTriangle />
+                <AlertDescription>{sync.error?.message ?? sf.data.lastError}</AlertDescription>
+              </Alert>
             )}
             {!confirmDisconnect ? (
-              <button
+              <Button
                 type="button"
+                variant="destructive"
+                className="mt-3 self-start"
                 onClick={() => { disconnect.reset(); setConfirmDisconnect(true); }}
-                className="mt-3 rounded-lg border border-rose-500/50 px-3 py-2 text-sm text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30"
               >
                 Disconnect
-              </button>
+              </Button>
             ) : (
-              <div className="mt-3 rounded-lg border border-rose-500/40 bg-rose-50/50 p-3 dark:bg-rose-900/20 space-y-3">
-                <div>
-                  <p className="font-medium text-rose-700 dark:text-rose-300">Disconnect SimpleFIN?</p>
-                  <p className="mt-1 text-xs fg-secondary">Imported accounts and transactions will remain in Cura Money. Automatic and manual SimpleFIN syncs will stop until you reconnect.</p>
-                </div>
+              <div className="mt-3 flex flex-col gap-3">
+                <Alert variant="destructive">
+                  <AlertTitle>Disconnect SimpleFIN?</AlertTitle>
+                  <AlertDescription>
+                    Imported accounts and transactions will remain in Cura Money. Automatic and manual SimpleFIN syncs will stop until you reconnect.
+                  </AlertDescription>
+                </Alert>
                 {disconnect.error && (
-                  <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                    <AlertTriangle className="h-3 w-3 shrink-0" /> {disconnect.error.message}
-                  </p>
+                  <Alert variant="destructive">
+                    <AlertTriangle />
+                    <AlertDescription>{disconnect.error.message}</AlertDescription>
+                  </Alert>
                 )}
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => disconnect.mutate()} disabled={disconnect.isPending} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50">
+                  <Button type="button" variant="destructive" onClick={() => disconnect.mutate()} disabled={disconnect.isPending}>
+                    {disconnect.isPending ? <Spinner data-icon="inline-start" /> : null}
                     {disconnect.isPending ? 'Disconnecting…' : 'Yes, disconnect'}
-                  </button>
-                  <button type="button" onClick={() => setConfirmDisconnect(false)} disabled={disconnect.isPending} className="rounded-lg border border-default px-3 py-2 text-sm fg-secondary hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50">
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setConfirmDisconnect(false)} disabled={disconnect.isPending}>
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
           </div>
         ) : (
-          <form onSubmit={onClaim} className="space-y-2">
-            <p className="text-sm fg-tertiary flex items-center gap-1">
-              Connect or reconnect via SimpleFIN setup token
-              <a
-                href="https://bridge.simplefin.org/simplefin/create"
-                target="_blank"
-                rel="noreferrer"
-                aria-label="Get a SimpleFIN setup token"
-                title="Get a SimpleFIN setup token"
-                className="inline-flex h-11 w-11 items-center justify-center text-inherit visited:text-inherit hover:text-inherit focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-lg"
-              >
-                <ExternalLink className="h-4 w-4" aria-hidden="true" />
-              </a>
-            </p>
-            <input
-              value={sfToken}
-              onChange={(e) => setSfToken(e.target.value)}
-              placeholder="Paste SimpleFIN setup token"
-              className={`${INPUT_CLS} w-full font-mono`}
-            />
-            {sfErr && <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> {sfErr}</p>}
-            <button type="submit" className="btn-primary" disabled={sfBusy}>
+          <form onSubmit={onClaim} className="flex flex-col gap-2">
+            <FieldGroup>
+              <Field data-invalid={!!sfErr || undefined}>
+                <FieldLabel htmlFor="simplefin-token">SimpleFIN setup token</FieldLabel>
+                <div className="flex items-center gap-1">
+                  <FieldDescription>Connect or reconnect via SimpleFIN setup token</FieldDescription>
+                  <Button variant="ghost" size="icon" asChild>
+                    <a
+                      href="https://bridge.simplefin.org/simplefin/create"
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Get a SimpleFIN setup token"
+                      title="Get a SimpleFIN setup token"
+                    >
+                      <ExternalLink />
+                    </a>
+                  </Button>
+                </div>
+                <Input
+                  id="simplefin-token"
+                  value={sfToken}
+                  onChange={(e) => setSfToken(e.target.value)}
+                  placeholder="Paste SimpleFIN setup token"
+                  className="font-mono"
+                  aria-invalid={!!sfErr || undefined}
+                />
+              </Field>
+            </FieldGroup>
+            {sfErr && (
+              <Alert variant="destructive">
+                <AlertTriangle />
+                <AlertDescription>{sfErr}</AlertDescription>
+              </Alert>
+            )}
+            <Button type="submit" disabled={sfBusy}>
+              {sfBusy ? <Spinner data-icon="inline-start" /> : null}
               {sfBusy ? (claim.isSuccess ? 'Running initial sync…' : 'Connecting…') : 'Connect'}
-            </button>
+            </Button>
           </form>
         )}
-      </section>
+            </CardContent>
+          </Card>
 
-      <section data-onboarding-target="manual-account-add" className="card">
-        <h3 className="text-base font-semibold mb-3 fg-primary">Manual account</h3>
-        <p className="mb-3 text-xs fg-muted">Balances are entered and displayed in USD only. Enter a positive amount; account type determines whether it is an asset or amount owed.</p>
-        <form onSubmit={onAdd} className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" className={INPUT_CLS} required />
-            <select value={type} onChange={(e) => setType(e.target.value as EditableAccountType)} className={INPUT_CLS}>
-              {EDITABLE_ACCOUNT_TYPES.map((t) => (
-                <option key={t} value={t}>{TYPE_META[t].label}</option>
-              ))}
-            </select>
-            <input value={balance} onChange={(e) => setBalance(e.target.value)} type="number" min="0" step="0.01" placeholder={isLiability(type) ? 'Amount owed (USD)' : 'Balance (USD)'} className={INPUT_CLS} />
-            <input value={institution} onChange={(e) => setInstitution(e.target.value)} placeholder="Institution (optional)" className={INPUT_CLS} />
-          </div>
+      <Card data-onboarding-target="manual-account-add">
+        <CardHeader>
+          <CardTitle>Manual account</CardTitle>
+          <CardDescription>Balances are entered and displayed in USD only. Enter a positive amount; account type determines whether it is an asset or amount owed.</CardDescription>
+        </CardHeader>
+        <CardContent>
+        <form onSubmit={onAdd} className="flex flex-col gap-3">
+          <FieldGroup>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="manual-account-name">Name</FieldLabel>
+                <Input id="manual-account-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" required />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="manual-account-type">Type</FieldLabel>
+                <Select value={type} onValueChange={(value) => setType(value as EditableAccountType)}>
+                  <SelectTrigger id="manual-account-type" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {EDITABLE_ACCOUNT_TYPES.map((t) => (
+                        <SelectItem key={t} value={t}>{TYPE_META[t].label}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="manual-account-balance">{isLiability(type) ? 'Amount owed (USD)' : 'Balance (USD)'}</FieldLabel>
+                <Input id="manual-account-balance" value={balance} onChange={(e) => setBalance(e.target.value)} type="number" min="0" step="0.01" placeholder={isLiability(type) ? 'Amount owed (USD)' : 'Balance (USD)'} />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="manual-account-institution">Institution</FieldLabel>
+                <Input id="manual-account-institution" value={institution} onChange={(e) => setInstitution(e.target.value)} placeholder="Institution (optional)" />
+              </Field>
+            </div>
+          </FieldGroup>
           {add.error && (
-            <p className="text-sm text-rose-600 dark:text-rose-400 flex items-center gap-1">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              {add.error.message}
-            </p>
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertDescription>{add.error.message}</AlertDescription>
+            </Alert>
           )}
           <div className="flex items-center gap-3">
-            <button type="submit" disabled={add.isPending} className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-              <Plus className={'h-4 w-4' + (add.isPending ? ' animate-spin' : '')} />
+            <Button type="submit" disabled={add.isPending}>
+              {add.isPending ? <Spinner data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
               {add.isPending ? 'Adding…' : 'Add account'}
-            </button>
+            </Button>
           </div>
         </form>
-      </section>
+        </CardContent>
+      </Card>
         </div>
       </section>
 
@@ -648,6 +742,8 @@ function EditAccountModal({
   const [type, setType] = useState<AccountType>(account.type);
   const [balance, setBalance] = useState(String(Math.abs(account.balance)));
   const inputRef = useRef<HTMLInputElement>(null);
+  const typeUncategorized = type === 'uncategorized';
+  const balanceInvalid = balance === '' || Number(balance) < 0;
 
   useEffect(() => {
     inputRef.current?.select();
@@ -667,113 +763,109 @@ function EditAccountModal({
 
   return (
     <Dialog
-      aria-labelledby="edit-account-title"
-      onClose={onClose}
-      closeDisabled={isSaving}
-      initialFocusRef={inputRef}
-      contentClassName="card w-full max-w-sm"
+      open
+      onOpenChange={(open) => {
+        if (!open && !isSaving) onClose();
+      }}
     >
-        <div className="flex items-center justify-between mb-3">
-          <h3 id="edit-account-title" className="text-lg font-semibold fg-primary">
-            Edit account
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSaving}
-            className="close-button rounded-lg p-2 disabled:opacity-50"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+      <DialogContent
+        className="sm:max-w-md"
+        onPointerDownOutside={(event) => {
+          if (isSaving) event.preventDefault();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (isSaving) event.preventDefault();
+        }}
+      >
+        <form onSubmit={submit} className="contents">
+          <DialogHeader>
+            <DialogTitle>Edit account</DialogTitle>
+            <DialogDescription>
+              Bank name: {account.name}
+              {account.institution ? ` · ${account.institution}` : ''}
+            </DialogDescription>
+          </DialogHeader>
 
-        <p className="text-xs fg-muted mb-4">
-          Bank name: <span className="fg-secondary font-medium">{account.name}</span>
-          {account.institution ? <> · {account.institution}</> : null}
-        </p>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="edit-account-alias">Display name</FieldLabel>
+              <Input
+                ref={inputRef}
+                id="edit-account-alias"
+                type="text"
+                value={alias}
+                onChange={(e) => setAlias(e.target.value)}
+                maxLength={120}
+                placeholder={account.name}
+                disabled={isSaving}
+              />
+              <FieldDescription>
+                Leave blank to use the bank name. Survives SimpleFIN sync.
+              </FieldDescription>
+            </Field>
 
-        <form onSubmit={submit} className="space-y-3">
-          <label className="block">
-            <span className="text-sm fg-secondary">Display name</span>
-            <input
-              ref={inputRef}
-              type="text"
-              value={alias}
-              onChange={(e) => setAlias(e.target.value)}
-              maxLength={120}
-              placeholder={account.name}
-              disabled={isSaving}
-              className={`mt-1 w-full ${INPUT_CLS}`}
-            />
-            <span className="mt-1 block text-[10px] fg-muted">
-              Leave blank to use the bank name. Survives SimpleFIN sync.
-            </span>
-          </label>
+            <Field data-invalid={balanceInvalid || undefined}>
+              <FieldLabel htmlFor="edit-account-balance">{isLiability(type) ? 'Amount owed' : 'Balance'} (USD)</FieldLabel>
+              <Input
+                id="edit-account-balance"
+                type="number"
+                min="0"
+                step="0.01"
+                value={balance}
+                onChange={(e) => setBalance(e.target.value)}
+                disabled={isSaving}
+                required
+                aria-invalid={balanceInvalid || undefined}
+              />
+              <FieldDescription>
+                Cura Money supports USD only. Enter a positive amount; the account type determines its net-worth sign.
+              </FieldDescription>
+            </Field>
 
-          <label className="block">
-            <span className="text-sm fg-secondary">{isLiability(type) ? 'Amount owed' : 'Balance'} (USD)</span>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={balance}
-              onChange={(e) => setBalance(e.target.value)}
-              disabled={isSaving}
-              required
-              className={`mt-1 w-full ${INPUT_CLS}`}
-            />
-            <span className="mt-1 block text-[10px] fg-muted">
-              Cura Money supports USD only. Enter a positive amount; the account type determines its net-worth sign.
-            </span>
-          </label>
-
-          <label className="block">
-            <span className="text-sm fg-secondary">Account type</span>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as AccountType)}
-              disabled={isSaving}
-              required
-              className={`mt-1 w-full ${INPUT_CLS}`}
-            >
-              {type === 'uncategorized' && <option value="uncategorized" disabled>Select account type</option>}
-              {EDITABLE_ACCOUNT_TYPES.map((t) => (
-                <option key={t} value={t}>{TYPE_META[t].label}</option>
-              ))}
-            </select>
-            <span className="mt-1 block text-[10px] fg-muted">
-              {type === 'investment'
-                ? 'Investment is balance-only: value stays on Accounts/Home for growth; no transactions are imported or shown.'
-                : 'Affects net worth sign and paydown. Survives SimpleFIN sync.'}
-            </span>
-          </label>
+            <Field data-invalid={typeUncategorized || undefined}>
+              <FieldLabel htmlFor="edit-account-type">Account type</FieldLabel>
+              <Select
+                value={typeUncategorized ? undefined : type}
+                onValueChange={(value) => setType(value as EditableAccountType)}
+                disabled={isSaving}
+              >
+                <SelectTrigger id="edit-account-type" className="w-full" aria-invalid={typeUncategorized || undefined}>
+                  <SelectValue placeholder="Select account type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {EDITABLE_ACCOUNT_TYPES.map((t) => (
+                      <SelectItem key={t} value={t}>{TYPE_META[t].label}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <FieldDescription>
+                {type === 'investment'
+                  ? 'Investment is balance-only: value stays on Accounts/Home for growth; no transactions are imported or shown.'
+                  : 'Affects net worth sign and paydown. Survives SimpleFIN sync.'}
+              </FieldDescription>
+            </Field>
+          </FieldGroup>
 
           {error && (
-            <p className="text-sm text-rose-600 dark:text-rose-400 flex items-center gap-1">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              {error}
-            </p>
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
 
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSaving}
-              className="rounded-lg border border-default px-3 py-2 text-sm fg-secondary hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
-            >
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving || type === 'uncategorized' || balance === '' || Number(balance) < 0}
-              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-            >
+            </Button>
+            <Button type="submit" disabled={isSaving || typeUncategorized || balanceInvalid}>
+              {isSaving ? <Spinner data-icon="inline-start" /> : null}
               {isSaving ? 'Saving…' : 'Save'}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
+      </DialogContent>
     </Dialog>
   );
 }

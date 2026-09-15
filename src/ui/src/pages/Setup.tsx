@@ -15,6 +15,8 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { AuthError, AuthPage, AuthPanel, AuthTextField } from '../components/AuthScreen';
 import { AsyncQueryState } from '../components/ui/AsyncQueryState';
+import { Button } from '../components/ui/button';
+import { Spinner } from '../components/ui/spinner';
 
 interface SetupStatus {
   needsSetup: boolean;
@@ -170,16 +172,16 @@ export function Setup() {
   return (
     <AuthPage width="xl">
       <div className="mb-6 flex items-center gap-2">
-        <img src="/logo.png" alt="Cura Money" className="h-10 w-10" />
-        <h1 className="text-2xl font-bold fg-primary">Cura Money setup</h1>
+        <img src="/logo.png" alt="Cura Money" className="size-10" />
+        <h1 className="text-2xl font-bold text-foreground">Cura Money setup</h1>
       </div>
 
       <AuthPanel>
         {step === 1 && (
-          <form onSubmit={onBootstrap} className="space-y-4">
-            <h2 className="text-lg font-semibold fg-primary">1. Bootstrap the first admin</h2>
-            <p className="text-sm fg-tertiary">
-              The bootstrap token is printed to the <code className="rounded bg-canvas-subtle px-1">app</code> container logs
+          <form onSubmit={onBootstrap} className="flex flex-col gap-4">
+            <h2 className="text-lg font-semibold text-foreground">1. Bootstrap the first admin</h2>
+            <p className="text-sm text-muted-foreground">
+              The bootstrap token is printed to the <code className="rounded bg-muted px-1">app</code> container logs
               on first boot (look for the &quot;SETUP BOOTSTRAP TOKEN&quot; banner). It
               expires in 1 hour; restart the container to regenerate.
             </p>
@@ -218,28 +220,29 @@ export function Setup() {
               disabled={step1Busy}
             />
             {step1Err && <AuthError message={step1Err} />}
-            <button type="submit" className="btn-primary w-full sm:w-auto" disabled={step1Busy}>
+            <Button type="submit" className="w-full sm:w-auto" disabled={step1Busy}>
+              {step1Busy ? <Spinner data-icon="inline-start" /> : null}
               {step1Busy ? 'Creating admin…' : 'Create admin'}
-            </button>
+            </Button>
           </form>
         )}
 
         {step === 2 && (
-          <form onSubmit={onConfigureOidc} className="space-y-4">
-            <h2 className="text-lg font-semibold fg-primary">2. Configure an OIDC provider</h2>
-            <p className="text-sm fg-tertiary">
+          <form onSubmit={onConfigureOidc} className="flex flex-col gap-4">
+            <h2 className="text-lg font-semibold text-foreground">2. Configure an OIDC provider</h2>
+            <p className="text-sm text-muted-foreground">
               Point Cura Money at your identity provider. We recommend Pocket ID for
               a self-hosted, passkey-first setup. Discovery and callback URLs must use
               HTTPS, except localhost during development.
             </p>
             {editingOidc && (
-              <p className="text-sm fg-tertiary">
+              <p className="text-sm text-muted-foreground">
                 Reconfiguring replaces the saved provider settings. The saved client secret cannot
                 be recovered, so you must re-enter it before saving.
               </p>
             )}
             <ContinuationTokenField value={continuationToken} onChange={setContinuationToken} disabled={step2Busy} />
-            <p className="text-sm fg-tertiary">
+            <p className="text-sm text-muted-foreground">
               Not ready yet? You can skip this step and add a provider later from <strong>Settings</strong>.
               Sign-in with email and password will work either way.
             </p>
@@ -273,51 +276,53 @@ export function Setup() {
             {step2Err && <AuthError message={step2Err} />}
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:gap-4">
-                <button
+                <Button
                   type="button"
-                  className="text-sm fg-tertiary underline"
+                  variant="link"
                   onClick={() => void onSkipOidc()}
                   disabled={step2Busy}
                 >
                   Skip for now
-                </button>
-                <button type="submit" className="btn-primary w-full sm:w-auto" disabled={step2Busy}>
+                </Button>
+                <Button type="submit" className="w-full sm:w-auto" disabled={step2Busy}>
+                  {step2Busy ? <Spinner data-icon="inline-start" /> : null}
                   {step2Busy ? 'Validating…' : 'Save provider'}
-                </button>
+                </Button>
               </div>
             </div>
           </form>
         )}
 
         {step === 3 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold fg-primary">3. Review OIDC and complete</h2>
-            <p className="text-sm fg-tertiary">
+          <div className="flex flex-col gap-4">
+            <h2 className="text-lg font-semibold text-foreground">3. Review OIDC and complete</h2>
+            <p className="text-sm text-muted-foreground">
               Your provider configuration is saved and registered. Completing setup does not
               perform an OIDC sign-in handshake.
             </p>
             <ContinuationTokenField value={continuationToken} onChange={setContinuationToken} disabled={step3Busy} />
             {step3Err && <AuthError message={step3Err} />}
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button
+              <Button
                 type="button"
-                className="text-sm fg-tertiary"
+                variant="ghost"
                 onClick={() => setEditingOidc(true)}
                 disabled={step3Busy}
               >
                 Replace / reconfigure provider
-              </button>
-              <button onClick={() => void onComplete()} className="btn-primary w-full sm:w-auto" disabled={step3Busy}>
+              </Button>
+              <Button onClick={() => void onComplete()} className="w-full sm:w-auto" disabled={step3Busy}>
+                {step3Busy ? <Spinner data-icon="inline-start" /> : null}
                 {step3Busy ? 'Completing…' : 'Complete setup'}
-              </button>
+              </Button>
             </div>
           </div>
         )}
 
         {step === 4 && (
-          <div className="space-y-3 text-center">
-            <h2 className="text-lg font-semibold fg-primary">Setup complete</h2>
-            <p className="text-sm fg-secondary">
+          <div className="flex flex-col gap-3 text-center">
+            <h2 className="text-lg font-semibold text-foreground">Setup complete</h2>
+            <p className="text-sm text-muted-foreground">
               Redirecting you to the sign-in page…
             </p>
           </div>
@@ -328,9 +333,9 @@ export function Setup() {
         <Stepper current={step} />
       </div>
       {!statusQ.data.needsAdmin && step < 4 && (
-        <p className="mt-4 text-center text-sm fg-tertiary">
+        <p className="mt-4 text-center text-sm text-muted-foreground">
           Setup access expired?{' '}
-          <Link className="font-medium text-amber-600 underline dark:text-amber-400" to="/sign-in?callbackURL=%2Fsetup">
+          <Link className="font-medium text-primary underline" to="/sign-in?callbackURL=%2Fsetup">
             Sign in as an existing admin to continue setup
           </Link>
         </p>
@@ -374,20 +379,20 @@ function Stepper({ current }: { current: 1 | 2 | 3 | 4 }) {
         return (
           <li key={label} className="flex min-w-0 items-center gap-1.5 sm:gap-2">
             <span
-              className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
+              className={`flex size-7 items-center justify-center rounded-full text-xs font-semibold ${
                 done
-                  ? 'bg-amber-500 text-slate-900'
+                  ? 'bg-primary text-primary-foreground'
                   : active
-                    ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-500 dark:bg-amber-900/40 dark:text-amber-300'
-                    : 'bg-canvas-subtle fg-muted'
+                    ? 'bg-primary/15 text-primary ring-2 ring-primary'
+                    : 'bg-muted text-muted-foreground'
               }`}
             >
               {n}
             </span>
-            <span className={`hidden text-sm sm:inline ${active ? 'font-semibold fg-primary' : 'fg-tertiary'}`}>
+            <span className={`hidden text-sm sm:inline ${active ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>
               {label}
             </span>
-            {idx < steps.length - 1 && <span className="h-px w-5 border-t border-default sm:w-8" />}
+            {idx < steps.length - 1 && <span className="h-px w-5 border-t border-border sm:w-8" />}
           </li>
         );
       })}

@@ -5,6 +5,20 @@ import { Plus, Trash2, FolderTree, TrendingUp, TrendingDown, GripVertical, Arrow
 import clsx from 'clsx';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { AsyncQueryState } from '../components/ui/AsyncQueryState';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Alert, AlertDescription } from '../components/ui/alert';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../components/ui/empty';
+import { Field, FieldError, FieldGroup } from '../components/ui/field';
+import { Spinner } from '../components/ui/spinner';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 
 interface SubCategory { id: string; name: string; }
 interface MainCategory {
@@ -136,90 +150,78 @@ export function Categories() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold fg-primary">Categories</h1>
-          <p className="mt-1 max-w-xl text-sm fg-tertiary">
+          <h1 className="text-2xl font-bold text-foreground">Categories</h1>
+          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
             Organize how transactions and budgets are grouped. Category order is shared with Budget.
           </p>
         </div>
-        <button
+        <Button
           type="button"
           data-onboarding-target="categories-add"
           onClick={() => setShowAddCategory((value) => !value)}
           aria-expanded={showAddCategory}
           aria-controls="add-category-form"
-          className="btn-primary inline-flex min-h-11 items-center gap-2"
         >
-          {showAddCategory ? <X className="h-4 w-4" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
+          {showAddCategory ? <X data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
           {showAddCategory ? 'Close' : 'Add category'}
-        </button>
+        </Button>
       </div>
 
-      {showAddCategory && <section id="add-category-form" className="card">
-        <div className="mb-3">
-          <h2 className="text-lg font-semibold fg-primary">Add category</h2>
-          <p className="mt-0.5 text-xs fg-muted">Choose how the category affects totals before adding it.</p>
-        </div>
-        <form onSubmit={onAddMain} className="flex gap-2 flex-wrap">
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Name (e.g. Housing, Salary)"
-            className="flex-1 min-w-[200px] rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-          />
-          <div className="grid grid-cols-3 gap-1 rounded-lg border border-default p-1 bg-slate-50 dark:bg-slate-700/50">
-            <button
-              type="button"
-              onClick={() => setNewType('expense')}
-              className={clsx(
-                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                newType === 'expense'
-                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
-                  : 'fg-tertiary hover:bg-surface dark:hover:bg-slate-600',
-              )}
+      {showAddCategory && <Card id="add-category-form">
+        <CardHeader>
+          <CardTitle>Add category</CardTitle>
+          <CardDescription>Choose how the category affects totals before adding it.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          <form onSubmit={onAddMain} className="flex flex-wrap gap-2">
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Name (e.g. Housing, Salary)"
+              className="min-w-[200px] flex-1"
+            />
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              spacing={0}
+              value={newType}
+              onValueChange={(value) => {
+                if (value === 'income' || value === 'expense' || value === 'transfer') setNewType(value);
+              }}
+              className="rounded-lg border"
             >
-              <TrendingDown className="h-3 w-3 inline mr-1" /> Expense
-            </button>
-            <button
-              type="button"
-              onClick={() => setNewType('income')}
-              className={clsx(
-                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                newType === 'income'
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                  : 'fg-tertiary hover:bg-surface dark:hover:bg-slate-600',
-              )}
-            >
-              <TrendingUp className="h-3 w-3 inline mr-1" /> Income
-            </button>
-            <button
-              type="button"
-              onClick={() => setNewType('transfer')}
-              className={clsx(
-                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                newType === 'transfer'
-                  ? 'bg-slate-200 text-slate-800 dark:bg-slate-500 dark:text-slate-100'
-                  : 'fg-tertiary hover:bg-surface dark:hover:bg-slate-600',
-              )}
-            >
-              <ArrowLeftRight className="h-3 w-3 inline mr-1" /> Transfer
-            </button>
-          </div>
-          <button type="submit" disabled={addMain.isPending} className="btn-primary flex min-h-11 items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
-            <Plus className="h-4 w-4" /> Add
-          </button>
-        </form>
-        {addMain.isError && <p className="mt-2 text-sm text-rose-600 dark:text-rose-400" role="alert">{addMain.error.message}</p>}
-      </section>}
+              <ToggleGroupItem value="expense" className={clsx(newType === 'expense' && 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300')}>
+                <TrendingDown data-icon="inline-start" /> Expense
+              </ToggleGroupItem>
+              <ToggleGroupItem value="income" className={clsx(newType === 'income' && 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300')}>
+                <TrendingUp data-icon="inline-start" /> Income
+              </ToggleGroupItem>
+              <ToggleGroupItem value="transfer">
+                <ArrowLeftRight data-icon="inline-start" /> Transfer
+              </ToggleGroupItem>
+            </ToggleGroup>
+            <Button type="submit" disabled={addMain.isPending}>
+              {addMain.isPending ? <Spinner data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
+              Add
+            </Button>
+          </form>
+          {addMain.isError && (
+            <Alert variant="destructive">
+              <AlertDescription>{addMain.error.message}</AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>}
 
       {cats.isLoading ? (
         <AsyncQueryState status="loading" title="Loading categories…" />
       ) : cats.isError ? (
         <AsyncQueryState status="error" title="Could not load categories" message={cats.error.message} onRetry={() => void cats.refetch()} retrying={cats.isFetching} />
       ) : (expenseCats.length > 0 || incomeCats.length > 0 || transferCats.length > 0) ? (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           {expenseCats.length > 0 && (
             <CategoryGroup
               title="Expense categories"
@@ -270,9 +272,13 @@ export function Categories() {
           )}
         </div>
       ) : (
-        <div className="card text-sm fg-muted text-center">
-          <FolderTree className="h-5 w-5 inline mr-1 fg-muted" /> No categories yet. Add one above to start organizing transactions.
-        </div>
+        <Empty className="border border-dashed">
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><FolderTree /></EmptyMedia>
+            <EmptyTitle>No categories yet</EmptyTitle>
+            <EmptyDescription>Add one above to start organizing transactions.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       )}
     </div>
   );
@@ -308,7 +314,7 @@ function CategoryGroup({
   const toneClass =
     tone === 'rose' ? 'bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-300' :
     tone === 'emerald' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300' :
-    'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
+    'bg-muted text-muted-foreground';
 
   // Drag-to-reorder via Pointer Events.
   //
@@ -597,34 +603,37 @@ function CategoryGroup({
   };
 
   return (
-    <section className="card">
-      <button
-        type="button"
-        onClick={() => setGroupOpen((value) => !value)}
-        aria-expanded={groupOpen}
-        className="flex min-h-11 w-full items-center justify-between gap-3 text-left"
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className={clsx('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', toneClass)}>
-            <Icon className="h-4 w-4" aria-hidden="true" />
+    <Card className="gap-0">
+      <CardHeader className="p-0 px-(--card-spacing)">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => setGroupOpen((value) => !value)}
+          aria-expanded={groupOpen}
+          className="h-auto min-h-11 w-full justify-between gap-3 whitespace-normal"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span className={clsx('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', toneClass)}>
+              <Icon className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-foreground">{title}</span>
+              <span className="block text-xs text-muted-foreground">{categories.length} {categories.length === 1 ? 'category' : 'categories'}</span>
+            </span>
           </span>
-          <span>
-            <span className="block text-sm font-semibold fg-primary">{title}</span>
-            <span className="block text-xs fg-muted">{categories.length} {categories.length === 1 ? 'category' : 'categories'}</span>
-          </span>
-        </span>
-        {groupOpen
-          ? <ChevronDown className="h-4 w-4 shrink-0 fg-muted" aria-hidden="true" />
-          : <ChevronRight className="h-4 w-4 shrink-0 fg-muted" aria-hidden="true" />}
-      </button>
-      {groupOpen && <div className="relative mt-3 space-y-2 border-t border-default pt-3">
+          {groupOpen
+            ? <ChevronDown data-icon="inline-end" className="text-muted-foreground" aria-hidden="true" />
+            : <ChevronRight data-icon="inline-end" className="text-muted-foreground" aria-hidden="true" />}
+        </Button>
+      </CardHeader>
+      {groupOpen && <CardContent className="relative mt-3 flex flex-col gap-2 border-t pt-3">
         {rows.map((row) => {
           if (row.kind === 'placeholder') {
             return (
               <div
                 key={row.key}
                 aria-hidden
-                className="rounded-xl border-2 border-dashed border-amber-400/70 dark:border-amber-500/50 bg-amber-50/40 dark:bg-amber-900/10"
+                className="rounded-xl border-2 border-dashed border-amber-400/70 bg-amber-50/40 dark:border-amber-500/50 dark:bg-amber-900/10"
                 style={{ height: drag?.height ?? 80 }}
               />
             );
@@ -638,34 +647,37 @@ function CategoryGroup({
                 else cardRefs.current.delete(cat.id);
               }}
               className={clsx(
-                'rounded-xl border border-default bg-canvas-subtle',
+                'rounded-xl border bg-muted/30',
                 // Cards slide into the gap the placeholder opened.
                 drag && 'transition-transform duration-150 ease-out',
                 disabled && 'opacity-60',
               )}
             >
               <div className="flex min-h-14 items-center gap-1 px-2">
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   disabled={disabled}
                   onPointerDown={(e) => startDrag(e, cat.id)}
                   aria-label={`Drag to reorder ${cat.name}`}
                   title="Drag to reorder"
-                  className="close-button flex h-11 w-11 shrink-0 touch-none select-none items-center justify-center rounded-lg cursor-grab active:cursor-grabbing disabled:cursor-not-allowed"
+                  className="cursor-grab touch-none select-none active:cursor-grabbing"
                 >
-                  <GripVertical className="h-4 w-4 fg-muted" aria-hidden="true" />
-                </button>
-                <button
+                  <GripVertical className="text-muted-foreground" />
+                </Button>
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   onClick={() => toggleCategory(cat.id)}
                   aria-expanded={expandedCategories.has(cat.id)}
                   aria-label={`${expandedCategories.has(cat.id) ? 'Collapse' : 'Expand'} ${cat.name}`}
-                  className="close-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
                 >
                   {expandedCategories.has(cat.id)
-                    ? <ChevronDown className="h-4 w-4" aria-hidden="true" />
-                    : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
-                </button>
+                    ? <ChevronDown aria-hidden="true" />
+                    : <ChevronRight aria-hidden="true" />}
+                </Button>
                 <EditableMainCategory
                   category={cat}
                   subCategoryCount={cat.subCategories.length}
@@ -679,9 +691,9 @@ function CategoryGroup({
                     : undefined}
                 />
               </div>
-              {expandedCategories.has(cat.id) && <div className="border-t border-default px-4 pb-3 pt-2">
+              {expandedCategories.has(cat.id) && <div className="border-t px-4 pt-2 pb-3">
                 {cat.subCategories.length > 0 ? (
-                  <ul className="divide-y divide-slate-100 dark:divide-slate-700">
+                  <ul className="divide-y">
                     {cat.subCategories.map((sub) => (
                       <EditableSubCategory
                         key={sub.id}
@@ -692,14 +704,14 @@ function CategoryGroup({
                     ))}
                   </ul>
                 ) : (
-                  <p className="py-2 text-xs italic fg-muted">No subcategories yet</p>
+                  <p className="py-2 text-xs text-muted-foreground italic">No subcategories yet</p>
                 )}
                 <AddSub onAdd={(name) => onAddSub(cat.id, name)} />
               </div>}
             </section>
           );
         })}
-      </div>}
+      </CardContent>}
       {deleteTarget?.kind === 'category' && (
         <ConfirmDialog
           title={`Delete “${deleteTarget.category.name}”?`}
@@ -732,7 +744,7 @@ function CategoryGroup({
           </p>
         </ConfirmDialog>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -792,7 +804,7 @@ function EditableMainCategory({
     return (
       <div className="min-w-0 flex-1">
         <form onSubmit={save} className="flex items-center gap-2">
-          <input
+          <Input
             autoFocus
             value={name}
             maxLength={120}
@@ -800,29 +812,30 @@ function EditableMainCategory({
             onKeyDown={(e) => {
               if (e.key === 'Escape') cancel();
             }}
-            className="min-w-0 flex-1 rounded border border-default bg-surface fg-primary px-2 py-1.5 text-sm focus:border-amber-500 focus:outline-none"
             aria-label={`Rename ${category.name}`}
           />
-          <button
+          <Button
             type="submit"
+            size="icon"
+            variant="ghost"
             disabled={saving || !name.trim()}
-            className="save-icon-button flex h-9 w-9 shrink-0 items-center justify-center rounded disabled:opacity-50"
             title="Save name"
             aria-label="Save name"
           >
-            <Check className="h-4 w-4" />
-          </button>
-          <button
+            {saving ? <Spinner /> : <Check />}
+          </Button>
+          <Button
             type="button"
+            size="icon"
+            variant="ghost"
             disabled={saving}
             onClick={cancel}
-            className="close-button flex h-9 w-9 shrink-0 items-center justify-center rounded disabled:opacity-50"
             title="Cancel"
           >
-            <X className="h-4 w-4" />
-          </button>
+            <X />
+          </Button>
         </form>
-        {error && <p className="mt-1 text-xs text-rose-600 dark:text-rose-400" role="alert">{error}</p>}
+        {error && <p className="mt-1 text-xs text-destructive" role="alert">{error}</p>}
       </div>
     );
   }
@@ -830,58 +843,30 @@ function EditableMainCategory({
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
       <div className="min-w-0 flex-1">
-        <h4 className="truncate text-sm font-semibold fg-primary">{category.name}</h4>
-        <p className="text-xs fg-muted">{subCategoryCount} {subCategoryCount === 1 ? 'subcategory' : 'subcategories'}</p>
+        <h4 className="truncate text-sm font-semibold text-foreground">{category.name}</h4>
+        <p className="text-xs text-muted-foreground">{subCategoryCount} {subCategoryCount === 1 ? 'subcategory' : 'subcategories'}</p>
       </div>
-      <details name="category-actions" className="relative shrink-0">
-        <summary className="close-button flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg [&::-webkit-details-marker]:hidden" aria-label={`Actions for ${category.name}`}>
-          <EllipsisVertical className="h-5 w-5" aria-hidden="true" />
-        </summary>
-        <div className="absolute right-0 z-30 mt-1 min-w-44 rounded-lg border border-default bg-surface p-1 shadow-xl">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.currentTarget.closest('details')?.removeAttribute('open');
-              setEditing(true);
-            }}
-            className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm"
-          >
-            <Pencil className="h-4 w-4" aria-hidden="true" /> Rename
-          </button>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.currentTarget.closest('details')?.removeAttribute('open');
-              onMoveUp?.();
-            }}
-            disabled={!onMoveUp}
-            className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm disabled:opacity-40"
-          >
-            <ArrowUp className="h-4 w-4" aria-hidden="true" /> Move up
-          </button>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.currentTarget.closest('details')?.removeAttribute('open');
-              onMoveDown?.();
-            }}
-            disabled={!onMoveDown}
-            className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm disabled:opacity-40"
-          >
-            <ArrowDown className="h-4 w-4" aria-hidden="true" /> Move down
-          </button>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.currentTarget.closest('details')?.removeAttribute('open');
-              onDelete();
-            }}
-            className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-900/30"
-          >
-            <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete category
-          </button>
-        </div>
-      </details>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="ghost" size="icon" aria-label={`Actions for ${category.name}`}>
+            <EllipsisVertical />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-44">
+          <DropdownMenuItem onClick={() => setEditing(true)}>
+            <Pencil /> Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onMoveUp?.()} disabled={!onMoveUp}>
+            <ArrowUp /> Move up
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onMoveDown?.()} disabled={!onMoveDown}>
+            <ArrowDown /> Move down
+          </DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onClick={onDelete}>
+            <Trash2 /> Delete category
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -930,7 +915,7 @@ function EditableSubCategory({
     return (
       <li className="py-2 text-sm">
         <form onSubmit={save} className="flex items-center gap-2">
-          <input
+          <Input
             autoFocus
             value={name}
             maxLength={120}
@@ -938,63 +923,52 @@ function EditableSubCategory({
             onKeyDown={(e) => {
               if (e.key === 'Escape') cancel();
             }}
-            className="min-w-0 flex-1 rounded border border-default bg-surface fg-primary px-2 py-1.5 text-sm focus:border-amber-500 focus:outline-none"
             aria-label={`Rename ${sub.name}`}
           />
-          <button
+          <Button
             type="submit"
+            size="icon"
+            variant="ghost"
             disabled={saving || !name.trim()}
-            className="save-icon-button flex h-9 w-9 items-center justify-center rounded disabled:opacity-50"
             title="Save name"
             aria-label="Save name"
           >
-            <Check className="h-4 w-4" />
-          </button>
-          <button
+            {saving ? <Spinner /> : <Check />}
+          </Button>
+          <Button
             type="button"
+            size="icon"
+            variant="ghost"
             disabled={saving}
             onClick={cancel}
-            className="close-button flex h-9 w-9 items-center justify-center rounded disabled:opacity-50"
             title="Cancel"
           >
-            <X className="h-4 w-4" />
-          </button>
+            <X />
+          </Button>
         </form>
-        {error && <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+        {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
       </li>
     );
   }
 
   return (
     <li className="flex min-h-11 items-center justify-between gap-2 py-1 text-sm">
-      <span className="min-w-0 truncate fg-secondary">{sub.name}</span>
-      <details name="subcategory-actions" className="relative shrink-0">
-        <summary className="close-button flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg [&::-webkit-details-marker]:hidden" aria-label={`Actions for ${sub.name}`}>
-          <EllipsisVertical className="h-5 w-5" aria-hidden="true" />
-        </summary>
-        <div className="absolute right-0 z-30 mt-1 min-w-44 rounded-lg border border-default bg-surface p-1 shadow-xl">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.currentTarget.closest('details')?.removeAttribute('open');
-              setEditing(true);
-            }}
-            className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm"
-          >
-            <Pencil className="h-4 w-4" aria-hidden="true" /> Rename
-          </button>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.currentTarget.closest('details')?.removeAttribute('open');
-              onDelete();
-            }}
-            className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-900/30"
-          >
-            <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete subcategory
-          </button>
-        </div>
-      </details>
+      <span className="min-w-0 truncate text-muted-foreground">{sub.name}</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="ghost" size="icon" aria-label={`Actions for ${sub.name}`}>
+            <EllipsisVertical />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-44">
+          <DropdownMenuItem onClick={() => setEditing(true)}>
+            <Pencil /> Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onClick={onDelete}>
+            <Trash2 /> Delete subcategory
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </li>
   );
 }
@@ -1059,16 +1033,19 @@ function AddSub({ onAdd }: { onAdd: (name: string) => Promise<unknown> }) {
       }}
       className="mt-2 flex flex-wrap gap-2"
     >
-      <input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Sub-category"
-        className="flex-1 rounded border border-default bg-surface fg-primary placeholder-slate-400 px-2 py-1 text-sm focus:border-amber-500 focus:outline-none"
-      />
-      <button type="submit" disabled={busy} className="rounded bg-amber-500 px-2 text-slate-900 text-sm hover:bg-amber-600 flex items-center justify-center disabled:opacity-50">
-        <Plus className="h-4 w-4" />
-      </button>
-      {error && <span className="basis-full text-xs text-rose-600 dark:text-rose-400" role="alert">{error}</span>}
+      <FieldGroup className="flex-row flex-wrap gap-2">
+        <Field className="min-w-0 flex-1">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Sub-category"
+          />
+        </Field>
+        <Button type="submit" size="icon" disabled={busy} aria-label="Add subcategory">
+          {busy ? <Spinner /> : <Plus />}
+        </Button>
+        {error && <FieldError className="basis-full">{error}</FieldError>}
+      </FieldGroup>
     </form>
   );
 }

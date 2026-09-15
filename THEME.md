@@ -74,12 +74,28 @@ Exposed semantic classes include `.fg-primary`, `.fg-secondary`,
 Use `.border-control` for interactive control boundaries and `.focus-ring` for
 custom interactive elements. Native form controls receive both tokens globally.
 
-Portal overlays use the explicit `.dialog-overlay`, `.dialog-content`, and
-variant classes in `styles.css`. These classes own backdrop opacity, stacking,
-safe-area spacing, and viewport-constrained scrolling; dialog components should
-not recreate those rules with generic fixed/inset/z utility combinations.
-Bottom-sheet content owns the bottom safe-area inset so the backdrop reaches the
-viewport edge without applying that inset twice.
+Product UI is built with shadcn/ui (Radix Nova). Cura semantic tokens also
+drive the shadcn variables so primitives stay on the same palette:
+
+| shadcn token | Cura source |
+| --- | --- |
+| `--background` | `--bg-page` |
+| `--foreground` | `--fg-primary` |
+| `--card` / `--popover` | `--bg-surface` |
+| `--primary` | `--mp-amber-500` (green CTA) |
+| `--primary-foreground` | `--mp-slate-900` |
+| `--muted` | `--bg-canvas-subtle` |
+| `--muted-foreground` | `--fg-muted` |
+| `--destructive` | `--mp-rose-600` (light) / `--mp-rose-500` (dark) |
+| `--border` | `--border-default` |
+| `--input` | `--border-control` |
+| `--ring` | `--focus-ring` |
+
+Prefer shadcn components (`Button`, `Card`, `Dialog`, `AlertDialog`, `Sheet`,
+`Drawer`, `Input`, `Select`, `Field`, `Alert`, `Empty`, `Table`, `Badge`,
+`DropdownMenu`) over custom markup. Overlay stacking, titles, and focus belong
+to those primitives — do not rebuild them with generic `fixed`/`inset`/`z-*`
+utility combinations. Bottom sheets use `Drawer`.
 
 ## Accent Roles
 

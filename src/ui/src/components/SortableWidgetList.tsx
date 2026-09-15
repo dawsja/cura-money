@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Eye, EyeOff, GripVertical } from 'lucide-react';
 import clsx from 'clsx';
+import { Button } from './ui/button';
 
 export function SortableWidgetList<T extends string>({
   order,
@@ -8,7 +9,7 @@ export function SortableWidgetList<T extends string>({
   editing,
   onReorder,
   renderWidget,
-  className = 'space-y-6',
+  className = 'flex flex-col gap-6',
   itemClassName,
   hidden = new Set<T>(),
   onToggleHidden,
@@ -243,15 +244,16 @@ export function SortableWidgetList<T extends string>({
                   {labels[item]}
                 </div>
                 {onToggleHidden && (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     onClick={() => onToggleHidden(item)}
-                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg fg-secondary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                     aria-label={`Hide ${labels[item]} widget`}
                     title="Hide widget"
                   >
-                    <EyeOff className="h-4 w-4" />
-                  </button>
+                    <EyeOff />
+                  </Button>
                 )}
               </div>
             )}
@@ -265,15 +267,15 @@ export function SortableWidgetList<T extends string>({
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide fg-muted">Hidden widgets</div>
           <div className="flex flex-wrap gap-2">
             {hiddenWidgets.map((widget) => (
-              <button
+              <Button
                 key={widget}
                 type="button"
+                variant="outline"
                 onClick={() => onToggleHidden?.(widget)}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-default bg-surface px-3 text-sm font-medium fg-secondary hover:border-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
               >
-                <Eye className="h-4 w-4" />
+                <Eye data-icon="inline-start" />
                 Show {labels[widget]}
-              </button>
+              </Button>
             ))}
           </div>
         </div>

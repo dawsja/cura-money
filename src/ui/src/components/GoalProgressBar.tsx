@@ -16,7 +16,7 @@ export function GoalProgressBar({
   return (
     <div className={className}>
       <div
-        className="relative h-3 rounded-full bg-slate-200 dark:bg-slate-700"
+        className="relative h-3 rounded-full bg-muted"
         role="progressbar"
         aria-label="Goal progress"
         aria-valuenow={Math.round(clamped)}

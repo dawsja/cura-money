@@ -1,5 +1,7 @@
 import { ArrowUpRight } from 'lucide-react';
 import { Progress } from './ui/progress';
+import { Card, CardContent, CardHeader } from './ui/card';
+import { Button } from './ui/button';
 import { formatMoney } from '../lib/format';
 import clsx from 'clsx';
 
@@ -35,7 +37,7 @@ export function BudgetSummaryBox({
     ? 'text-rose-600 dark:text-rose-400'
     : debtRemaining > 0
       ? 'text-emerald-600 dark:text-emerald-400'
-      : 'fg-muted';
+      : 'text-muted-foreground';
   const debtRemainingPrefix = debtRemaining < 0 ? '−' : '';
 
   const headerBg = balanced
@@ -50,15 +52,15 @@ export function BudgetSummaryBox({
       : 'text-emerald-700 dark:text-emerald-300';
 
   return (
-    <div className="card overflow-hidden">
-      <div className={clsx('px-5 py-6 text-center', headerBg)}>
+    <Card className="overflow-hidden py-0 gap-0">
+      <CardHeader className={clsx('px-5 py-6 text-center', headerBg)}>
         <div className={clsx('text-3xl font-bold tabular-nums', headerText)}>
           {overAssigned ? '−' : ''}{formatMoney(Math.abs(leftToBudget), true)}
         </div>
-        <div className="mt-1 text-xs fg-muted">Left to budget</div>
-      </div>
+        <div className="mt-1 text-xs text-muted-foreground">Left to budget</div>
+      </CardHeader>
 
-      <div className="p-5 space-y-5">
+      <CardContent className="flex flex-col gap-5 p-5">
         <SummaryRow
           label="Income"
           planned={plannedIncome}
@@ -74,42 +76,45 @@ export function BudgetSummaryBox({
           actualLabel="spent"
           barTone="rose"
         />
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={onJumpToPaydown}
-          className={clsx(
-            'group w-[calc(100%+1rem)] text-left rounded-lg p-2 -m-2 transition-colors',
-            onJumpToPaydown && 'hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500',
-          )}
           disabled={!onJumpToPaydown}
+          className={clsx(
+            'group h-auto w-[calc(100%+1rem)] justify-start whitespace-normal rounded-lg p-2 -m-2',
+            onJumpToPaydown && 'cursor-pointer',
+          )}
         >
-          <div className="flex items-baseline justify-between mb-1.5">
-            <span className="text-sm font-medium fg-primary flex items-center gap-1">
-              Pay down
-              {onJumpToPaydown && (
-                <ArrowUpRight className="h-3 w-3 fg-muted opacity-0 group-hover:opacity-100 transition-opacity" />
-              )}
-            </span>
-            <span className="text-xs tabular-nums fg-muted">{formatMoney(plannedDebt, true)} planned</span>
-          </div>
-          <Progress value={debtPct} tone={debtBarTone} />
-          <div className="mt-1.5 flex items-baseline justify-between text-xs">
-            <span className="fg-secondary">{formatMoney(actualDebt, true)} assigned</span>
-            {plannedDebt > 0 && (
-              <span className={clsx('tabular-nums', debtRemainingClass)}>
-                {debtRemainingPrefix}{formatMoney(Math.abs(debtRemaining), true)} remaining
+          <div className="w-full text-left">
+            <div className="mb-1.5 flex items-baseline justify-between">
+              <span className="flex items-center gap-1 text-sm font-medium text-foreground">
+                Pay down
+                {onJumpToPaydown && (
+                  <ArrowUpRight data-icon="inline-end" className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                )}
               </span>
-            )}
+              <span className="text-xs tabular-nums text-muted-foreground">{formatMoney(plannedDebt, true)} planned</span>
+            </div>
+            <Progress value={debtPct} tone={debtBarTone} />
+            <div className="mt-1.5 flex items-baseline justify-between text-xs">
+              <span className="text-muted-foreground">{formatMoney(actualDebt, true)} assigned</span>
+              {plannedDebt > 0 && (
+                <span className={clsx('tabular-nums', debtRemainingClass)}>
+                  {debtRemainingPrefix}{formatMoney(Math.abs(debtRemaining), true)} remaining
+                </span>
+              )}
+            </div>
           </div>
-        </button>
-      </div>
+        </Button>
+      </CardContent>
 
       {loading && (
-        <div className="px-5 pb-3 text-[10px] uppercase tracking-wider fg-muted text-center">
+        <div className="px-5 pb-3 text-center text-[10px] uppercase tracking-wider text-muted-foreground">
           Loading…
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -133,18 +138,18 @@ function SummaryRow({
     ? 'text-rose-600 dark:text-rose-400'
     : remaining != null && remaining > 0
       ? 'text-emerald-600 dark:text-emerald-400'
-      : 'fg-muted';
+      : 'text-muted-foreground';
   const remainingPrefix = remaining != null && remaining < 0 ? '−' : '';
 
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-1.5">
-        <span className="text-sm font-medium fg-primary">{label}</span>
-        <span className="text-xs tabular-nums fg-muted">{formatMoney(planned, true)} planned</span>
+      <div className="mb-1.5 flex items-baseline justify-between">
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        <span className="text-xs tabular-nums text-muted-foreground">{formatMoney(planned, true)} planned</span>
       </div>
       <Progress value={pct} tone={barTone} />
       <div className="mt-1.5 flex items-baseline justify-between text-xs">
-        <span className="fg-secondary">{formatMoney(actual, true)} {actualLabel}</span>
+        <span className="text-muted-foreground">{formatMoney(actual, true)} {actualLabel}</span>
         {remaining != null && (
           <span className={clsx('tabular-nums', remainingClass)}>
             {remainingPrefix}{formatMoney(Math.abs(remaining), true)} remaining

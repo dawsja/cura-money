@@ -1,47 +1,42 @@
-/**
- * shadcn-style progress bar — a thin horizontal track with a
- * filled portion. `value` is 0-100; values outside that range are
- * clamped for display (the track always shows a sane bar).
- *
- * `tone` picks the fill color so the same component can express
- * different statuses (under budget / approaching / over). The
- * default `amber` matches the rest of the app's accent.
- */
-import clsx from 'clsx';
+"use client"
 
-export function Progress({
-  value,
+import * as React from "react"
+import { cn } from "cn"
+import { Progress as ProgressPrimitive } from "radix-ui"
+
+const TONE_CLASS = {
+  amber: "bg-primary",
+  emerald: "bg-emerald-500",
+  rose: "bg-rose-500",
+  slate: "bg-slate-500",
+} as const
+
+function Progress({
   className,
-  tone = 'amber',
-}: {
-  value: number;
-  className?: string;
-  tone?: 'amber' | 'emerald' | 'rose' | 'slate';
+  value,
+  tone = "amber",
+  ...props
+}: React.ComponentProps<typeof ProgressPrimitive.Root> & {
+  tone?: keyof typeof TONE_CLASS
 }) {
-  const clamped = Math.min(100, Math.max(0, value));
-  const fillClass =
-    tone === 'emerald'
-      ? 'bg-emerald-500'
-      : tone === 'rose'
-        ? 'bg-rose-500'
-        : tone === 'slate'
-          ? 'bg-slate-500'
-          : 'bg-amber-500';
+  const clamped = Math.min(100, Math.max(0, Number(value) || 0))
   return (
-    <div
-      className={clsx(
-        'h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700',
-        className,
+    <ProgressPrimitive.Root
+      data-slot="progress"
+      className={cn(
+        "relative flex h-2 w-full items-center overflow-x-hidden rounded-full bg-muted",
+        className
       )}
-      role="progressbar"
-      aria-valuenow={Math.round(clamped)}
-      aria-valuemin={0}
-      aria-valuemax={100}
+      value={clamped}
+      {...props}
     >
-      <div
-        className={clsx('h-full transition-all duration-300', fillClass)}
-        style={{ width: `${clamped}%` }}
+      <ProgressPrimitive.Indicator
+        data-slot="progress-indicator"
+        className={cn("size-full flex-1 transition-all", TONE_CLASS[tone])}
+        style={{ transform: `translateX(-${100 - clamped}%)` }}
       />
-    </div>
-  );
+    </ProgressPrimitive.Root>
+  )
 }
+
+export { Progress }

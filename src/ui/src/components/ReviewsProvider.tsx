@@ -25,7 +25,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, X } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   decideReview,
   fetchReviewQueue,
@@ -56,9 +56,6 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isFreshLoading, setIsFreshLoading] = useState(false);
   const [modalCompleted, setModalCompleted] = useState(0);
-  // Bumped every time we want to celebrate (so the toast effect fires
-  // even when the previous one is still on screen).
-  const [celebratedKey, setCelebratedKey] = useState<number | null>(null);
 
   // Cheap polled count — the only network traffic when the modal is
   // closed. 30s matches the cron cadence so a fresh sync shows up in
@@ -102,7 +99,11 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
     const result = await refetchCount();
     return !result.isError;
   }, [refetchCount]);
-  const dismissCelebration = useCallback(() => setCelebratedKey(null), []);
+  const celebrate = useCallback(() => {
+    toast.success("You're all caught up 🎉", {
+      description: 'Every transaction has been reviewed.',
+    });
+  }, []);
 
   const decision = useMutation({
     mutationFn: (vars: {
@@ -150,7 +151,7 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
       qc.invalidateQueries({ queryKey: ['notifications'] });
       setModalCompleted((current) => current + 1);
       const refreshed = await queueQ.refetch();
-      if (!refreshed.isError && refreshed.data?.count === 0) setCelebratedKey(Date.now());
+      if (!refreshed.isError && refreshed.data?.count === 0) celebrate();
     },
   });
 
@@ -188,20 +189,13 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
       qc.invalidateQueries({ queryKey: ['reports'] });
       qc.invalidateQueries({ queryKey: ['notifications'] });
       const refreshed = await queueQ.refetch();
-      if (!refreshed.isError && refreshed.data?.count === 0) setCelebratedKey(Date.now());
+      if (!refreshed.isError && refreshed.data?.count === 0) celebrate();
     },
   });
 
   const onSkipAll = useCallback(async () => {
     await skipAll.mutateAsync();
   }, [skipAll]);
-
-  // Auto-dismiss the celebration toast after 4s.
-  useEffect(() => {
-    if (celebratedKey === null) return;
-    const t = setTimeout(() => dismissCelebration(), 4000);
-    return () => clearTimeout(t);
-  }, [celebratedKey, dismissCelebration]);
 
   const value = useMemo<ReviewsContextValue>(
     () => ({ count, isLoading: countQ.isLoading, refreshCount, isOpen, openModal, closeModal }),
@@ -225,9 +219,6 @@ export function ReviewsProvider({ children }: { children: ReactNode }) {
           isMutating={decision.isPending || skipAll.isPending}
         />
       )}
-      {celebratedKey !== null && (
-        <CelebrationToast onDismiss={dismissCelebration} />
-      )}
     </ReviewsContext.Provider>
   );
 }
@@ -240,31 +231,4 @@ export function useReviews(): ReviewsContextValue {
   return ctx;
 }
 
-/**
- * "You're all caught up" toast. Bottom-right, single-slot,
- * auto-dismissing after 4s (matches Paydown/Rules/Transactions toasts).
- */
-function CelebrationToast({ onDismiss }: { onDismiss: () => void }) {
-  return (
-    <div
-      role="status"
-      className="app-toast fixed z-50 max-w-sm rounded-lg border border-default bg-surface shadow-lg px-4 py-3 text-sm flex items-start gap-3"
-    >
-      <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-      <div className="flex-1 min-w-0">
-        <div className="fg-primary">You're all caught up 🎉</div>
-        <div className="fg-muted text-xs mt-0.5">
-          Every transaction has been reviewed.
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="close-button rounded-md p-1"
-        aria-label="Dismiss"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
-}
+

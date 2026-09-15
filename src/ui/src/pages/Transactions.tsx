@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useId, Fragment } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
 import { api } from '../lib/api';
 import {
   formatMoney,
@@ -11,10 +12,34 @@ import {
   parseLocalDate,
 } from '../lib/format';
 import {
-  Trash2, Search, Receipt, ArrowLeftRight, Filter, X, Check, ArrowUpRight,
+  Trash2, Search, Receipt, ArrowLeftRight, Filter, X, ArrowUpRight,
   BellRing, Plus, TrendingUp, TrendingDown, MoreVertical, Calendar, Pencil,
-  ChevronRight,
+  ChevronRight, AlertTriangle,
 } from 'lucide-react';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { Card, CardAction, CardContent, CardFooter, CardHeader, CardTitle } from '../components/ui/card';
+import { Checkbox } from '../components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from '../components/ui/drawer';
+import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '../components/ui/empty';
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '../components/ui/field';
+import { Input } from '../components/ui/input';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '../components/ui/input-group';
 import {
   Pagination,
@@ -27,9 +52,29 @@ import {
   pageWindow,
 } from '../components/ui/pagination';
 import { DatePicker } from '../components/ui/date-picker';
-import { Dialog } from '../components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { Spinner } from '../components/ui/spinner';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../components/ui/table';
+import { Textarea } from '../components/ui/textarea';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { useReviews } from '../components/ReviewsProvider';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { cn } from '../lib/utils';
 import clsx from 'clsx';
 
 /** Date-range toolbar presets. `custom` is set when the user edits from/to. */
@@ -102,13 +147,8 @@ interface PageResponse { rows: Transaction[]; total: number; }
 interface MainCategory { id: string; name: string; type: TxType; subCategories: { id: string; name: string }[]; }
 interface Account { id: string; name: string; alias?: string; type?: string; }
 
-/**
- * Reusable input class: white/slate-700 background, dark text, slate-200/600
- * border, amber-500 focus. Every <input>/<select> in this file uses it so
- * the dark-mode styling stays consistent.
- */
-const INPUT_CLS = 'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
-const ROW_SELECT_CLS = 'w-auto max-w-[9rem] rounded-md border border-control bg-surface py-1 pl-1.5 pr-5 text-xs fg-primary focus:border-amber-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50';
+const ANY = '__any__';
+const ROW_SELECT_TRIGGER = 'w-auto max-w-[9rem]';
 
 /** Visual styling for a transaction type across the page. */
 const TYPE_STYLE: Record<TxType, { label: string; sign: string; amount: string }> = {
@@ -231,17 +271,18 @@ function activeFilterCount(f: FilterState, accountCount: number): number {
 
 function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <span className="inline-flex min-h-8 max-w-full items-center gap-0.5 rounded-lg bg-amber-50 pl-2 pr-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+    <Badge variant="secondary" className="h-8 max-w-full gap-0.5 rounded-lg px-1.5">
       <span className="truncate">{label}</span>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-xs"
         onClick={onRemove}
-        className="close-button flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
         aria-label={`Remove filter ${label}`}
       >
-        <X className="h-3 w-3" />
-      </button>
-    </span>
+        <X />
+      </Button>
+    </Badge>
   );
 }
 
@@ -257,28 +298,112 @@ function EmptyTransactions({
   addDisabled?: boolean;
 }) {
   return (
-    <div className="py-10 text-center">
-      <Receipt className="mx-auto mb-2 h-5 w-5 fg-muted" />
-      <p className="text-sm fg-muted">{filtered ? 'No transactions match.' : 'No transactions yet.'}</p>
-      {filtered ? (
-        <button
-          type="button"
-          onClick={onClear}
-          className="mt-2 text-sm font-medium text-amber-700 hover:underline dark:text-amber-400"
-        >
-          Clear filters
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={onAdd}
-          disabled={addDisabled}
-          className="mt-2 text-sm font-medium text-amber-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-400"
-        >
-          Add transaction
-        </button>
-      )}
-    </div>
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon"><Receipt /></EmptyMedia>
+        <EmptyTitle>{filtered ? 'No transactions match.' : 'No transactions yet.'}</EmptyTitle>
+      </EmptyHeader>
+      <EmptyContent>
+        {filtered ? (
+          <Button type="button" variant="link" onClick={onClear}>Clear filters</Button>
+        ) : (
+          <Button type="button" variant="link" onClick={onAdd} disabled={addDisabled}>
+            Add transaction
+          </Button>
+        )}
+      </EmptyContent>
+    </Empty>
+  );
+}
+
+function TypeSelect({
+  value,
+  onValueChange,
+  disabled,
+  size,
+  className,
+  title,
+  'aria-label': ariaLabel,
+}: {
+  value: TxType;
+  onValueChange: (value: TxType) => void;
+  disabled?: boolean;
+  size?: 'sm' | 'default';
+  className?: string;
+  title?: string;
+  'aria-label'?: string;
+}) {
+  return (
+    <Select value={value} onValueChange={(next) => onValueChange(next as TxType)} disabled={disabled}>
+      <SelectTrigger size={size} className={className} aria-label={ariaLabel} title={title}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent position="popper">
+        <SelectGroup>
+          {TX_TYPES.map((type) => (
+            <SelectItem key={type} value={type}>{TYPE_STYLE[type].label}</SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+function CategorySelect({
+  value,
+  onValueChange,
+  categories,
+  placeholder,
+  disabled,
+  size,
+  className,
+  allowAny,
+  anyLabel = 'Any category',
+  title,
+  'aria-label': ariaLabel,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  categories: MainCategory[];
+  placeholder: string;
+  disabled?: boolean;
+  size?: 'sm' | 'default';
+  className?: string;
+  allowAny?: boolean;
+  anyLabel?: string;
+  title?: string;
+  'aria-label'?: string;
+}) {
+  return (
+    <Select
+      value={allowAny ? (value || ANY) : (value || undefined)}
+      onValueChange={(next) => onValueChange(allowAny && next === ANY ? '' : next)}
+      disabled={disabled}
+    >
+      <SelectTrigger size={size} className={cn('w-full', className)} aria-label={ariaLabel} title={title}>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent position="popper">
+        {allowAny && (
+          <SelectGroup>
+            <SelectItem value={ANY}>{anyLabel}</SelectItem>
+          </SelectGroup>
+        )}
+        {categories.map((c) => (
+          <SelectGroup key={c.id}>
+            <SelectLabel>{c.name}</SelectLabel>
+            {c.subCategories.map((s) => (
+              <SelectItem
+                key={s.id}
+                value={JSON.stringify({ category: c.name, subCategory: s.name })}
+              >
+                {s.name}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -516,23 +641,8 @@ export function Transactions() {
     version: number;
   }
 
-  // `rulePrompt` is the bottom-right toast shown after an assignment
-  // correction. Single-slot prompts mean rapid edits just
-  // replace the current popup (its 8s timer resets) — earlier prompts
-  // are silently overwritten, which is acceptable for a non-blocking
-  // suggestion.
-  const [rulePrompt, setRulePrompt] = useState<{
-    rowId: string;
-    merchant: string;
-    account: string;
-    sourceType: TxType;
-    sourceCategory: string;
-    sourceSubCategory?: string;
-    sourceClassificationTrusted: boolean;
-    category: string;
-    subCategory?: string;
-    type: TxType;
-  } | null>(null);
+  // `rulePromptIdRef` tracks the latest assignment-correction toast so
+  // a late rule-create response cannot attach to a newer edit.
   const rulePromptIdRef = useRef<string | null>(null);
   const [ruleConfirmation, setRuleConfirmation] = useState<{
     transactionId: string;
@@ -559,26 +669,16 @@ export function Transactions() {
       if (result.status === 'confirmation_required') {
         setRuleConfirmation({ transactionId: input.transactionId, existingRule: result.rule });
         rulePromptIdRef.current = null;
-        setRulePrompt(null);
         return;
       }
       qc.invalidateQueries({ queryKey: ['rules'] });
       setRuleConfirmation(null);
       rulePromptIdRef.current = null;
-      setRulePrompt(null);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Could not create rule.');
     },
   });
-
-  // Pause auto-dismiss while the server is checking for an existing broad
-  // rule so a required narrowing confirmation cannot be discarded.
-  useEffect(() => {
-    if (!rulePrompt || createRuleFromTransaction.isPending) return;
-    const t = setTimeout(() => {
-      rulePromptIdRef.current = null;
-      setRulePrompt(null);
-    }, 8000);
-    return () => clearTimeout(t);
-  }, [rulePrompt, createRuleFromTransaction.isPending]);
 
   // Type and category form one assignment and are always written together.
   // Rule creation is a separate, explicit action after the correction saves.
@@ -599,18 +699,22 @@ export function Transactions() {
       invalidateFinancialQueries();
       setDetailTx((current) => current?.id === vars.transaction.id ? null : current);
       rulePromptIdRef.current = vars.transaction.id;
-      setRulePrompt({
-        rowId: vars.transaction.id,
-        merchant: vars.transaction.merchant,
-        account: vars.transaction.account,
-        sourceType: vars.transaction.sourceType,
-        sourceCategory: vars.transaction.sourceCategory,
-        sourceSubCategory: vars.transaction.sourceSubCategory,
-        sourceClassificationTrusted: vars.transaction.sourceClassificationTrusted,
-        category: vars.category,
-        subCategory: vars.subCategory,
-        type: vars.type,
-      });
+      toast.success(
+        `Saved ${TYPE_STYLE[vars.type].label} · ${vars.category}${vars.subCategory ? ` › ${vars.subCategory}` : ''}.`,
+        {
+          description: vars.transaction.sourceClassificationTrusted
+            ? `Match ${TYPE_STYLE[vars.transaction.sourceType].label} · ${vars.transaction.sourceCategory}${vars.transaction.sourceSubCategory ? ` › ${vars.transaction.sourceSubCategory}` : ''} on ${vars.transaction.account}.`
+            : `Match this merchant on ${vars.transaction.account}. Original type/category was not retained for this older transaction.`,
+          duration: 8000,
+          action: {
+            label: 'Create scoped rule',
+            onClick: () => createRuleFromTransaction.mutate({ transactionId: vars.transaction.id }),
+          },
+        },
+      );
+    },
+    onError: (error) => {
+      toast.error(`Assignment was not saved: ${error instanceof Error ? error.message : 'unknown'}`);
     },
   });
   const onPickCategory = (transaction: Transaction, jsonValue: string) => {
@@ -791,7 +895,7 @@ export function Transactions() {
   };
 
   return (
-    <div className="space-y-6 app-fab-page-space">
+    <div className="flex flex-col gap-6 app-fab-page-space">
       <div className="flex items-baseline gap-2">
         <h1 className="text-2xl font-bold fg-primary">Transactions</h1>
         <span className="text-xs fg-muted tabular-nums">
@@ -800,27 +904,25 @@ export function Transactions() {
       </div>
 
       {reviews.count > 0 && (
-        <div data-onboarding-target="review-transactions" className="rounded-lg border border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm fg-primary">
-            <BellRing className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-            <span>
-              You have {reviews.count} transaction{reviews.count === 1 ? '' : 's'} that need to be reviewed.
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={reviews.openModal}
-            className="text-sm font-semibold text-amber-700 dark:text-amber-400 hover:underline shrink-0"
-          >
-            Review now →
-          </button>
-        </div>
+        <Alert data-onboarding-target="review-transactions">
+          <BellRing />
+          <AlertTitle>
+            You have {reviews.count} transaction{reviews.count === 1 ? '' : 's'} that need to be reviewed.
+          </AlertTitle>
+          <AlertAction>
+            <Button type="button" variant="link" onClick={reviews.openModal}>
+              Review now
+              <ArrowUpRight data-icon="inline-end" />
+            </Button>
+          </AlertAction>
+        </Alert>
       )}
 
       {/* On mobile the section drops its card chrome so the list renders
           edge-to-edge on the page canvas, native-app style. */}
-      <section className="card card-mobile-plain">
-        <div className="mb-3 grid grid-cols-2 gap-2 md:flex md:items-center">
+      <Card className="card-mobile-plain">
+        <CardContent className="flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-2 md:flex md:items-center">
           <InputGroup className="col-span-2 min-h-11 min-w-0 md:min-h-0 md:flex-1">
             <InputGroupAddon aria-hidden="true">
               <Search className="h-4 w-4" />
@@ -834,22 +936,18 @@ export function Transactions() {
           </InputGroup>
 
           <div ref={dateContainerRef} className="relative min-w-0 md:shrink-0">
-            <button
+            <Button
               type="button"
+              variant={dateRange.preset !== 'all' && (dateRange.from || dateRange.to) ? 'secondary' : 'outline'}
               onClick={() => setDateOpen((o) => !o)}
               aria-expanded={dateOpen}
               aria-haspopup="dialog"
               aria-label="Date range"
-              className={clsx(
-                'inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors md:min-h-0 md:w-auto md:max-w-[11rem]',
-                dateRange.preset !== 'all' && (dateRange.from || dateRange.to)
-                  ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700',
-              )}
+              className="w-full md:w-auto md:max-w-[11rem]"
             >
-              <Calendar className="h-3.5 w-3.5 shrink-0" />
+              <Calendar data-icon="inline-start" />
               <span className="truncate">{dateRangeLabel(dateRange)}</span>
-            </button>
+            </Button>
             {dateOpen && (
               <DateRangePopover
                 value={dateRange}
@@ -860,27 +958,23 @@ export function Transactions() {
           </div>
 
           <div ref={filterContainerRef} className="relative min-w-0 md:shrink-0">
-            <button
+            <Button
               type="button"
+              variant={popoverFilterCount > 0 ? 'secondary' : 'outline'}
               onClick={() => setFilterOpen((o) => !o)}
               aria-expanded={filterOpen}
               aria-haspopup="dialog"
               aria-label="Filters"
-              className={clsx(
-                'inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors md:min-h-0 md:w-auto',
-                popoverFilterCount > 0
-                  ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700',
-              )}
+              className="w-full md:w-auto"
             >
-              <Filter className="h-3.5 w-3.5" />
-              <span>Filters</span>
+              <Filter data-icon="inline-start" />
+              Filters
               {popoverFilterCount > 0 && (
-                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold tabular-nums text-slate-900">
+                <Badge className="h-[18px] min-w-[18px] px-1 text-[10px]">
                   {popoverFilterCount}
-                </span>
+                </Badge>
               )}
-            </button>
+            </Button>
 
             {filterOpen && (
               <FilterPopover
@@ -896,57 +990,66 @@ export function Transactions() {
             )}
           </div>
 
-          <button
+          <Button
             type="button"
             onClick={() => setAddOpen(true)}
             data-onboarding-target="add-transaction"
             disabled={dependenciesLoading || !!dependenciesError}
-            className="hidden md:inline-flex items-center justify-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-900 px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 md:shrink-0"
+            className="hidden md:inline-flex md:shrink-0"
             aria-label="Add transaction"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus data-icon="inline-start" />
             Add Transaction
-          </button>
+          </Button>
         </div>
         {filterChips.length > 0 && (
-          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {filterChips.map((chip) => (
               <FilterChip key={chip.key} label={chip.label} onRemove={chip.onRemove} />
             ))}
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="text-xs font-medium fg-muted hover:text-amber-700 dark:hover:text-amber-400"
-            >
+            <Button type="button" variant="link" className="h-auto px-0 text-xs" onClick={clearFilters}>
               Clear all
-            </button>
+            </Button>
           </div>
         )}
         {dependenciesLoading && (
-          <p className="mb-3 rounded-lg border border-default bg-surface px-3 py-2 text-sm fg-muted" role="status">
-            Loading categories and accounts…
-          </p>
+          <Alert>
+            <Spinner />
+            <AlertTitle>Loading categories and accounts…</AlertTitle>
+          </Alert>
         )}
         {dependenciesError && (
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300" role="alert">
-            <span>Categories or accounts could not be loaded. Editing is unavailable.</span>
-            <button type="button" onClick={() => { void cats.refetch(); void accounts.refetch(); }} className="font-semibold hover:underline">
-              Retry
-            </button>
-          </div>
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>Editing is unavailable</AlertTitle>
+            <AlertDescription>Categories or accounts could not be loaded.</AlertDescription>
+            <AlertAction>
+              <Button type="button" size="sm" variant="outline" onClick={() => { void cats.refetch(); void accounts.refetch(); }}>
+                Retry
+              </Button>
+            </AlertAction>
+          </Alert>
         )}
         {/* Mobile list — tappable rows grouped by date. Every field the
             desktop table shows (and edits) remains reachable through the
             detail bottom sheet each row opens. */}
         <div className="md:hidden">
           {txns.isLoading && (
-            <p className="py-10 text-center text-sm fg-muted" role="status">Loading transactions…</p>
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><Spinner /></EmptyMedia>
+                <EmptyTitle>Loading transactions…</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           )}
           {txns.isError && (
-            <p className="py-10 text-center text-sm text-rose-700 dark:text-rose-300" role="alert">
-              <span>Transactions could not be loaded.</span>{' '}
-              <button type="button" onClick={() => void txns.refetch()} className="font-semibold hover:underline">Retry</button>
-            </p>
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>Transactions could not be loaded.</AlertTitle>
+              <AlertAction>
+                <Button type="button" size="sm" variant="outline" onClick={() => void txns.refetch()}>Retry</Button>
+              </AlertAction>
+            </Alert>
           )}
           {txns.isSuccess && txns.data.rows.length === 0 && (
             <EmptyTransactions
@@ -998,27 +1101,38 @@ export function Transactions() {
           })}
         </div>
 
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase fg-muted">
-                <th className="py-2">Merchant</th>
-                <th className="py-2">Type</th>
-                <th className="py-2">Category</th>
-                <th className="py-2">Account</th>
-                <th className="py-2 text-right">Amount</th>
-                <th className="py-2" />
-              </tr>
-            </thead>
-            <tbody>
+        <div className="hidden md:block">
+          <Table>
+            <TableHeader>
+              <TableRow className="text-left text-xs uppercase">
+                <TableHead>Merchant</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Account</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {txns.isLoading && (
-                <tr><td colSpan={6} className="py-8 text-center text-sm fg-muted" role="status">Loading transactions…</td></tr>
+                <TableRow>
+                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground" role="status">
+                    <span className="inline-flex items-center gap-2"><Spinner /> Loading transactions…</span>
+                  </TableCell>
+                </TableRow>
               )}
               {txns.isError && (
-                <tr><td colSpan={6} className="py-8 text-center text-sm text-rose-700 dark:text-rose-300" role="alert">
-                  <span>Transactions could not be loaded.</span>{' '}
-                  <button type="button" onClick={() => void txns.refetch()} className="font-semibold hover:underline">Retry</button>
-                </td></tr>
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <Alert variant="destructive">
+                      <AlertTriangle />
+                      <AlertTitle>Transactions could not be loaded.</AlertTitle>
+                      <AlertAction>
+                        <Button type="button" size="sm" variant="outline" onClick={() => void txns.refetch()}>Retry</Button>
+                      </AlertAction>
+                    </Alert>
+                  </TableCell>
+                </TableRow>
               )}
               {txns.isSuccess && txns.data.rows.map((t, idx) => {
                 const rowCats = (cats.data ?? []).filter((c) => c.type === t.type || c.name === 'Pay down goals');
@@ -1036,19 +1150,19 @@ export function Transactions() {
                 return (
                   <Fragment key={t.id}>
                   {showDateHeader && (
-                    <tr>
-                      <td colSpan={6} className="px-0 pb-2 pt-4">
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={6} className="px-0 pb-2 pt-4">
                         <div className="flex items-center gap-3">
                           <span className="shrink-0 text-xs font-semibold fg-primary">
                             {formatDateLong(t.date)}
                           </span>
                           <span className="flex-1 border-t border-default" aria-hidden="true" />
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
-                  <tr className="cursor-pointer border-b border-default md:cursor-default" onClick={() => { if (!isDesktop) setDetailTx(t); }}>
-                    <td className="py-2 fg-primary">
+                  <TableRow className="cursor-pointer md:cursor-default" onClick={() => { if (!isDesktop) setDetailTx(t); }}>
+                    <TableCell className="fg-primary whitespace-normal">
                       <div>{t.merchant}</div>
                       {hasSplits && (
                         <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] fg-muted">
@@ -1062,81 +1176,67 @@ export function Transactions() {
                           ))}
                         </div>
                       )}
-                    </td>
-                    <td className="py-2">
-                      <select
+                    </TableCell>
+                    <TableCell>
+                      <TypeSelect
                         value={t.type}
                         disabled={hasSplits || updateAssignmentInline.isPending || createRuleFromTransaction.isPending || !!cats.error}
                         aria-label="Transaction type"
                         title={hasSplits ? 'Edit the transaction to change split allocations.' : undefined}
-                        className={`${ROW_SELECT_CLS} font-medium`}
-                        onChange={(e) => {
-                          const newType = e.target.value as TxType;
+                        size="sm"
+                        className={clsx(ROW_SELECT_TRIGGER, 'font-medium')}
+                        onValueChange={(newType) => {
                           if (newType === t.type) return;
                           changeTransactionType(t, newType);
                         }}
-                      >
-                        {TX_TYPES.map((type) => (
-                          <option key={type} value={type}>{TYPE_STYLE[type].label}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="py-2">
-                      <select
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <CategorySelect
                         value={currentValue}
-                        onChange={(e) => onPickCategory(t, e.target.value)}
+                        onValueChange={(value) => onPickCategory(t, value)}
+                        categories={rowCats}
+                        placeholder="Select category"
                         disabled={hasSplits || updateAssignmentInline.isPending || createRuleFromTransaction.isPending || !!cats.error}
                         aria-label="Transaction category"
                         title={hasSplits ? 'Edit the transaction to change split allocations.' : (t.subCategory ? `${t.category} › ${t.subCategory}` : t.category)}
-                        className={ROW_SELECT_CLS}
-                      >
-                        {!currentValue && <option value="">Select category</option>}
-                        {rowCats.map((c) => (
-                          <optgroup key={c.id} label={c.name}>
-                            {c.subCategories.map((s) => (
-                              <option
-                                key={s.id}
-                                value={JSON.stringify({ category: c.name, subCategory: s.name })}
-                              >
-                                {s.name}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="py-2 fg-tertiary">{t.account}</td>
-                    <td className={clsx('py-2 text-right font-semibold tabular-nums', TYPE_STYLE[t.type].amount)}>
+                        size="sm"
+                        className={ROW_SELECT_TRIGGER}
+                      />
+                    </TableCell>
+                    <TableCell className="fg-tertiary">{t.account}</TableCell>
+                    <TableCell className={clsx('text-right font-semibold tabular-nums', TYPE_STYLE[t.type].amount)}>
                       {TYPE_STYLE[t.type].sign}{formatMoney(t.amount)}
-                    </td>
-                    <td className="py-2 text-right">
-                      <button
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="icon-sm"
                         onClick={(e) => { e.stopPropagation(); setActionTx(t); }}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg fg-tertiary transition-colors hover:bg-slate-100 hover:fg-secondary dark:hover:bg-slate-700"
                         aria-label="Transaction actions"
                       >
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </td>
-                  </tr>
+                        <MoreVertical />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
                   </Fragment>
                 );
               })}
               {txns.isSuccess && txns.data.rows.length === 0 && (
-                <tr>
-                  <td colSpan={6}>
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={6}>
                     <EmptyTransactions
                       filtered={filterActive}
                       onClear={clearFilters}
                       onAdd={() => setAddOpen(true)}
                       addDisabled={dependenciesLoading || !!dependenciesError}
                     />
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
 
         {/*
@@ -1183,80 +1283,24 @@ export function Transactions() {
             </Pagination>
           </div>
         )}
-      </section>
+        </CardContent>
+      </Card>
 
       {/* Mobile floating action button — the page's primary action, kept
           in the right thumb zone above the pill tab bar. Shares the
           onboarding target with the desktop toolbar button; the provider
           picks whichever one is visible at the current breakpoint. */}
-      <button
+      <Button
         type="button"
         onClick={() => setAddOpen(true)}
         data-onboarding-target="add-transaction"
         disabled={dependenciesLoading || !!dependenciesError}
         aria-label="Add transaction"
-        className="app-fab md:hidden flex h-14 w-14 items-center justify-center rounded-full bg-amber-500 text-slate-900 shadow-[0_10px_30px_rgba(0,0,0,0.35)] transition-transform active:scale-90 disabled:cursor-not-allowed disabled:opacity-50"
+        size="icon-lg"
+        className="app-fab md:hidden h-14 w-14 rounded-full shadow-[0_10px_30px_rgba(0,0,0,0.35)] [&_svg:not([class*='size-'])]:size-6"
       >
-        <Plus className="h-6 w-6" strokeWidth={2.4} />
-      </button>
-
-      {rulePrompt && (
-        <div className="app-toast fixed z-[60] max-w-sm rounded-lg border border-default bg-surface shadow-lg px-4 py-3 text-sm flex items-start gap-3">
-          <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <div className="fg-primary">
-              Saved {TYPE_STYLE[rulePrompt.type].label} · {rulePrompt.category}
-              {rulePrompt.subCategory ? ` › ${rulePrompt.subCategory}` : ''}.
-            </div>
-            <div className="mt-1 text-xs fg-muted">
-              {rulePrompt.sourceClassificationTrusted
-                ? `Match ${TYPE_STYLE[rulePrompt.sourceType].label} · ${rulePrompt.sourceCategory}${rulePrompt.sourceSubCategory ? ` › ${rulePrompt.sourceSubCategory}` : ''} on ${rulePrompt.account}.`
-                : `Match this merchant on ${rulePrompt.account}. Original type/category was not retained for this older transaction.`}
-            </div>
-            <button
-              type="button"
-              disabled={createRuleFromTransaction.isPending}
-              onClick={() => createRuleFromTransaction.mutate({ transactionId: rulePrompt.rowId })}
-              className="mt-1 inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 hover:underline disabled:opacity-50"
-            >
-              {createRuleFromTransaction.isPending ? 'Checking rule…' : 'Create scoped rule'}
-              <ArrowUpRight className="h-3 w-3" />
-            </button>
-            {createRuleFromTransaction.isError && (
-              <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
-                {createRuleFromTransaction.error.message}
-              </div>
-            )}
-          </div>
-          <button
-            type="button"
-              onClick={() => {
-                rulePromptIdRef.current = null;
-                setRulePrompt(null);
-              }}
-            className="close-button rounded-md p-1"
-            aria-label="Dismiss"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
-
-      {updateAssignmentInline.isError && !assignmentDraft && (
-        <div className="app-toast fixed z-[60] max-w-sm rounded-lg border border-rose-200 bg-surface shadow-lg px-4 py-3 text-sm flex items-start gap-3">
-          <div className="flex-1 min-w-0 text-rose-600 dark:text-rose-400">
-            Assignment was not saved: {updateAssignmentInline.error.message}
-          </div>
-          <button
-            type="button"
-            onClick={() => updateAssignmentInline.reset()}
-            className="close-button rounded-md p-1"
-            aria-label="Dismiss assignment error"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+        <Plus strokeWidth={2.4} />
+      </Button>
 
       {ruleConfirmation && (
         <ConfirmDialog
@@ -1308,31 +1352,16 @@ export function Transactions() {
           onClose={() => setAssignmentDraft(null)}
         >
           <p>The transaction will not change until both its type and category can be saved together.</p>
-          <select
+          <CategorySelect
             value={assignmentDraft.categoryPick}
-            onChange={(event) => setAssignmentDraft((current) => current ? {
+            onValueChange={(value) => setAssignmentDraft((current) => current ? {
               ...current,
-              categoryPick: event.target.value,
+              categoryPick: value,
             } : null)}
-            className={`w-full ${INPUT_CLS}`}
+            categories={(cats.data ?? []).filter((category) => category.type === assignmentDraft.type || category.name === 'Pay down goals')}
+            placeholder="Choose a category"
             aria-label="New transaction category"
-          >
-            <option value="">Choose a category</option>
-            {(cats.data ?? [])
-              .filter((category) => category.type === assignmentDraft.type || category.name === 'Pay down goals')
-              .map((category) => (
-                <optgroup key={category.id} label={category.name}>
-                  {category.subCategories.map((subCategory) => (
-                    <option
-                      key={subCategory.id}
-                      value={JSON.stringify({ category: category.name, subCategory: subCategory.name })}
-                    >
-                      {subCategory.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-          </select>
+          />
         </ConfirmDialog>
       )}
 
@@ -1459,28 +1488,22 @@ function TransactionDetailModal({
   })();
 
   return (
-    <Dialog
-      aria-label="Transaction details"
-      onClose={onClose}
-      closeDisabled={isPending}
-      variant="bottom-sheet"
-      overlayClassName="md:hidden"
-      contentClassName="mobile-sheet card w-full rounded-b-none rounded-t-3xl border-b-0"
+    <Drawer
+      open
+      onOpenChange={(open) => { if (!open && !isPending) onClose(); }}
     >
-        <div className="mx-auto -mt-1 mb-4 h-1.5 w-10 rounded-full bg-slate-600" aria-hidden="true" />
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="truncate text-lg font-semibold fg-primary">{t.merchant}</h3>
-            <p className={clsx('mt-0.5 text-base font-semibold tabular-nums', TYPE_STYLE[t.type].amount)}>
+      <DrawerContent>
+        <DrawerHeader className="text-left">
+          <DrawerTitle className="truncate">{t.merchant}</DrawerTitle>
+          <DrawerDescription asChild>
+            <p className={clsx('text-base font-semibold tabular-nums', TYPE_STYLE[t.type].amount)}>
               {TYPE_STYLE[t.type].sign}{formatMoney(t.amount)}
             </p>
-          </div>
-          <button type="button" onClick={onClose} disabled={isPending} className="close-button flex h-11 w-11 shrink-0 items-center justify-center rounded-full disabled:opacity-50" aria-label="Close">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+          </DrawerDescription>
+        </DrawerHeader>
 
-        <dl className="space-y-3 text-sm">
+        <div className="flex flex-col gap-4 overflow-y-auto px-4">
+        <dl className="flex flex-col gap-3 text-sm">
           <div className="flex justify-between">
             <dt className="fg-tertiary">Date</dt>
             <dd className="fg-primary font-medium">{formatDate(t.date)}</dd>
@@ -1490,7 +1513,7 @@ function TransactionDetailModal({
             <dd className="fg-primary font-medium">{t.account}</dd>
           </div>
           {!!t.splits?.length && (
-            <div className="space-y-2 border-t border-default pt-3">
+            <div className="flex flex-col gap-2 border-t border-default pt-3">
               <dt className="fg-tertiary">Split allocations</dt>
               {t.splits.map((split, index) => (
                 <dd key={split.id || index} className="flex items-start justify-between gap-3 pl-3 text-xs">
@@ -1510,66 +1533,47 @@ function TransactionDetailModal({
           )}
         </dl>
 
-        <div className="mt-5 grid gap-3 border-t border-default pt-5">
-          <label className="grid gap-1.5 text-sm font-medium fg-secondary">
-            Type
-            <select
+        <FieldGroup className="gap-3 border-t border-default pt-5">
+          <Field>
+            <FieldLabel>Type</FieldLabel>
+            <TypeSelect
               value={t.type}
               disabled={isPending || !!t.splits?.length}
-              onChange={(event) => onChangeType(event.target.value as TxType)}
-              className={`${INPUT_CLS} w-full`}
-            >
-              {TX_TYPES.map((type) => <option key={type} value={type}>{TYPE_STYLE[type].label}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1.5 text-sm font-medium fg-secondary">
-            Category
-            <select
+              onValueChange={onChangeType}
+            />
+          </Field>
+          <Field>
+            <FieldLabel>Category</FieldLabel>
+            <CategorySelect
               value={categoryValue}
               disabled={isPending || !!t.splits?.length}
-              onChange={(event) => onChangeCategory(event.target.value)}
-              className={`${INPUT_CLS} w-full`}
-            >
-              {!categoryValue && <option value="">Select category</option>}
-              {rowCats.map((category) => (
-                <optgroup key={category.id} label={category.name}>
-                  {category.subCategories.map((subCategory) => (
-                    <option
-                      key={subCategory.id}
-                      value={JSON.stringify({ category: category.name, subCategory: subCategory.name })}
-                    >
-                      {subCategory.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
+              onValueChange={onChangeCategory}
+              categories={rowCats}
+              placeholder="Select category"
+            />
+          </Field>
           {!!t.splits?.length && (
-            <p className="text-xs fg-muted">This is a split transaction. Use More actions, then Edit transaction, to change its type or allocations.</p>
+            <FieldDescription>This is a split transaction. Use More actions, then Edit transaction, to change its type or allocations.</FieldDescription>
           )}
+        </FieldGroup>
         </div>
 
-        <div className="mt-6 grid gap-2">
-          <button
-            type="button"
-            onClick={onActions}
-            disabled={isPending}
-            className="btn-primary inline-flex items-center justify-center disabled:opacity-50"
-          >
+        <DrawerFooter>
+          <Button type="button" onClick={onActions} disabled={isPending}>
             More actions
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="destructive"
             onClick={() => onDelete(t.id)}
             disabled={isPending}
-            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-50 disabled:opacity-50 dark:text-rose-400 dark:hover:bg-rose-900/20"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 data-icon="inline-start" />
             Delete
-          </button>
-        </div>
-    </Dialog>
+          </Button>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
   );
 }
 
@@ -1609,83 +1613,64 @@ function DateRangePopover({
 
   const active = value.preset !== 'all' && (!!value.from || !!value.to);
 
+  const presetValue =
+    value.preset === 'custom'
+      ? undefined
+      : (value.preset === 'all' || (!value.from && !value.to) ? 'all' : value.preset);
+
   return (
     <>
     <div className="fixed inset-0 z-40 bg-black/40 md:hidden" aria-hidden="true" onClick={onClose} />
-    <div
+    <Card
       role="dialog"
       aria-label="Date range"
-      className="mobile-popover absolute top-full left-0 z-50 mt-2 w-[20rem] max-w-[calc(100vw-1.5rem)] card shadow-lg p-4 space-y-3 md:left-auto md:right-0"
+      className="mobile-popover absolute top-full left-0 z-50 mt-2 w-[20rem] max-w-[calc(100vw-1.5rem)] shadow-lg md:left-auto md:right-0"
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold fg-primary">Date range</h3>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close date range"
-          className="close-button flex h-11 w-11 items-center justify-center rounded-lg md:h-8 md:w-8"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+      <CardHeader>
+        <CardTitle>Date range</CardTitle>
+        <CardAction>
+          <Button type="button" variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close date range">
+            <X />
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        value={presetValue}
+        onValueChange={(next) => {
+          if (!next) return;
+          pickPreset(next as Exclude<DatePreset, 'custom'>);
+        }}
+        className="w-full flex-wrap"
+      >
+        {DATE_PRESETS.map((opt) => (
+          <ToggleGroupItem key={opt.value} value={opt.value}>
+            {opt.label}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
 
-      <div className="flex flex-wrap gap-1.5">
-        {DATE_PRESETS.map((opt) => {
-          const isActive =
-            opt.value === 'all'
-              ? value.preset === 'all' || (!value.from && !value.to)
-              : value.preset === opt.value;
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => pickPreset(opt.value)}
-              aria-pressed={isActive}
-              className={clsx(
-                'min-h-11 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors md:min-h-0',
-                isActive
-                  ? 'bg-amber-500 text-slate-900 border-amber-500'
-                  : 'bg-surface fg-secondary border-default hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-400',
-              )}
-            >
-              {opt.label}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block">
-          <span className="text-xs fg-secondary uppercase tracking-wide">From</span>
-          <input
-            type="date"
-            value={value.from}
-            onChange={(e) => setFrom(e.target.value)}
-            className={`mt-1 w-full ${INPUT_CLS} py-1.5`}
-          />
-        </label>
-        <label className="block">
-          <span className="text-xs fg-secondary uppercase tracking-wide">To</span>
-          <input
-            type="date"
-            value={value.to}
-            onChange={(e) => setTo(e.target.value)}
-            className={`mt-1 w-full ${INPUT_CLS} py-1.5`}
-          />
-        </label>
-      </div>
+      <FieldGroup className="grid grid-cols-2 gap-2">
+        <Field>
+          <FieldLabel>From</FieldLabel>
+          <DatePicker value={value.from} onChange={setFrom} aria-label="From date" />
+        </Field>
+        <Field>
+          <FieldLabel>To</FieldLabel>
+          <DatePicker value={value.to} onChange={setTo} aria-label="To date" />
+        </Field>
+      </FieldGroup>
 
       {active && (
-        <button
-          type="button"
-          onClick={() => onChange(EMPTY_DATE_RANGE)}
-          className="text-xs font-medium text-amber-700 dark:text-amber-400 hover:underline"
-        >
+        <Button type="button" variant="link" className="h-auto self-start px-0 text-xs" onClick={() => onChange(EMPTY_DATE_RANGE)}>
           Clear dates
-        </button>
+        </Button>
       )}
-    </div>
+      </CardContent>
+    </Card>
     </>
   );
 }
@@ -1770,61 +1755,44 @@ function FilterPopover({
   return (
     <>
     <div className="fixed inset-0 z-40 bg-black/40 md:hidden" aria-hidden="true" onClick={onClose} />
-    <div
+    <Card
       role="dialog"
       aria-label="Filters"
-      className="mobile-popover absolute top-full right-0 z-50 mt-2 w-[22rem] max-w-[calc(100vw-1.5rem)] card shadow-lg p-4 space-y-4"
+      className="mobile-popover absolute top-full right-0 z-50 mt-2 w-[22rem] max-w-[calc(100vw-1.5rem)] shadow-lg"
     >
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold fg-primary">Filters</h3>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close filters"
-          className="close-button flex h-11 w-11 items-center justify-center rounded-lg md:h-8 md:w-8"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
+      <CardHeader>
+        <CardTitle>Filters</CardTitle>
+        <CardAction>
+          <Button type="button" variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close filters">
+            <X />
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
       <FilterSection label="Type">
-        <div className="flex flex-wrap gap-1.5">
-          {TX_TYPES.map((t) => {
-            const active = filters.types.has(t);
-            return (
-              <button
-                key={t}
-                type="button"
-                onClick={() => {
-                  setFilters((prev) => {
-                    const next = new Set(prev.types);
-                    if (next.has(t)) next.delete(t); else next.add(t);
-                    return { ...prev, types: next };
-                  });
-                }}
-                aria-pressed={active}
-                className={clsx(
-                  'inline-flex min-h-11 items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors md:min-h-0',
-                  active
-                    ? 'bg-amber-500 text-slate-900 border-amber-500'
-                    : 'bg-surface fg-secondary border-default hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-400',
-                )}
-              >
-                <span className={clsx(
-                  'inline-block h-1.5 w-1.5 rounded-full',
-                  t === 'income' && 'bg-emerald-500',
-                  t === 'expense' && 'bg-rose-500',
-                  t === 'transfer' && 'bg-slate-400',
-                )} aria-hidden="true" />
-                {TYPE_STYLE[t].label}
-              </button>
-            );
-          })}
-        </div>
+        <ToggleGroup
+          type="multiple"
+          variant="outline"
+          value={Array.from(filters.types)}
+          onValueChange={(values) => setFilters((prev) => ({ ...prev, types: new Set(values as TxType[]) }))}
+          className="w-full flex-wrap"
+        >
+          {TX_TYPES.map((t) => (
+            <ToggleGroupItem key={t} value={t} className="flex-1">
+              <span className={clsx(
+                'inline-block h-1.5 w-1.5 rounded-full',
+                t === 'income' && 'bg-emerald-500',
+                t === 'expense' && 'bg-rose-500',
+                t === 'transfer' && 'bg-slate-400',
+              )} aria-hidden="true" />
+              {TYPE_STYLE[t].label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
       </FilterSection>
 
       <FilterSection label="Account">
-        <div className="max-h-48 overflow-y-auto rounded-lg border border-default divide-y divide-slate-100 dark:divide-slate-700">
+        <div className="max-h-48 overflow-y-auto rounded-lg border border-default">
           {accounts.map((a) => {
             const label = a.alias || a.name;
             const active = filters.accounts.has(a.id);
@@ -1838,10 +1806,9 @@ function FilterPopover({
                     : 'fg-secondary hover:bg-slate-50 dark:hover:bg-slate-800/40',
                 )}
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={active}
-                  onChange={() => {
+                  onCheckedChange={() => {
                     setFilters((prev) => {
                       const next = new Set(prev.accounts);
                       if (next.has(a.id)) next.delete(a.id);
@@ -1849,102 +1816,93 @@ function FilterPopover({
                       return { ...prev, accounts: next };
                     });
                   }}
-                  className="h-4 w-4 shrink-0 accent-amber-500"
                 />
                 <span className="truncate">{label}</span>
               </label>
             );
           })}
           {accounts.length === 0 && (
-            <div className="px-2.5 py-2 text-xs fg-muted">No accounts.</div>
+            <Empty className="p-3">
+              <EmptyHeader>
+                <EmptyTitle>No accounts.</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           )}
         </div>
       </FilterSection>
 
       <FilterSection label="Category">
-        <select
+        <CategorySelect
           value={filters.categoryPick}
-          onChange={(e) => setFilters((prev) => ({ ...prev, categoryPick: e.target.value }))}
-          className={`${INPUT_CLS} w-full`}
+          onValueChange={(value) => setFilters((prev) => ({ ...prev, categoryPick: value }))}
+          categories={categories}
+          placeholder="Any category"
+          allowAny
           aria-label="Category filter"
-        >
-          <option value="">Any category</option>
-          {categories.map((c) => (
-            <optgroup key={c.id} label={c.name}>
-              {c.subCategories.map((s) => (
-                <option
-                  key={s.id}
-                  value={JSON.stringify({ category: c.name, subCategory: s.name })}
-                >
-                  {s.name}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+        />
       </FilterSection>
 
       <FilterSection label="Merchant">
-        <select
-          value={filters.merchant}
-          onChange={(e) => setFilters((prev) => ({ ...prev, merchant: e.target.value }))}
-          className={`${INPUT_CLS} w-full`}
-          aria-label="Merchant filter"
+        <Select
+          value={filters.merchant || ANY}
+          onValueChange={(value) => setFilters((prev) => ({ ...prev, merchant: value === ANY ? '' : value }))}
         >
-          <option value="">Any merchant</option>
-          {merchants.map((merchant) => (
-            <option key={merchant} value={merchant}>{merchant}</option>
-          ))}
-        </select>
+          <SelectTrigger className="w-full" aria-label="Merchant filter">
+            <SelectValue placeholder="Any merchant" />
+          </SelectTrigger>
+          <SelectContent position="popper">
+            <SelectGroup>
+              <SelectItem value={ANY}>Any merchant</SelectItem>
+              {merchants.map((merchant) => (
+                <SelectItem key={merchant} value={merchant}>{merchant}</SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </FilterSection>
 
       <FilterSection label="Amount range">
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="block text-[10px] uppercase tracking-wide fg-muted mb-1">Min</label>
-            <input
+        <FieldGroup className="grid grid-cols-2 gap-2">
+          <Field>
+            <FieldLabel>Min</FieldLabel>
+            <Input
               type="number"
               step="0.01"
               min="0"
               value={minStr}
               onChange={(e) => onMinChange(e.target.value)}
               placeholder="0"
-              className={`${INPUT_CLS} w-full`}
             />
-          </div>
-          <div>
-            <label className="block text-[10px] uppercase tracking-wide fg-muted mb-1">Max</label>
-            <input
+          </Field>
+          <Field>
+            <FieldLabel>Max</FieldLabel>
+            <Input
               type="number"
               step="0.01"
               min="0"
               value={maxStr}
               onChange={(e) => onMaxChange(e.target.value)}
               placeholder="∞"
-              className={`${INPUT_CLS} w-full`}
             />
-          </div>
-        </div>
+          </Field>
+        </FieldGroup>
       </FilterSection>
-
-      <div className="pt-3 border-t border-default flex items-center justify-between">
-        <button
+      </CardContent>
+      <CardFooter className="justify-between">
+        <Button
           type="button"
+          variant="link"
+          className="h-auto px-0 text-xs"
           onClick={onClear}
           disabled={!anythingActive && !clearEnabled}
-          className="text-xs font-medium fg-muted hover:text-amber-700 dark:hover:text-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Clear all
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="btn-primary text-xs"
-        >
+        </Button>
+        <Button type="button" size="sm" onClick={onClose}>
           Done
-        </button>
-      </div>
-    </div>
+        </Button>
+      </CardFooter>
+    </Card>
     </>
   );
 }
@@ -2048,40 +2006,31 @@ function AddTransactionModal({
 
   return (
     <Dialog
-      aria-label="Add transaction"
-      onClose={onClose}
-      closeDisabled={isPending}
-      contentClassName="card w-full max-w-lg flex flex-col"
+      open
+      onOpenChange={(open) => { if (!open && !isPending) onClose(); }}
     >
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold fg-primary">Add transaction</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isPending}
-            className="close-button rounded-lg p-2"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add transaction</DialogTitle>
+          <DialogDescription>Enter a date, amount, merchant, type, category, and account.</DialogDescription>
+        </DialogHeader>
 
-        <form onSubmit={onSubmitForm} className="space-y-3">
-          {/* Row 1: date + amount — the two numeric fields side by side. */}
+        <form onSubmit={onSubmitForm} className="flex flex-col gap-4">
+          <FieldGroup className="gap-3">
           <div className="grid grid-cols-2 gap-3">
-            <div className="block">
-              <span className="text-xs fg-secondary uppercase tracking-wide">Date</span>
+            <Field>
+              <FieldLabel>Date</FieldLabel>
               <DatePicker
                 value={date}
                 onChange={setDate}
                 disabled={isPending}
-                className="mt-1 w-full"
                 aria-label="Transaction date"
               />
-            </div>
-            <label className="block">
-              <span className="text-xs fg-secondary uppercase tracking-wide">Amount</span>
-              <input
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="add-tx-amount">Amount</FieldLabel>
+              <Input
+                id="add-tx-amount"
                 type="number"
                 step="0.01"
                 min="0.01"
@@ -2089,140 +2038,108 @@ function AddTransactionModal({
                 onChange={(e) => setAmount(e.target.value)}
                 disabled={isPending}
                 placeholder="0.00"
-                className={`mt-1 w-full ${INPUT_CLS}`}
                 required
               />
-            </label>
+            </Field>
           </div>
 
-          {/* Merchant — free text. */}
-          <label className="block">
-            <span className="text-xs fg-secondary uppercase tracking-wide">Merchant</span>
-            <input
+          <Field>
+            <FieldLabel htmlFor="add-tx-merchant">Merchant</FieldLabel>
+            <Input
+              id="add-tx-merchant"
               type="text"
               value={merchant}
               onChange={(e) => setMerchant(e.target.value)}
               disabled={isPending}
               placeholder="e.g. Whole Foods Market"
-              className={`mt-1 w-full ${INPUT_CLS}`}
               maxLength={255}
               required
             />
-          </label>
+          </Field>
 
-          {/* Type — three independent pill buttons, same pattern as
-              the Categories page's add-type toggle so the visual
-              language stays consistent across the app. */}
-          <label className="block">
-            <span className="text-xs fg-secondary uppercase tracking-wide">Type</span>
-            {/* Three pill buttons in a single row below the label,
-                matching the layout the other form fields use
-                (label on top, control below). `flex` (not inline-flex)
-                keeps the row on its own line so it doesn't wrap
-                alongside the TYPE label. */}
-            <div className="mt-1 flex gap-1.5">
-              {(['income', 'expense', 'transfer'] as TxType[]).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setType(t)}
-                  disabled={isPending}
-                  className={clsx(
-                    'flex-1 inline-flex items-center justify-center gap-1 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-colors disabled:opacity-50',
-                    type === t
-                      ? 'bg-amber-500 text-slate-900 border-amber-500'
-                      : 'bg-surface fg-secondary border-default hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-400',
-                  )}
-                >
-                  {t === 'income' && <TrendingUp className="h-3.5 w-3.5" />}
-                  {t === 'expense' && <TrendingDown className="h-3.5 w-3.5" />}
-                  {t === 'transfer' && <ArrowLeftRight className="h-3.5 w-3.5" />}
+          <Field>
+            <FieldLabel>Type</FieldLabel>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              value={type}
+              onValueChange={(next) => { if (next) setType(next as TxType); }}
+              disabled={isPending}
+              className="w-full"
+            >
+              {TX_TYPES.map((t) => (
+                <ToggleGroupItem key={t} value={t} className="flex-1">
+                  {t === 'income' && <TrendingUp data-icon="inline-start" />}
+                  {t === 'expense' && <TrendingDown data-icon="inline-start" />}
+                  {t === 'transfer' && <ArrowLeftRight data-icon="inline-start" />}
                   {TYPE_STYLE[t].label}
-                </button>
+                </ToggleGroupItem>
               ))}
-            </div>
-          </label>
+            </ToggleGroup>
+          </Field>
 
-          {/* Main categories are headings; only leaf sub-categories can
-              be assigned to a transaction. */}
-          <label className="block">
-            <span className="text-xs fg-secondary uppercase tracking-wide">Category</span>
-            <select
+          <Field>
+            <FieldLabel>Category</FieldLabel>
+            <CategorySelect
               value={categoryPick}
-              onChange={(e) => setCategoryPick(e.target.value)}
+              onValueChange={setCategoryPick}
+              categories={visibleCats}
               disabled={isPending || visibleCats.length === 0}
-              className={`mt-1 w-full ${INPUT_CLS}`}
-            >
-              <option value="">
-                {visibleCats.length === 0 ? 'No categories for this type' : 'Pick a category…'}
-              </option>
-              {visibleCats.map((c) => (
-                <optgroup key={c.id} label={c.name}>
-                  {c.subCategories.map((s) => (
-                    <option key={s.id} value={JSON.stringify({ category: c.name, subCategory: s.name })}>
-                      {s.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
+              placeholder={visibleCats.length === 0 ? 'No categories for this type' : 'Pick a category…'}
+            />
+          </Field>
 
-          {/* Stable IDs disambiguate accounts that share the same display name. */}
-          <label className="block">
-            <span className="text-xs fg-secondary uppercase tracking-wide">Account</span>
-            <select
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
+          <Field>
+            <FieldLabel>Account</FieldLabel>
+            <Select
+              value={accountId || undefined}
+              onValueChange={setAccountId}
               disabled={isPending || accounts.length === 0}
-              className={`mt-1 w-full ${INPUT_CLS}`}
-              required
             >
-              <option value="">
-                {accounts.length === 0 ? 'No accounts available' : 'Pick an account…'}
-              </option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.alias || a.name}</option>
-              ))}
-            </select>
-          </label>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={accounts.length === 0 ? 'No accounts available' : 'Pick an account…'} />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectGroup>
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.alias || a.name}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
 
-          <label className="block">
-            <span className="text-xs fg-secondary uppercase tracking-wide">Notes</span>
-            <textarea
+          <Field>
+            <FieldLabel htmlFor="add-tx-notes">Notes</FieldLabel>
+            <Textarea
+              id="add-tx-notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               disabled={isPending}
               rows={3}
               maxLength={2000}
-              className={`mt-1 w-full resize-y ${INPUT_CLS}`}
               placeholder="Optional notes"
             />
-          </label>
+          </Field>
 
-          {error && (
-            <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>
-          )}
+          {error ? (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+          </FieldGroup>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-default">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isPending}
-              className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
-            >
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!canSubmit}
-              className="btn-primary flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Plus className="h-4 w-4" />
+            </Button>
+            <Button type="submit" disabled={!canSubmit}>
+              {isPending ? <Spinner data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
               {isPending ? 'Adding…' : 'Add transaction'}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -2338,119 +2255,119 @@ function EditTransactionModal({
 
   return (
     <Dialog
-      aria-labelledby={titleId}
-      aria-busy={isPending}
-      onClose={onClose}
-      closeDisabled={isPending}
-      initialFocusRef={merchantRef}
-      overlayClassName="dialog-overlay--dim"
-      contentClassName="card w-full max-w-3xl"
+      open
+      onOpenChange={(open) => { if (!open && !isPending) onClose(); }}
     >
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 id={titleId} className="text-lg font-semibold fg-primary">Edit transaction</h2>
-          <button type="button" onClick={onClose} disabled={isPending} className="close-button rounded-lg p-2 disabled:opacity-50" aria-label="Close edit transaction">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+      <DialogContent className="sm:max-w-3xl" aria-labelledby={titleId} aria-busy={isPending}>
+        <DialogHeader>
+          <DialogTitle id={titleId}>Edit transaction</DialogTitle>
+          <DialogDescription>Update the posting details and optional split allocations.</DialogDescription>
+        </DialogHeader>
 
-        <form onSubmit={submit} className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-xs uppercase tracking-wide fg-secondary">
-              Merchant
-              <input ref={merchantRef} value={merchant} onChange={(e) => setMerchant(e.target.value)} disabled={isPending} maxLength={255} required className={`mt-1 w-full ${INPUT_CLS}`} />
-            </label>
-            <label className="block text-xs uppercase tracking-wide fg-secondary">
-              Amount
-              <input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} disabled={isPending} required className={`mt-1 w-full ${INPUT_CLS}`} />
-            </label>
-            <div className="block text-xs uppercase tracking-wide fg-secondary">
-              Date
-              <DatePicker value={date} onChange={setDate} disabled={isPending} className="mt-1 w-full" aria-label="Transaction date" />
-            </div>
-            <label className="block text-xs uppercase tracking-wide fg-secondary">
-              Account
-              <select value={accountId} onChange={(e) => setAccountId(e.target.value)} disabled={isPending} required className={`mt-1 w-full ${INPUT_CLS}`}>
-                <option value="">Select account</option>
-                {accounts.map((account) => <option key={account.id} value={account.id}>{account.alias || account.name}</option>)}
-              </select>
-            </label>
-            <label className="block text-xs uppercase tracking-wide fg-secondary">
-              Type
-              <select value={type} onChange={(e) => { setType(e.target.value as TxType); setCategoryPick(''); }} disabled={isPending} className={`mt-1 w-full ${INPUT_CLS}`}>
-                {TX_TYPES.map((value) => <option key={value} value={value}>{TYPE_STYLE[value].label}</option>)}
-              </select>
-            </label>
-            <label className="block text-xs uppercase tracking-wide fg-secondary">
-              Category / subcategory
-              <select value={categoryPick} onChange={(e) => setCategoryPick(e.target.value)} disabled={isPending} required className={`mt-1 w-full ${INPUT_CLS}`}>
-                <option value="">Select category</option>
-                {categories.filter((category) => category.type === type || category.name === 'Pay down goals').map((category) => (
-                  <optgroup key={category.id} label={category.name}>
-                    {category.subCategories.map((sub) => <option key={sub.id} value={categoryValue(category.name, sub.name)}>{sub.name}</option>)}
-                  </optgroup>
-                ))}
-              </select>
-            </label>
-          </div>
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <FieldGroup className="grid gap-3 sm:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor="edit-tx-merchant">Merchant</FieldLabel>
+              <Input ref={merchantRef} id="edit-tx-merchant" value={merchant} onChange={(e) => setMerchant(e.target.value)} disabled={isPending} maxLength={255} required />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="edit-tx-amount">Amount</FieldLabel>
+              <Input id="edit-tx-amount" type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} disabled={isPending} required />
+            </Field>
+            <Field>
+              <FieldLabel>Date</FieldLabel>
+              <DatePicker value={date} onChange={setDate} disabled={isPending} aria-label="Transaction date" />
+            </Field>
+            <Field>
+              <FieldLabel>Account</FieldLabel>
+              <Select value={accountId || undefined} onValueChange={setAccountId} disabled={isPending}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select account" />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  <SelectGroup>
+                    {accounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>{account.alias || account.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel>Type</FieldLabel>
+              <TypeSelect
+                value={type}
+                onValueChange={(next) => { setType(next); setCategoryPick(''); }}
+                disabled={isPending}
+              />
+            </Field>
+            <Field>
+              <FieldLabel>Category / subcategory</FieldLabel>
+              <CategorySelect
+                value={categoryPick}
+                onValueChange={setCategoryPick}
+                categories={categories.filter((category) => category.type === type || category.name === 'Pay down goals')}
+                disabled={isPending}
+                placeholder="Select category"
+              />
+            </Field>
+          </FieldGroup>
 
-          <label className="block text-xs uppercase tracking-wide fg-secondary">
-            Notes
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} disabled={isPending} rows={3} maxLength={2000} className={`mt-1 w-full resize-y ${INPUT_CLS}`} />
-          </label>
+          <Field>
+            <FieldLabel htmlFor="edit-tx-notes">Notes</FieldLabel>
+            <Textarea id="edit-tx-notes" value={notes} onChange={(e) => setNotes(e.target.value)} disabled={isPending} rows={3} maxLength={2000} />
+          </Field>
 
-          <section className="space-y-3 border-t border-default pt-4" aria-labelledby={`${titleId}-splits`}>
+          <section className="flex flex-col gap-3 border-t border-default pt-4" aria-labelledby={`${titleId}-splits`}>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 id={`${titleId}-splits`} className="text-sm font-semibold fg-primary">Split allocations</h3>
-                <p className="text-xs fg-muted">Allocations must equal the transaction amount exactly.</p>
+                <p className="text-xs text-muted-foreground">Allocations must equal the transaction amount exactly.</p>
               </div>
               <label className="flex cursor-pointer items-center gap-2 text-sm fg-secondary">
-                <input type="checkbox" checked={splitEnabled} onChange={(e) => setSplitEnabled(e.target.checked)} disabled={isPending} className="h-4 w-4 accent-amber-500" />
+                <Checkbox checked={splitEnabled} onCheckedChange={(checked) => setSplitEnabled(checked === true)} disabled={isPending} />
                 Split transaction
               </label>
             </div>
 
             {splitEnabled && (
-              <div className="space-y-3">
+              <div className="flex flex-col gap-3">
                 {splits.map((split, index) => {
                   const splitPick = categoryValue(split.category, split.subCategory);
                   return (
-                    <fieldset key={index} className="rounded-lg border border-default p-3">
-                      <legend className="px-1 text-xs font-medium fg-secondary">Allocation {index + 1}</legend>
+                    <FieldSet key={index} className="rounded-lg border border-default p-3">
+                      <FieldLegend variant="label">Allocation {index + 1}</FieldLegend>
                       <div className="grid gap-2 sm:grid-cols-[7rem_8rem_1fr_auto]">
-                        <input type="number" min="0.01" step="0.01" value={split.amount} onChange={(e) => changeSplit(index, { amount: e.target.value })} disabled={isPending} placeholder="Amount" aria-label={`Allocation ${index + 1} amount`} className={INPUT_CLS} />
-                        <select value={split.type} onChange={(e) => changeSplit(index, { type: e.target.value as TxType, category: '', subCategory: '' })} disabled={isPending} aria-label={`Allocation ${index + 1} type`} className={INPUT_CLS}>
-                          {TX_TYPES.map((value) => <option key={value} value={value}>{TYPE_STYLE[value].label}</option>)}
-                        </select>
-                        <select
+                        <Input type="number" min="0.01" step="0.01" value={split.amount} onChange={(e) => changeSplit(index, { amount: e.target.value })} disabled={isPending} placeholder="Amount" aria-label={`Allocation ${index + 1} amount`} />
+                        <TypeSelect
+                          value={split.type}
+                          onValueChange={(next) => changeSplit(index, { type: next, category: '', subCategory: '' })}
+                          disabled={isPending}
+                          aria-label={`Allocation ${index + 1} type`}
+                        />
+                        <CategorySelect
                           value={splitPick}
-                          onChange={(e) => {
-                            const picked = parseCategoryValue(e.target.value);
+                          onValueChange={(value) => {
+                            const picked = parseCategoryValue(value);
                             changeSplit(index, picked ?? { category: '', subCategory: '' });
                           }}
+                          categories={categories.filter((category) => category.type === split.type || category.name === 'Pay down goals')}
                           disabled={isPending}
+                          placeholder="Select category"
                           aria-label={`Allocation ${index + 1} category`}
-                          className={INPUT_CLS}
-                        >
-                          <option value="">Select category</option>
-                          {categories.filter((category) => category.type === split.type || category.name === 'Pay down goals').map((category) => (
-                            <optgroup key={category.id} label={category.name}>
-                              {category.subCategories.map((sub) => <option key={sub.id} value={categoryValue(category.name, sub.name)}>{sub.name}</option>)}
-                            </optgroup>
-                          ))}
-                        </select>
-                        <button type="button" onClick={() => setSplits((current) => current.filter((_, i) => i !== index))} disabled={isPending || splits.length <= 2} className="rounded-lg p-2 text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-900/30 disabled:cursor-not-allowed disabled:opacity-30" aria-label={`Remove allocation ${index + 1}`}>
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        />
+                        <Button type="button" variant="ghost" size="icon" onClick={() => setSplits((current) => current.filter((_, i) => i !== index))} disabled={isPending || splits.length <= 2} aria-label={`Remove allocation ${index + 1}`}>
+                          <Trash2 />
+                        </Button>
                       </div>
-                    </fieldset>
+                    </FieldSet>
                   );
                 })}
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <button type="button" onClick={() => setSplits((current) => [...current, emptySplit(type)])} disabled={isPending} className="inline-flex items-center gap-1 text-sm font-medium text-amber-700 dark:text-amber-300 hover:underline disabled:opacity-50">
-                    <Plus className="h-4 w-4" /> Add allocation
-                  </button>
-                  <p className={clsx('text-sm tabular-nums', splitTotalValid ? 'fg-secondary' : 'text-rose-600 dark:text-rose-400')} role={!splitTotalValid ? 'alert' : undefined}>
+                  <Button type="button" variant="link" className="h-auto px-0" onClick={() => setSplits((current) => [...current, emptySplit(type)])} disabled={isPending}>
+                    <Plus data-icon="inline-start" /> Add allocation
+                  </Button>
+                  <p className={clsx('text-sm tabular-nums', splitTotalValid ? 'fg-secondary' : 'text-destructive')} role={!splitTotalValid ? 'alert' : undefined}>
                     Allocated {formatMoney(splitTotalCents / 100)} of {formatMoney(amountCents / 100)}
                   </p>
                 </div>
@@ -2458,13 +2375,21 @@ function EditTransactionModal({
             )}
           </section>
 
-          {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300">{error}</p>}
+          {error ? (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
 
-          <div className="flex justify-end gap-2 border-t border-default pt-4">
-            <button type="button" onClick={onClose} disabled={isPending} className="rounded-lg px-3 py-2 text-sm fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50">Cancel</button>
-            <button type="submit" disabled={!canSubmit} className="btn-primary disabled:cursor-not-allowed disabled:opacity-50">{isPending ? 'Saving…' : 'Save transaction'}</button>
-          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>Cancel</Button>
+            <Button type="submit" disabled={!canSubmit}>
+              {isPending ? <Spinner data-icon="inline-start" /> : null}
+              {isPending ? 'Saving…' : 'Save transaction'}
+            </Button>
+          </DialogFooter>
         </form>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -2547,113 +2472,100 @@ function TransactionActionModal({
     }
   };
 
+  const busy = isPending || recurringBusy;
+
   return (
     <Dialog
-      aria-label="Transaction actions"
-      onClose={onClose}
-      closeDisabled={isPending || recurringBusy}
-      contentClassName="card w-full max-w-md flex flex-col"
+      open
+      onOpenChange={(open) => { if (!open && !busy) onClose(); }}
     >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold fg-primary">Transaction Actions</h3>
-          <button type="button" onClick={onClose} disabled={isPending || recurringBusy} className="close-button rounded-lg p-2 disabled:opacity-50" aria-label="Close">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Transaction Actions</DialogTitle>
+          <DialogDescription>
+            <span className="font-medium text-foreground">{t.merchant}</span>
+            {' · '}
+            <span className={clsx('font-semibold tabular-nums', TYPE_STYLE[t.type].amount)}>
+              {TYPE_STYLE[t.type].sign}{formatMoney(t.amount)}
+            </span>
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="text-sm fg-secondary mb-4">
-          <span className="font-medium fg-primary">{t.merchant}</span>
-          {' · '}
-          <span className={clsx('font-semibold tabular-nums', TYPE_STYLE[t.type].amount)}>
-            {TYPE_STYLE[t.type].sign}{formatMoney(t.amount)}
-          </span>
-        </div>
-
-        {/* Edit posting date — popover calendar (local-date safe). */}
-        <div className="space-y-2 pb-4 border-b border-default">
-          <label className="block text-xs font-medium fg-tertiary uppercase tracking-wide">
-            Posting Date
-          </label>
-          <div className="flex items-center gap-2">
-            <DatePicker
-              value={date}
-              onChange={(ymd) => { setDate(ymd); setDateChanged(false); }}
-              disabled={isPending || recurringBusy}
-              className="flex-1 min-w-0"
-              aria-label="Posting date"
-            />
-            <button
-              type="button"
-              onClick={onSaveDate}
-              disabled={isPending || date === t.date}
-              className="btn-primary text-xs disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-            >
-              {dateChanged ? 'Saved ✓' : 'Update'}
-            </button>
-          </div>
-        </div>
-
-        {/* Recurring frequency — applies immediately on click */}
-        <div className="space-y-2 pt-4">
-          <label className="block text-xs font-medium fg-tertiary uppercase tracking-wide">
-            Recurring
-          </label>
-          <div className="flex gap-1.5">
-            {([
-              { value: 'none', label: 'None' },
-              { value: 'weekly', label: 'Weekly' },
-              { value: 'monthly', label: 'Monthly' },
-              { value: 'yearly', label: 'Yearly' },
-            ] as const).map((opt) => (
-              <button
-                key={opt.value}
+        <FieldGroup className="gap-4">
+          <Field>
+            <FieldLabel>Posting Date</FieldLabel>
+            <div className="flex items-center gap-2">
+              <DatePicker
+                value={date}
+                onChange={(ymd) => { setDate(ymd); setDateChanged(false); }}
+                disabled={busy}
+                className="flex-1 min-w-0"
+                aria-label="Posting date"
+              />
+              <Button
                 type="button"
-                onClick={() => onPickRecurring(opt.value)}
-                disabled={isPending || recurringBusy}
-                aria-pressed={frequency === opt.value}
-                className={clsx(
-                  'flex-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50',
-                  frequency === opt.value
-                    ? 'bg-amber-500 text-slate-900 border-amber-500'
-                    : 'bg-surface fg-secondary border-default hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-400',
-                )}
+                size="sm"
+                onClick={() => void onSaveDate()}
+                disabled={isPending || date === t.date}
+                className="shrink-0"
               >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
+                {dateChanged ? 'Saved ✓' : 'Update'}
+              </Button>
+            </div>
+          </Field>
 
-        <div className="mt-6 pt-4 border-t border-default flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={isPending || recurringBusy}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 px-3 py-2 text-sm font-medium hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Delete
-          </button>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isPending || recurringBusy}
-              className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
+          <Field>
+            <FieldLabel>Recurring</FieldLabel>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              value={frequency}
+              onValueChange={(next) => {
+                if (!next) return;
+                void onPickRecurring(next as RecurringPick);
+              }}
+              disabled={busy}
+              className="w-full"
             >
+              {([
+                { value: 'none', label: 'None' },
+                { value: 'weekly', label: 'Weekly' },
+                { value: 'monthly', label: 'Monthly' },
+                { value: 'yearly', label: 'Yearly' },
+              ] as const).map((opt) => (
+                <ToggleGroupItem key={opt.value} value={opt.value} className="flex-1">
+                  {opt.label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </Field>
+        </FieldGroup>
+
+        <DialogFooter className="sm:justify-between">
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={onDelete}
+            disabled={busy}
+          >
+            <Trash2 data-icon="inline-start" />
+            Delete
+          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
               Close
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={onEdit}
-              disabled={isPending || recurringBusy || editDisabled}
+              disabled={busy || editDisabled}
               title={editDisabled ? 'Categories and accounts must load before editing.' : undefined}
-              className="btn-primary inline-flex items-center gap-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </button>
+              <Pencil data-icon="inline-start" /> Edit
+            </Button>
           </div>
-        </div>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }

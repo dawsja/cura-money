@@ -49,7 +49,7 @@ export function MonthPicker({ value, onChange, today, hideToday = false, disable
         disabled={disabled}
         onClick={() => onChange(shiftYearMonth(value, -1))}
       >
-        <ChevronLeft className="h-4 w-4" />
+        <ChevronLeft />
       </Button>
 
       <div
@@ -66,7 +66,7 @@ export function MonthPicker({ value, onChange, today, hideToday = false, disable
         disabled={disabled}
         onClick={() => onChange(shiftYearMonth(value, 1))}
       >
-        <ChevronRight className="h-4 w-4" />
+        <ChevronRight />
       </Button>
 
       {!hideToday && !isCurrent && (

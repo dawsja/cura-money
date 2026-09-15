@@ -7,6 +7,7 @@ const DARK_QUERY = '(prefers-color-scheme: dark)';
 
 interface ThemeContextValue {
   preference: ThemePreference;
+  resolved: 'light' | 'dark';
   setPreference: (preference: ThemePreference) => void;
 }
 
@@ -17,36 +18,44 @@ function storedPreference(): ThemePreference {
   return stored === 'dark' || stored === 'light' ? stored : 'system';
 }
 
-function applyTheme(preference: ThemePreference) {
-  const dark = preference === 'dark'
+function isDark(preference: ThemePreference): boolean {
+  return preference === 'dark'
     || (preference === 'system' && window.matchMedia(DARK_QUERY).matches);
+}
+
+function applyTheme(preference: ThemePreference) {
+  const dark = isDark(preference);
   document.documentElement.classList.toggle('dark', dark);
   document.documentElement.dataset.theme = preference;
   document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
     ?.setAttribute('content', dark ? '#0d1117' : '#d9e0e5');
+  return dark;
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>(storedPreference);
+  const [resolved, setResolved] = useState<'light' | 'dark'>(() =>
+    isDark(storedPreference()) ? 'dark' : 'light',
+  );
 
   useEffect(() => {
-    applyTheme(preference);
+    setResolved(applyTheme(preference) ? 'dark' : 'light');
     localStorage.setItem(THEME_STORAGE_KEY, preference);
 
     if (preference !== 'system') return;
     const media = window.matchMedia(DARK_QUERY);
-    const syncWithSystem = () => applyTheme('system');
+    const syncWithSystem = () => setResolved(applyTheme('system') ? 'dark' : 'light');
     media.addEventListener('change', syncWithSystem);
     return () => media.removeEventListener('change', syncWithSystem);
   }, [preference]);
 
   const setPreference = (next: ThemePreference) => {
-    applyTheme(next);
+    setResolved(applyTheme(next) ? 'dark' : 'light');
     setPreferenceState(next);
   };
 
   return (
-    <ThemeContext.Provider value={{ preference, setPreference }}>
+    <ThemeContext.Provider value={{ preference, resolved, setPreference }}>
       {children}
     </ThemeContext.Provider>
   );

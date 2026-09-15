@@ -19,6 +19,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { api } from '../lib/api';
 import {
   currencySymbol,
@@ -28,7 +29,13 @@ import {
   monthYearShort,
   timeAgo,
 } from '../lib/format';
-import { Dialog } from '../components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
 import { PayoffProjectionChart } from '../components/PayoffProjectionChart';
 import {
   CreditCard,
@@ -39,13 +46,19 @@ import {
   Check,
   Pencil,
   AlertTriangle,
-  ArrowUpRight,
   Save,
 } from 'lucide-react';
 import { SummaryCard } from '../components/SummaryCard';
 import { SavingsCalculatorPanel } from '../components/SavingsCalculatorPanel';
-import clsx from 'clsx';
 import { AsyncQueryState } from '../components/ui/AsyncQueryState';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '../components/ui/alert';
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../components/ui/empty';
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '../components/ui/field';
+import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from '../components/ui/input-group';
+import { Spinner } from '../components/ui/spinner';
 
 type Method = 'planned' | 'avalanche' | 'snowball';
 
@@ -214,12 +227,6 @@ function accountColor(index: number): string {
 export function Paydown() {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [toast, setToast] = useState<{
-    rowCount: number;
-    ym: string;
-    scenario: SavedScenario;
-  } | null>(null);
-  const [syncError, setSyncError] = useState<string | null>(null);
 
   // Baseline projection — "Planned" with no extras. Drives the chart
   // when no simulation is active.
@@ -325,7 +332,6 @@ export function Paydown() {
       return result;
     },
     onSuccess: (result) => {
-      setSyncError(null);
       scenarioEdited.current = false;
       setScenario({
         method: result.scenario.method,
@@ -339,10 +345,26 @@ export function Paydown() {
       qc.invalidateQueries({ queryKey: ['accounts'] });
       qc.invalidateQueries({ queryKey: ['budget'] });
       qc.invalidateQueries({ queryKey: ['categories'] });
-      setToast({ rowCount: result.rowCount, ym: currentYm, scenario: result.scenario });
+      const message = result.rowCount === 0
+        ? 'No accounts included — toggle Include on at least one card to snapshot.'
+        : `Saved ${result.rowCount} ${result.rowCount === 1 ? 'account' : 'accounts'} to Budget for ${monthYearShort(currentYm)}.`;
+      let description: string | undefined;
+      if (result.rowCount > 0 && result.scenario.method !== 'planned') {
+        description = [
+          result.scenario.method === 'snowball' ? 'Debt snowball' : 'Debt avalanche',
+          result.scenario.monthlyExtra > 0 ? `${formatMoney(result.scenario.monthlyExtra)}/month extra` : '',
+          result.scenario.oneTimeExtra > 0 ? `${formatMoney(result.scenario.oneTimeExtra)} one-time` : '',
+        ].filter(Boolean).join(' · ');
+      }
+      toast.success(message, {
+        description,
+        action: result.rowCount > 0
+          ? { label: 'Open Budget', onClick: () => navigate('/budget') }
+          : undefined,
+      });
     },
     onError: (error) => {
-      setSyncError(error.message || 'Failed to save to budget. Please try again.');
+      toast.error(error.message || 'Failed to save to budget. Please try again.');
     },
   });
 
@@ -350,7 +372,7 @@ export function Paydown() {
     const parsedMonthly = parseExtraPayment(monthlyExtra);
     const parsedOneTime = parseExtraPayment(oneTimeExtra);
     if (parsedMonthly === null || parsedOneTime === null) {
-      setSyncError('Extra payments must be valid amounts of zero or more.');
+      toast.error('Extra payments must be valid amounts of zero or more.');
       return;
     }
     syncToBudget.mutate({
@@ -361,22 +383,10 @@ export function Paydown() {
     });
   };
 
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(t);
-  }, [toast]);
-
-  useEffect(() => {
-    if (!syncError) return;
-    const t = setTimeout(() => setSyncError(null), 5000);
-    return () => clearTimeout(t);
-  }, [syncError]);
-
   if (accounts.isLoading || baseline.isLoading) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold fg-primary">Pay down</h1>
+      <div className="flex flex-col gap-6">
+        <h1 className="text-2xl font-bold text-foreground">Pay down</h1>
         <AsyncQueryState status="loading" title="Loading your paydown plan…" message="Fetching debt accounts and the baseline projection." />
       </div>
     );
@@ -384,8 +394,8 @@ export function Paydown() {
 
   if (accounts.isError || baseline.isError) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold fg-primary">Pay down</h1>
+      <div className="flex flex-col gap-6">
+        <h1 className="text-2xl font-bold text-foreground">Pay down</h1>
         <AsyncQueryState
           status="error"
           title="Could not load your paydown plan"
@@ -449,92 +459,36 @@ export function Paydown() {
   const beyondHorizon = !hasUnpayable && projection.debtFreeMonth === null && projection.timeline.length > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div data-onboarding-target="paydown-summary" className="min-w-0">
-          <h1 className="text-2xl font-bold fg-primary">Pay down</h1>
-          <p className="text-sm fg-tertiary max-w-xl mt-1">
+          <h1 className="text-2xl font-bold text-foreground">Pay down</h1>
+          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
             Every credit card and loan is a goal. Set your interest rates
             and minimums, then experiment with payoff methods to see how
             much you can save.
           </p>
-          <p className="text-xs fg-muted mt-2">
+          <p className="mt-2 text-xs text-muted-foreground">
             Syncs your paydown plan to the Budget page for this month.
             {snapshotMeta.data?.syncedAt && (
-              <> · Last synced: <span className="fg-secondary tabular-nums">{timeAgo(snapshotMeta.data.syncedAt)}</span></>
+              <> · Last synced: <span className="tabular-nums text-foreground">{timeAgo(snapshotMeta.data.syncedAt)}</span></>
             )}
           </p>
         </div>
         {hasAnyDebt && (
-          <div className="flex flex-col items-end gap-1 shrink-0">
-            <button
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <Button
               type="button"
               onClick={saveToBudget}
               disabled={syncToBudget.isPending}
-              className="btn-primary inline-flex items-center gap-2 disabled:opacity-50 min-h-[44px]"
               title={`Snapshot every included credit/loan account's planned payment for ${monthYearShort(currentYm)} into the Budget page`}
             >
-              <Save className="h-4 w-4" />
+              {syncToBudget.isPending ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
               {syncToBudget.isPending ? 'Saving…' : 'Save to Budget'}
-            </button>
+            </Button>
           </div>
         )}
       </div>
-
-      {toast && (
-        <div className="app-toast fixed z-50 max-w-sm rounded-lg border border-default bg-surface shadow-lg px-4 py-3 text-sm flex items-start gap-3">
-          <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <div className="fg-primary">
-              {toast.rowCount === 0
-                ? 'No accounts included — toggle Include on at least one card to snapshot.'
-                : `Saved ${toast.rowCount} ${toast.rowCount === 1 ? 'account' : 'accounts'} to Budget for ${monthYearShort(toast.ym)}.`}
-            </div>
-            {toast.rowCount > 0 && toast.scenario.method !== 'planned' && (
-              <div className="text-xs fg-muted mt-0.5">
-                {toast.scenario.method === 'snowball' ? 'Debt snowball' : 'Debt avalanche'}
-                {toast.scenario.monthlyExtra > 0 ? ` · ${formatMoney(toast.scenario.monthlyExtra)}/month extra` : ''}
-                {toast.scenario.oneTimeExtra > 0 ? ` · ${formatMoney(toast.scenario.oneTimeExtra)} one-time` : ''}
-              </div>
-            )}
-            {toast.rowCount > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setToast(null);
-                  navigate('/budget');
-                }}
-                className="mt-1 inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 hover:underline"
-              >
-                Open Budget <ArrowUpRight className="h-3 w-3" />
-              </button>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className="close-button rounded-md p-1"
-            aria-label="Dismiss"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
-
-      {syncError && (
-        <div className="app-toast fixed z-50 max-w-sm rounded-lg border border-rose-300 dark:border-rose-700 bg-surface shadow-lg px-4 py-3 text-sm flex items-start gap-3">
-          <AlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0 fg-primary">{syncError}</div>
-          <button
-            type="button"
-            onClick={() => setSyncError(null)}
-            className="close-button rounded-md p-1"
-            aria-label="Dismiss"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
 
       {showSim && simulation.isLoading && (
         <AsyncQueryState
@@ -555,14 +509,16 @@ export function Paydown() {
       )}
 
       {!hasAnyDebt && (
-        <div className="card text-sm fg-tertiary">
-          <div className="font-semibold mb-1">No debt accounts yet</div>
-          <p>
-            Add a credit card or loan on the <a href="/accounts" className="underline">Accounts page</a>
-            {' '}and it'll show up here automatically. The pay-down
-            dashboard tracks every liability you owe on.
-          </p>
-        </div>
+        <Empty className="border border-dashed">
+          <EmptyHeader>
+            <EmptyTitle>No debt accounts yet</EmptyTitle>
+            <EmptyDescription>
+              Add a credit card or loan on the <a href="/accounts">Accounts page</a>
+              {' '}and it'll show up here automatically. The pay-down
+              dashboard tracks every liability you owe on.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       )}
 
       {hasAnyDebt && (
@@ -570,26 +526,24 @@ export function Paydown() {
           {/* Method banner — only when a scenario is active. Matches the
              Monarch-style "Utilizing the X Method" strip. */}
           {isSimulated && (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/30 px-4 py-2.5">
-              <div className="text-sm text-rose-900 dark:text-rose-100 min-w-0">
-                <span className="fg-muted">Utilizing the </span>
+            <Alert className="border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-100">
+              <AlertDescription className="text-rose-900 dark:text-rose-100">
+                <span className="text-muted-foreground">Utilizing the </span>
                 <span className="font-semibold capitalize">{methodLabel}</span>
                 {monthlyExtraNum > 0 && (
-                  <span className="fg-muted"> with {formatMoney(monthlyExtraNum)} monthly extra</span>
+                  <span className="text-muted-foreground"> with {formatMoney(monthlyExtraNum)} monthly extra</span>
                 )}
                 {oneTimeExtraNum > 0 && (
-                  <span className="fg-muted"> + {formatMoney(oneTimeExtraNum)} one-time</span>
+                  <span className="text-muted-foreground"> + {formatMoney(oneTimeExtraNum)} one-time</span>
                 )}
-              </div>
-              <button
-                type="button"
-                onClick={clearSimulation}
-                className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-rose-700 dark:text-rose-200 hover:bg-rose-100 dark:hover:bg-rose-900/50 min-h-[36px] shrink-0"
-              >
-                <X className="h-3.5 w-3.5" />
-                Clear
-              </button>
-            </div>
+              </AlertDescription>
+              <AlertAction>
+                <Button type="button" variant="ghost" size="sm" onClick={clearSimulation}>
+                  <X data-icon="inline-start" />
+                  Clear
+                </Button>
+              </AlertAction>
+            </Alert>
           )}
 
           {/* Summary cards */}
@@ -639,24 +593,23 @@ export function Paydown() {
           </div>
 
           {/* Chart */}
-          <section className="card">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <h2 className="text-lg font-semibold fg-primary">Payoff projection</h2>
+          <Card>
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+              <CardTitle>Payoff projection</CardTitle>
               {isSimulated && (
-                <span className="text-xs fg-muted">
+                <span className="text-xs text-muted-foreground">
                   {methodLabel}
                   {monthlyExtraNum > 0 && ` · ${formatMoney(monthlyExtraNum)}/mo`}
                   {oneTimeExtraNum > 0 && ` + ${formatMoney(oneTimeExtraNum)} one-time`}
                 </span>
               )}
-            </div>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
             {hasUnpayable && (
-              <div className="rounded-lg bg-amber-50 dark:bg-amber-900/30 p-3 text-xs text-amber-800 dark:text-amber-200 mb-3">
-                <div className="font-semibold mb-1 flex items-center gap-1.5">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  Cannot calculate payoff
-                </div>
-                <p>
+              <Alert>
+                <AlertTriangle />
+                <AlertTitle>Cannot calculate payoff</AlertTitle>
+                <AlertDescription>
                   {unpayableAccounts.length === 1 ? (
                     <>
                       <span className="font-medium">{unpayableAccounts[0]!.name}</span> has no minimum or planned payment.
@@ -667,46 +620,48 @@ export function Paydown() {
                     </>
                   )}
                   {' '}Set a minimum payment on each to project a payoff date.
-                </p>
-              </div>
+                </AlertDescription>
+              </Alert>
             )}
             <PayoffProjectionChart
               accounts={chartSeries}
               projection={projection}
             />
-          </section>
+            </CardContent>
+          </Card>
 
           {/* Per-account list + calculator panel */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <section className="card lg:col-span-2">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold fg-primary">Your debt accounts</h2>
-                <span className="text-xs fg-muted">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <Card className="lg:col-span-2">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Your debt accounts</CardTitle>
+                <span className="text-xs text-muted-foreground">
                   {accList.filter((a) => a.includeInPaydown).length} of {accList.length} included
                 </span>
-              </div>
-              <ul className="divide-y divide-slate-100 dark:divide-slate-700">
+              </CardHeader>
+              <CardContent>
+              <ul className="divide-y">
                 {accList.map((a, i) => {
                   const r = byId.get(a.id);
                   return (
                     <li key={a.id} className="py-3">
                       <div className="flex items-center gap-3">
                         <span
-                          className="h-2.5 w-2.5 rounded-full shrink-0"
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
                           style={{ backgroundColor: a.includeInPaydown ? accountColor(i) : 'var(--chart-excluded)' }}
                           title={a.includeInPaydown ? 'Included' : 'Excluded'}
                         />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm flex items-center gap-2 fg-primary">
-                            {a.type === 'credit' ? <CreditCard className="h-3.5 w-3.5 fg-muted" /> : <Banknote className="h-3.5 w-3.5 fg-muted" />}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                            {a.type === 'credit' ? <CreditCard className="h-3.5 w-3.5 text-muted-foreground" /> : <Banknote className="h-3.5 w-3.5 text-muted-foreground" />}
                             {a.name}
                           </div>
-                          <div className="text-xs fg-muted mt-0.5">
-                            <span className="text-rose-600 dark:text-rose-400 font-medium">−{formatMoney(a.balance)}</span> · {(a.interestRate * 100).toFixed(2)}% APR
+                          <div className="mt-0.5 text-xs text-muted-foreground">
+                            <span className="font-medium text-rose-600 dark:text-rose-400">−{formatMoney(a.balance)}</span> · {(a.interestRate * 100).toFixed(2)}% APR
                             {a.includeInPaydown && unpayableIds.has(a.id) && (
                               <>
                                 {' · '}
-                                <span className="text-amber-700 dark:text-amber-400 font-medium">∞ no payment set</span>
+                                <span className="font-medium text-amber-700 dark:text-amber-400">∞ no payment set</span>
                               </>
                             )}
                             {r?.payoffMonth && a.includeInPaydown && !unpayableIds.has(a.id) && (
@@ -717,17 +672,14 @@ export function Paydown() {
                             )}
                           </div>
                         </div>
-                        <button
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={a.includeInPaydown ? 'secondary' : 'outline'}
                           onClick={() => patchAccount.mutate({ id: a.id, patch: { includeInPaydown: !a.includeInPaydown } })}
-                          className={clsx(
-                            'rounded-lg px-2.5 py-1.5 text-xs font-medium',
-                            a.includeInPaydown
-                              ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50'
-                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600',
-                          )}
                         >
                           {a.includeInPaydown ? 'Included' : 'Excluded'}
-                        </button>
+                        </Button>
                         <AccountEditModal
                           account={a}
                           onSave={async (patch) => {
@@ -739,12 +691,13 @@ export function Paydown() {
                   );
                 })}
                 {accList.length === 0 && (
-                  <li className="py-6 text-center text-sm fg-muted">
+                  <li className="py-6 text-center text-sm text-muted-foreground">
                     No credit cards or loans. Add one to start tracking paydown.
                   </li>
                 )}
               </ul>
-            </section>
+              </CardContent>
+            </Card>
 
             <div className="lg:col-span-1">
               <SavingsCalculatorPanel
@@ -821,120 +774,125 @@ function AccountEditModal({
   const closeEditor = () => {
     if (!saving) setOpen(false);
   };
-  if (!open) {
-    return (
-      <button
+  return (
+    <>
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-sm"
         onClick={openEditor}
-        className="edit-icon-button rounded-lg p-1.5"
         title="Edit account details"
       >
-        <Pencil className="h-3.5 w-3.5" />
-      </button>
-    );
-  }
-  const INPUT_CLS = 'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
-  return (
-    <Dialog
-      aria-label={`Edit ${account.name}`}
-      aria-busy={saving}
-      onClose={closeEditor}
-      closeDisabled={saving}
-      contentClassName="card w-full max-w-sm"
-    >
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold fg-primary">Edit {account.name}</h3>
-          <button type="button" onClick={closeEditor} disabled={saving} className="close-button rounded-lg p-2 disabled:opacity-50" aria-label="Close account details">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (!canSave || saving) return;
-            const aprNum = (Number(apr) || 0) / 100;
-            setSaveError(null);
-            setSaving(true);
-            try {
-              await onSave({ interestRate: aprNum, minPayment: minNum, plannedPayment: plannedNum });
-              setOpen(false);
-            } catch (error) {
-              setSaveError(error instanceof Error && error.message ? error.message : 'Could not save account details. Please try again.');
-            } finally {
-              setSaving(false);
-            }
-          }}
-          className="space-y-3"
+        <Pencil />
+      </Button>
+      <Dialog open={open} onOpenChange={(next) => { if (!next) closeEditor(); }}>
+        <DialogContent
+          className="sm:max-w-sm"
+          showCloseButton={!saving}
+          onEscapeKeyDown={(event) => { if (saving) event.preventDefault(); }}
+          onPointerDownOutside={(event) => { if (saving) event.preventDefault(); }}
         >
-          <label className="block">
-            <span className="text-sm fg-secondary">Interest rate / APR (%)</span>
-            <input
-              type="number"
-              step="0.0001"
-              min="0"
-              max="100"
-              value={apr}
-              onChange={(e) => setApr(e.target.value)}
-              disabled={saving}
-              className={`mt-1 w-full ${INPUT_CLS} tabular-nums`}
-            />
-            <span className="text-[10px] fg-muted">Set to 0 for 0% APR (e.g. intro rate, paid-in-full card)</span>
-          </label>
-          <label className="block">
-            <span className="text-sm fg-secondary">Minimum monthly payment</span>
-            <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={min}
-                onChange={(e) => setMin(e.target.value)}
-                disabled={saving}
-                aria-invalid={requiresMin && minNum <= 0}
-                className={`w-full ${INPUT_CLS} pl-7 pr-3 ${requiresMin && minNum <= 0 ? 'border-rose-400 dark:border-rose-500' : ''}`}
-              />
-            </div>
-            {requiresMin && minNum <= 0 ? (
-              <span className="text-[10px] text-rose-600 dark:text-rose-400">Required — credit and loan accounts need a minimum payment to project a payoff.</span>
-            ) : (
-              <span className="text-[10px] fg-muted">Principal + interest only. Don't include tax/insurance.</span>
+          <DialogHeader>
+            <DialogTitle>Edit {account.name}</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!canSave || saving) return;
+              const aprNum = (Number(apr) || 0) / 100;
+              setSaveError(null);
+              setSaving(true);
+              try {
+                await onSave({ interestRate: aprNum, minPayment: minNum, plannedPayment: plannedNum });
+                setOpen(false);
+              } catch (error) {
+                setSaveError(error instanceof Error && error.message ? error.message : 'Could not save account details. Please try again.');
+              } finally {
+                setSaving(false);
+              }
+            }}
+            className="flex flex-col gap-3"
+          >
+            <FieldGroup>
+              <Field>
+                <FieldLabel>Interest rate / APR (%)</FieldLabel>
+                <Input
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  max="100"
+                  value={apr}
+                  onChange={(e) => setApr(e.target.value)}
+                  disabled={saving}
+                  className="tabular-nums"
+                />
+                <FieldDescription>Set to 0 for 0% APR (e.g. intro rate, paid-in-full card)</FieldDescription>
+              </Field>
+              <Field data-invalid={requiresMin && minNum <= 0 ? true : undefined}>
+                <FieldLabel>Minimum monthly payment</FieldLabel>
+                <InputGroup>
+                  <InputGroupAddon>
+                    <InputGroupText>{currencySymbol()}</InputGroupText>
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={min}
+                    onChange={(e) => setMin(e.target.value)}
+                    disabled={saving}
+                    aria-invalid={requiresMin && minNum <= 0}
+                    className="tabular-nums"
+                  />
+                </InputGroup>
+                {requiresMin && minNum <= 0 ? (
+                  <FieldError>Required — credit and loan accounts need a minimum payment to project a payoff.</FieldError>
+                ) : (
+                  <FieldDescription>Principal + interest only. Don't include tax/insurance.</FieldDescription>
+                )}
+              </Field>
+              <Field data-invalid={plannedBelowMin ? true : undefined}>
+                <FieldLabel>Planned monthly payment <span className="font-normal text-muted-foreground">(optional)</span></FieldLabel>
+                <InputGroup>
+                  <InputGroupAddon>
+                    <InputGroupText>{currencySymbol()}</InputGroupText>
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={planned}
+                    onChange={(e) => setPlanned(e.target.value)}
+                    disabled={saving}
+                    placeholder="0"
+                    aria-invalid={plannedBelowMin}
+                    className="tabular-nums"
+                  />
+                </InputGroup>
+                {plannedBelowMin ? (
+                  <FieldError>Planned payment must be at least the minimum.</FieldError>
+                ) : (
+                  <FieldDescription>Leave 0 to use the minimum. Only set if you plan to pay more than the minimum.</FieldDescription>
+                )}
+              </Field>
+            </FieldGroup>
+            {saveError && (
+              <Alert variant="destructive">
+                <AlertDescription>{saveError}</AlertDescription>
+              </Alert>
             )}
-          </label>
-          <label className="block">
-            <span className="text-sm fg-secondary">Planned monthly payment <span className="fg-muted font-normal">(optional)</span></span>
-            <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={planned}
-                onChange={(e) => setPlanned(e.target.value)}
-                disabled={saving}
-                placeholder="0"
-                aria-invalid={plannedBelowMin}
-                className={`w-full ${INPUT_CLS} pl-7 pr-3 ${plannedBelowMin ? 'border-rose-400 dark:border-rose-500' : ''}`}
-              />
-            </div>
-            {plannedBelowMin ? (
-              <span className="text-[10px] text-rose-600 dark:text-rose-400">Planned payment must be at least the minimum.</span>
-            ) : (
-              <span className="text-[10px] fg-muted">Leave 0 to use the minimum. Only set if you plan to pay more than the minimum.</span>
-            )}
-          </label>
-          {saveError && (
-            <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{saveError}</p>
-          )}
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={closeEditor} disabled={saving} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50">
-              Cancel
-            </button>
-            <button type="submit" disabled={!canSave || saving} className="btn-primary flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
-              <Check className="h-4 w-4" /> {saving ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-        </form>
-    </Dialog>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={closeEditor} disabled={saving}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!canSave || saving}>
+                {saving ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

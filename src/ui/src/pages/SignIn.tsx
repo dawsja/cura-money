@@ -5,7 +5,10 @@ import { signInEmail, fetchMe, SIGNOUT_FLAG_KEY } from '../lib/auth';
 import { api } from '../lib/api';
 import { AuthBrand, AuthError, AuthPage, AuthPanel, AuthTextField } from '../components/AuthScreen';
 import { AsyncQueryState } from '../components/ui/AsyncQueryState';
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import { FieldSeparator } from '../components/ui/field';
+import { Spinner } from '../components/ui/spinner';
 
 interface OidcProvider {
   providerId: string;
@@ -171,7 +174,7 @@ export function SignIn() {
         <AuthBrand title={title} subtitle={subtitle} />
 
         {showLocalForm && (
-          <form onSubmit={onSubmit} className="space-y-3">
+          <form onSubmit={onSubmit} className="flex flex-col gap-3">
             <AuthTextField
               label="Email"
               type="email"
@@ -191,37 +194,30 @@ export function SignIn() {
               disabled={busy}
             />
             {err && <AuthError message={err} />}
-            <button type="submit" className="btn-primary w-full" disabled={busy || !!oidcBusy}>
+            <Button type="submit" className="w-full" disabled={busy || !!oidcBusy}>
+              {busy ? <Spinner data-icon="inline-start" /> : null}
               {busy ? (demoMode ? 'Entering…' : 'Signing in…') : demoMode ? 'Enter demo' : 'Sign in'}
-            </button>
+            </Button>
           </form>
         )}
 
         {lockedOut && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-900/30">
-            <p className="font-medium text-amber-900 dark:text-amber-200">
-              Local sign-in is disabled
-            </p>
-            <p className="mt-1 text-amber-800 dark:text-amber-300">
+          <Alert>
+            <AlertTitle>Local sign-in is disabled</AlertTitle>
+            <AlertDescription>
               An admin has turned off email/password sign-in. Ask them to
               add an OIDC provider in Settings → Authentication, or to
               re-enable local sign-in.
-            </p>
-          </div>
+            </AlertDescription>
+          </Alert>
         )}
 
         {!showLocalForm && err && <AuthError message={err} />}
 
         {oidcList.length > 0 && (
           <div className={showLocalForm ? 'mt-4' : undefined}>
-            {showLocalForm && (
-              <div className="mb-4 flex items-center gap-3">
-                <div className="h-px flex-1 border-t border-default" />
-                <span className="text-xs fg-muted">or</span>
-                <div className="h-px flex-1 border-t border-default" />
-              </div>
-            )}
-            <div className="space-y-2">
+            {showLocalForm && <FieldSeparator>or</FieldSeparator>}
+            <div className="flex flex-col gap-2">
               {oidcList.map((provider) => (
                 <Button
                   key={provider.providerId}
@@ -231,6 +227,7 @@ export function SignIn() {
                   disabled={busy || !!oidcBusy}
                   onClick={() => void startOidc(provider.providerId)}
                 >
+                  {oidcBusy === provider.providerId ? <Spinner data-icon="inline-start" /> : null}
                   {oidcBusy === provider.providerId
                     ? `Continuing with ${provider.displayName}…`
                     : `Sign in with ${provider.displayName}`}

@@ -13,8 +13,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, CircleHelp, X } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
+import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
-import { Dialog } from './ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
+import { Spinner } from './ui/spinner';
 import { useReviews } from './ReviewsProvider';
 
 const STEP_IDS = [
@@ -103,7 +112,7 @@ const STEPS: Record<StepId, StepDefinition> = {
   },
   review: {
     title: 'Review imported transactions',
-    body: 'Categorize accepts a transaction and teaches Cura a merchant rule. Skip accepts the suggested category without training a rule. Pending reviews do not count in Home or budget actuals.',
+    body: 'Save & next accepts a transaction. Check Create a rule to teach Cura the merchant. Keep suggestion accepts the imported category without training a rule. Pending reviews do not count in Home or budget actuals.',
     target: 'review-transactions',
     path: '/transactions',
     action: 'Open reviews',
@@ -285,7 +294,7 @@ export function FinancialOnboardingProvider({ userId, children }: { userId: stri
   const activeDefinition = status === 'in_progress' ? STEPS[step] : null;
   useEffect(() => {
     const update = () => {
-      const overlay = document.querySelector('[data-dialog-overlay]:not(.onboarding-modal)');
+      const overlay = document.querySelector('[data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"], [data-slot="sheet-overlay"]');
       setProductOverlayOpen(overlay !== null);
     };
     update();
@@ -466,25 +475,44 @@ function OnboardingModal({
 
   return (
     <Dialog
-      aria-labelledby="financial-onboarding-title"
-      aria-describedby="financial-onboarding-description"
-      onClose={onSecondary}
-      closeOnBackdrop={false}
-      closeDisabled={busy}
-      initialFocusRef={primaryRef}
-      overlayClassName="onboarding-modal dialog-overlay--onboarding"
-      contentClassName="card w-full max-w-lg shadow-2xl"
+      open
+      onOpenChange={(open) => {
+        if (!open && !busy) onSecondary();
+      }}
     >
-        <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-          {complete ? <Check className="h-6 w-6" /> : <CircleHelp className="h-6 w-6" />}
+      <DialogContent
+        className="sm:max-w-lg shadow-2xl"
+        showCloseButton={false}
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => {
+          if (busy) event.preventDefault();
+        }}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          primaryRef.current?.focus();
+        }}
+      >
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          {complete ? <Check className="size-6" /> : <CircleHelp className="size-6" />}
         </div>
-        <h2 id="financial-onboarding-title" className="text-xl font-semibold fg-primary">{title}</h2>
-        <p id="financial-onboarding-description" className="mt-2 text-sm leading-6 fg-secondary">{body}</p>
-        {error && <p className="mt-3 text-sm text-rose-600 dark:text-rose-400" role="alert">Could not save tutorial progress: {error}</p>}
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription className="leading-6">{body}</DialogDescription>
+        </DialogHeader>
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>Could not save tutorial progress: {error}</AlertDescription>
+          </Alert>
+        )}
+        <DialogFooter>
           <Button variant="ghost" onClick={onSecondary} disabled={busy}>{secondaryLabel}</Button>
-          <Button ref={primaryRef} onClick={onPrimary} disabled={busy}>{primaryLabel}</Button>
-        </div>
+          <Button ref={primaryRef} onClick={onPrimary} disabled={busy}>
+            {busy ? <Spinner data-icon="inline-start" /> : null}
+            {primaryLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -546,20 +574,27 @@ function Coachmark({
         aria-labelledby="onboarding-coachmark-title"
       >
         <div className="flex items-center justify-between gap-3">
-          <span className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Getting started · {progressIndex} of {STEP_IDS.length - 2}</span>
-          <button type="button" onClick={onSkipAll} className="close-button rounded-md p-1" aria-label="Skip entire tutorial">
-            <X className="h-4 w-4" />
-          </button>
+          <span className="text-xs font-semibold uppercase tracking-wide text-primary">Getting started · {progressIndex} of {STEP_IDS.length - 2}</span>
+          <Button type="button" variant="ghost" size="icon-sm" onClick={onSkipAll} aria-label="Skip entire tutorial">
+            <X />
+          </Button>
         </div>
-        <h2 id="onboarding-coachmark-title" className="mt-2 text-lg font-semibold fg-primary">{definition.title}</h2>
-        <p className="mt-1 text-sm leading-5 fg-secondary">{definition.body}</p>
-        {error && <p className="mt-2 text-xs text-rose-600 dark:text-rose-400" role="alert">Could not save progress: {error}</p>}
-        {!targetRect && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">The highlighted control is loading. You can skip this step if it does not apply.</p>}
+        <h2 id="onboarding-coachmark-title" className="mt-2 text-lg font-semibold">{definition.title}</h2>
+        <p className="mt-1 text-sm leading-5 text-muted-foreground">{definition.body}</p>
+        {error && (
+          <Alert variant="destructive" className="mt-2">
+            <AlertDescription>Could not save progress: {error}</AlertDescription>
+          </Alert>
+        )}
+        {!targetRect && <p className="mt-2 text-xs text-primary">The highlighted control is loading. You can skip this step if it does not apply.</p>}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-          <button type="button" onClick={onSkipAll} disabled={busy} className="text-xs fg-muted hover:fg-primary disabled:opacity-50">Skip all</button>
+          <Button type="button" variant="ghost" size="sm" onClick={onSkipAll} disabled={busy}>Skip all</Button>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={onSkip} disabled={busy}>Skip</Button>
-            <Button size="sm" onClick={onPrimary} disabled={busy || primaryDisabled}>{definition.action}</Button>
+            <Button size="sm" onClick={onPrimary} disabled={busy || primaryDisabled}>
+              {busy ? <Spinner data-icon="inline-start" /> : null}
+              {definition.action}
+            </Button>
           </div>
         </div>
       </section>

@@ -1,11 +1,20 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // The Vite config lives in src/ui/. We emit the production build to
 // /public at the repo root, which the Hono app serves as static SPA.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
   server: {
     port: 5173,
     host: '0.0.0.0',

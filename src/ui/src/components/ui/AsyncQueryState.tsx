@@ -1,5 +1,7 @@
 import { AlertCircle, RefreshCw } from 'lucide-react';
-import clsx from 'clsx';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 
 interface AsyncQueryStateProps {
   status: 'loading' | 'error';
@@ -21,31 +23,18 @@ export function AsyncQueryState({
   const loading = status === 'loading';
 
   return (
-    <div
-      className={clsx('card flex items-start gap-3 text-sm', className)}
-      role={loading ? 'status' : 'alert'}
-      aria-live="polite"
-    >
-      {loading ? (
-        <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin fg-muted" />
-      ) : (
-        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
-      )}
-      <div className="min-w-0 space-y-1">
-        <p className="font-semibold fg-primary">{title}</p>
-        {message && <p className="fg-muted">{message}</p>}
-        {!loading && onRetry && (
-          <button
-            type="button"
-            onClick={onRetry}
-            disabled={retrying}
-            className="mt-1 inline-flex min-h-9 items-center gap-1.5 rounded-md border border-default px-3 text-xs font-medium fg-primary hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-700"
-          >
-            <RefreshCw className={clsx('h-3.5 w-3.5', retrying && 'animate-spin')} />
+    <Alert variant={loading ? 'default' : 'destructive'} className={className}>
+      {loading ? <Spinner /> : <AlertCircle />}
+      <AlertTitle>{title}</AlertTitle>
+      {message ? <AlertDescription>{message}</AlertDescription> : null}
+      {!loading && onRetry ? (
+        <AlertAction>
+          <Button type="button" size="sm" variant="outline" onClick={onRetry} disabled={retrying}>
+            {retrying ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
             {retrying ? 'Retrying…' : 'Retry'}
-          </button>
-        )}
-      </div>
-    </div>
+          </Button>
+        </AlertAction>
+      ) : null}
+    </Alert>
   );
 }

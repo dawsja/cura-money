@@ -1,16 +1,34 @@
-import { useState, useMemo, useCallback, useEffect, useId, useRef } from 'react';
+import { useState, useMemo, useCallback, useId, useRef } from 'react';
 import { useQuery, useQueryClient, useMutation, keepPreviousData } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { formatDate, formatMoney, currentYearMonth } from '../lib/format';
-import { ArrowRight, BarChart3, Check, ChevronDown, ChevronRight, ExternalLink, Layers3, LoaderCircle, ReceiptText, Search, Undo2, X } from 'lucide-react';
+import { ArrowRight, BarChart3, Check, ChevronDown, ChevronRight, ExternalLink, Layers3, ReceiptText, Search, Undo2 } from 'lucide-react';
 import { MonthPicker } from '../components/MonthPicker';
 import { Progress } from '../components/ui/progress';
 import { BudgetSummaryBox } from '../components/BudgetSummaryBox';
 import { PaydownBudgetSection, type PaydownBudgetRow, type PaydownBudgetMeta, type PlannedCellStatus } from '../components/PaydownBudgetSection';
 import clsx from 'clsx';
-import { Dialog } from '../components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '../components/ui/input-group';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../components/ui/empty';
+import { Checkbox } from '../components/ui/checkbox';
+import { Field, FieldGroup, FieldLabel } from '../components/ui/field';
+import { Badge } from '../components/ui/badge';
+import { Spinner } from '../components/ui/spinner';
+import { AsyncQueryState } from '../components/ui/AsyncQueryState';
 
 interface MainCategory {
   id: string;
@@ -68,7 +86,7 @@ interface PaydownSnapshotResponse {
 const PAYDOWN_SECTION_ID = 'paydown-section';
 const draftKey = (yearMonth: string, id: string) => `${yearMonth}:${id}`;
 const actualKey = (category: string, subCategory?: string) => `${category}\0${subCategory ?? category}`;
-const PLANNED_INPUT_CLS = 'min-h-11 w-28 text-right tabular-nums rounded-md border border-control bg-surface fg-primary px-2 py-1.5 text-sm focus:border-amber-500 focus:outline-none disabled:cursor-wait disabled:opacity-60 sm:h-9 sm:min-h-0 sm:py-1';
+const PLANNED_INPUT_CLS = 'min-h-11 w-28 text-right tabular-nums sm:h-9 sm:min-h-0';
 
 export function Budget() {
   const qc = useQueryClient();
@@ -79,12 +97,6 @@ export function Budget() {
   const [paydownStatuses, setPaydownStatuses] = useState<Map<string, PlannedCellStatus>>(new Map());
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [drilldown, setDrilldown] = useState<BudgetDrilldown | null>(null);
-  const [futurePrompt, setFuturePrompt] = useState<{
-    subCategoryId: string;
-    yearMonth: string;
-    revision: string;
-  } | null>(null);
-  const [futureError, setFutureError] = useState<string | null>(null);
   const liveOverridesRef = useRef(liveOverrides);
   const paydownLiveRef = useRef(paydownLive);
   const budgetInFlight = useRef(new Set<string>());
@@ -182,15 +194,6 @@ export function Budget() {
     )?.transactions ?? [];
   }, [drilldown, activity.data]);
 
-  useEffect(() => {
-    if (!futurePrompt || applyFuture.isPending) return;
-    const timeout = setTimeout(() => {
-      setFuturePrompt(null);
-      setFutureError(null);
-    }, 8000);
-    return () => clearTimeout(timeout);
-  }, [futurePrompt, applyFuture.isPending]);
-
   const totals = useMemo(() => {
     let plannedIncome = 0;
     let earnedIncome = 0;
@@ -277,8 +280,6 @@ export function Budget() {
     budgetInFlight.current.add(key);
     setBudgetStatuses((prev) => new Map(prev).set(key, 'saving'));
     try {
-      setFuturePrompt((current) => current?.subCategoryId === id && current.yearMonth === ym ? null : current);
-      setFutureError(null);
       const result = await setBudget.mutateAsync({ subCategoryId: id, yearMonth: ym, planned: live });
       await qc.invalidateQueries({ queryKey: ['budget', ym] }, { throwOnError: true });
       window.dispatchEvent(new CustomEvent('cura:onboarding-budget-saved', { detail: { type } }));
@@ -290,14 +291,35 @@ export function Budget() {
           return next;
         });
         setBudgetStatuses((prev) => new Map(prev).set(key, 'saved'));
-        setFuturePrompt({ subCategoryId: id, yearMonth: ym, revision: result.revision });
+        toast('Budget saved for this month.', {
+          description: 'Apply this amount to future months?',
+          duration: 8000,
+          action: {
+            label: 'Apply',
+            onClick: () => {
+              applyFuture.mutate(
+                { subCategoryId: id, yearMonth: ym, revision: result.revision },
+                {
+                  onSuccess: () => {
+                    void qc.invalidateQueries({ queryKey: ['budget'] });
+                  },
+                  onError: (error) => toast.error((error as Error).message),
+                },
+              );
+            },
+          },
+          cancel: {
+            label: 'Not now',
+            onClick: () => {},
+          },
+        });
       }
     } catch {
       setBudgetStatuses((prev) => new Map(prev).set(key, 'error'));
     } finally {
       budgetInFlight.current.delete(key);
     }
-  }, [serverPlannedMap, setBudget, qc, ym, clearLiveOverride]);
+  }, [serverPlannedMap, setBudget, applyFuture, qc, ym, clearLiveOverride]);
 
   const setPaydownLiveOverride = useCallback((accountId: string, value: number) => {
     if (value < 0) return;
@@ -388,19 +410,20 @@ export function Budget() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="shrink-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold fg-primary">Budget</h1>
+    <div className="flex flex-col gap-4">
+      <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold text-foreground">Budget</h1>
         <MonthPicker value={ym} onChange={setYm} />
       </div>
 
       {loading ? (
-        <div className="card text-sm fg-muted text-center">Loading…</div>
+        <AsyncQueryState status="loading" title="Loading…" />
       ) : failed ? (
-        <div className="card text-center space-y-3" role="alert">
-          <p className="text-sm fg-secondary">Budget data could not be loaded.</p>
-          <button type="button" onClick={retry} className="btn-primary px-3 py-1.5 text-sm">Retry</button>
-        </div>
+        <AsyncQueryState
+          status="error"
+          title="Budget data could not be loaded."
+          onRetry={retry}
+        />
       ) : (
         /* Mobile: single-column flow (summary then sections) inside the
              main scroll. Desktop: two-column layout with the leftover
@@ -419,13 +442,15 @@ export function Budget() {
           />
         </div>
 
-        <div className="min-w-0 flex-1 space-y-6">
+        <div className="min-w-0 flex-1 flex flex-col gap-6">
           <>
               {refreshFailed && (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300" role="alert">
-                  <span>This month could not be refreshed.</span>
-                  <button type="button" onClick={retry} className="font-semibold hover:underline">Retry</button>
-                </div>
+                <Alert variant="destructive">
+                  <AlertDescription>This month could not be refreshed.</AlertDescription>
+                  <AlertAction>
+                    <Button type="button" size="sm" variant="outline" onClick={retry}>Retry</Button>
+                  </AlertAction>
+                </Alert>
               )}
               {incomeCats.length > 0 ? (
                 <BudgetSection
@@ -500,48 +525,6 @@ export function Budget() {
           onClose={closeDrilldown}
         />
       )}
-      {futurePrompt && (
-        <div className="app-toast fixed z-[60] max-w-sm rounded-lg border border-default bg-surface shadow-lg px-4 py-3 text-sm" role="status">
-          <div className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="font-medium fg-primary">Budget saved for this month.</p>
-              <p className="mt-1 fg-secondary">Apply this amount to future months?</p>
-              {futureError && <p className="mt-2 text-rose-600 dark:text-rose-400" role="alert">{futureError}</p>}
-              <div className="mt-3 flex items-center gap-3">
-                <button
-                  type="button"
-                  className="text-sm font-medium fg-secondary hover:underline"
-                  disabled={applyFuture.isPending}
-                  onClick={() => { setFuturePrompt(null); setFutureError(null); }}
-                >
-                  Not now
-                </button>
-                <button
-                  type="button"
-                  className="btn-primary px-3 py-1.5 text-sm"
-                  disabled={applyFuture.isPending}
-                  onClick={() => {
-                    const prompt = futurePrompt;
-                    setFutureError(null);
-                    applyFuture.mutate(prompt, {
-                      onSuccess: () => {
-                        void qc.invalidateQueries({ queryKey: ['budget'] });
-                        setFuturePrompt((current) => current?.revision === prompt.revision ? null : current);
-                      },
-                      onError: (error) => setFutureError((error as Error).message),
-                    });
-                  }}
-                >
-                  {applyFuture.isPending ? 'Applying…' : 'Apply'}
-                </button>
-              </div>
-            </div>
-            <button type="button" className="close-button flex h-11 w-11 items-center justify-center rounded-lg md:h-8 md:w-8" aria-label="Dismiss" onClick={() => setFuturePrompt(null)}>
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -565,13 +548,15 @@ interface BudgetSectionProps {
 
 function EmptyCategoriesCard({ type }: { type: 'income' | 'expense' }) {
   return (
-    <div className="card text-center text-sm fg-muted">
-      <BarChart3 className="mr-1 inline h-5 w-5 fg-muted" />
-      No {type} categories yet.{' '}
-      <Link to="/categories" className="font-medium text-amber-700 hover:underline dark:text-amber-300">
-        Add some on the Categories page.
-      </Link>
-    </div>
+    <Empty className="border border-dashed">
+      <EmptyHeader>
+        <EmptyMedia variant="icon"><BarChart3 /></EmptyMedia>
+        <EmptyTitle>No {type} categories yet</EmptyTitle>
+        <EmptyDescription>
+          <Link to="/categories">Add some on the Categories page.</Link>
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
@@ -601,54 +586,57 @@ function BudgetSection({
   const headerBg = title === 'Income' ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : '';
 
   return (
-    <section className="card">
-      <button
-        type="button"
-        onClick={() => onToggleCollapsed(title)}
-        className={clsx(
-          'w-full flex items-center justify-between px-4 py-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-t-lg',
-          headerBg,
-        )}
-        aria-expanded={!isCollapsed}
-      >
-        <h2 className="text-base font-semibold fg-primary flex items-center gap-2">
-          {isCollapsed ? <ChevronRight className="h-4 w-4 fg-muted" /> : <ChevronDown className="h-4 w-4 fg-muted" />}
-          {title}
-        </h2>
-        <div className="flex items-baseline gap-3 sm:gap-6 text-sm tabular-nums">
-          <div className="hidden sm:block">
-            <span className="fg-muted text-xs uppercase tracking-wider mr-2">Planned</span>
-            <span className="font-semibold fg-primary">{formatMoney(totalPlanned)}</span>
-          </div>
-          <div className="hidden sm:block">
-            <span className="fg-muted text-xs uppercase tracking-wider mr-2">Actual</span>
-            <span className="font-semibold fg-primary">{formatMoney(totalAmount)}</span>
-          </div>
-          {isIncome ? (
-            <div className="sm:hidden">
-              <span className="fg-muted text-xs uppercase tracking-wider mr-1">Actual</span>
-              <span className="font-semibold fg-primary">{formatMoney(totalAmount)}</span>
-            </div>
-          ) : (
-            <div>
-              <span className="fg-muted text-xs uppercase tracking-wider mr-1 sm:mr-2">Left</span>
-              <span className={clsx(
-                'font-semibold',
-                totalRemaining < 0
-                  ? 'text-rose-600 dark:text-rose-400'
-                  : 'text-emerald-600 dark:text-emerald-400',
-              )}>
-                {formatMoney(totalRemaining)}
-              </span>
-            </div>
+    <Card className="gap-0 py-0">
+      <CardHeader className="p-0">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => onToggleCollapsed(title)}
+          className={clsx(
+            'h-auto w-full justify-between rounded-t-xl px-4 py-2 whitespace-normal',
+            headerBg,
           )}
-        </div>
-      </button>
+          aria-expanded={!isCollapsed}
+        >
+          <CardTitle className="flex items-center gap-2">
+            {isCollapsed ? <ChevronRight data-icon="inline-start" className="text-muted-foreground" /> : <ChevronDown data-icon="inline-start" className="text-muted-foreground" />}
+            {title}
+          </CardTitle>
+          <div className="flex items-baseline gap-3 text-sm tabular-nums sm:gap-6">
+            <div className="hidden sm:block">
+              <span className="mr-2 text-xs uppercase tracking-wider text-muted-foreground">Planned</span>
+              <span className="font-semibold text-foreground">{formatMoney(totalPlanned)}</span>
+            </div>
+            <div className="hidden sm:block">
+              <span className="mr-2 text-xs uppercase tracking-wider text-muted-foreground">Actual</span>
+              <span className="font-semibold text-foreground">{formatMoney(totalAmount)}</span>
+            </div>
+            {isIncome ? (
+              <div className="sm:hidden">
+                <span className="mr-1 text-xs uppercase tracking-wider text-muted-foreground">Actual</span>
+                <span className="font-semibold text-foreground">{formatMoney(totalAmount)}</span>
+              </div>
+            ) : (
+              <div>
+                <span className="mr-1 text-xs uppercase tracking-wider text-muted-foreground sm:mr-2">Left</span>
+                <span className={clsx(
+                  'font-semibold',
+                  totalRemaining < 0
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : 'text-emerald-600 dark:text-emerald-400',
+                )}>
+                  {formatMoney(totalRemaining)}
+                </span>
+              </div>
+            )}
+          </div>
+        </Button>
+      </CardHeader>
 
       {!isCollapsed && (
-        <div className="px-2 sm:px-4 pb-3 pt-1">
+        <CardContent className="px-2 pt-1 pb-3 sm:px-4">
           {/* Mobile: card-list layout. Desktop: full table. */}
-          <div className="sm:hidden divide-y divide-slate-100 dark:divide-slate-700">
+          <div className="divide-y sm:hidden">
             {allSubs.map(({ sub, categoryName }, index) => {
               const planned = plannedMap.get(sub.id) ?? sub.planned;
               const amount = amountMap.get(actualKey(categoryName, sub.name)) ?? 0;
@@ -664,25 +652,26 @@ function BudgetSection({
                     ? 'amber'
                     : 'emerald';
               return (
-                <div key={sub.id} className="py-2.5 space-y-1.5">
+                <div key={sub.id} className="flex flex-col gap-1.5 py-2.5">
                   <div className="flex items-center justify-between gap-2">
-                    <button
+                    <Button
                       type="button"
+                      variant="link"
                       onClick={() => onOpenDrilldown({ category: categoryName, subCategory: sub.name, type: isIncome ? 'income' : 'expense' })}
                       title={`View transactions for ${sub.name}`}
-                      className="inline-flex min-w-0 cursor-pointer items-center gap-1 text-left text-sm font-medium fg-primary hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
+                      className="inline-flex h-auto min-w-0 items-center justify-start gap-1 px-0 text-left text-sm font-medium text-foreground"
                     >
                       <span className="truncate">{sub.name}</span>
-                      {txnCount > 0 && <span className="shrink-0 text-xs tabular-nums fg-muted">{txnCount}</span>}
-                      <ChevronRight className="h-3.5 w-3.5 shrink-0 fg-muted" aria-hidden="true" />
-                    </button>
+                      {txnCount > 0 && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{txnCount}</span>}
+                      <ChevronRight data-icon="inline-end" className="text-muted-foreground" aria-hidden="true" />
+                    </Button>
                     {isIncome ? (
-                      <span className="text-sm font-semibold tabular-nums shrink-0 fg-primary">
+                      <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
                         {formatMoney(amount)}
                       </span>
                     ) : (
                       <span className={clsx(
-                        'text-sm font-semibold tabular-nums shrink-0',
+                        'shrink-0 text-sm font-semibold tabular-nums',
                         remaining < 0
                           ? 'text-rose-600 dark:text-rose-400'
                           : 'text-emerald-600 dark:text-emerald-400',
@@ -700,8 +689,8 @@ function BudgetSection({
                   )}
                   <div className="flex items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-1">
-                      <span className="fg-muted">Planned</span>
-                      <input
+                      <span className="text-muted-foreground">Planned</span>
+                      <Input
                         data-onboarding-target={index === 0 ? (isIncome ? 'budget-plan-income' : 'budget-plan-expense') : undefined}
                         type="number"
                         min={0}
@@ -724,7 +713,7 @@ function BudgetSection({
                       />
                       <CellFeedback status={status} onRetry={() => onLiveCommit(sub.id)} />
                     </div>
-                    <span className="fg-secondary tabular-nums">
+                    <span className="tabular-nums text-muted-foreground">
                       {formatMoney(amount)} {amountType}
                     </span>
                   </div>
@@ -732,12 +721,12 @@ function BudgetSection({
               );
             })}
             {/* Mobile totals row */}
-            <div className="py-2.5 flex items-center justify-between gap-2">
-              <span className="text-sm font-semibold fg-primary">Total</span>
+            <div className="flex items-center justify-between gap-2 py-2.5">
+              <span className="text-sm font-semibold text-foreground">Total</span>
               <div className="flex items-center gap-3 text-xs tabular-nums">
-                <span className="fg-secondary">{formatMoney(totalPlanned)} planned</span>
+                <span className="text-muted-foreground">{formatMoney(totalPlanned)} planned</span>
                 {isIncome ? (
-                  <span className="text-sm font-semibold fg-primary">{formatMoney(totalAmount)}</span>
+                  <span className="text-sm font-semibold text-foreground">{formatMoney(totalAmount)}</span>
                 ) : (
                   <span className={clsx(
                     'text-sm font-semibold',
@@ -753,7 +742,7 @@ function BudgetSection({
           </div>
 
           {/* Desktop table — unchanged */}
-          <table className="hidden sm:table w-full text-sm table-fixed">
+          <table className="hidden w-full table-fixed text-sm sm:table">
             <colgroup>
               <col />
               <col className="w-32" />
@@ -761,14 +750,14 @@ function BudgetSection({
               {!isIncome && <col className="w-32" />}
             </colgroup>
             <thead>
-              <tr className="text-left text-xs uppercase fg-muted">
+              <tr className="text-left text-xs uppercase text-muted-foreground">
                 <th className="py-1">Sub-category</th>
-                <th className="py-1 text-right pl-6">Planned</th>
-                <th className="py-1 text-right pl-10">Actual</th>
-                {!isIncome && <th className="py-1 text-right pl-6">Remaining</th>}
+                <th className="py-1 pl-6 text-right">Planned</th>
+                <th className="py-1 pl-10 text-right">Actual</th>
+                {!isIncome && <th className="py-1 pl-6 text-right">Remaining</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+            <tbody className="divide-y">
               {allSubs.map(({ sub, categoryName }, index) => {
                 const planned = plannedMap.get(sub.id) ?? sub.planned;
                 const amount = amountMap.get(actualKey(categoryName, sub.name)) ?? 0;
@@ -785,17 +774,18 @@ function BudgetSection({
                       : 'emerald';
                 return (
                   <tr key={sub.id}>
-                    <td className="py-2 fg-primary">
-                      <button
+                    <td className="py-2 text-foreground">
+                      <Button
                         type="button"
+                        variant="link"
                         onClick={() => onOpenDrilldown({ category: categoryName, subCategory: sub.name, type: isIncome ? 'income' : 'expense' })}
                         title={`View transactions for ${sub.name}`}
-                        className="inline-flex max-w-full cursor-pointer items-center gap-1 text-left hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
+                        className="inline-flex h-auto max-w-full items-center justify-start gap-1 px-0 text-left"
                       >
                         <span className="truncate">{sub.name}</span>
-                        {txnCount > 0 && <span className="shrink-0 text-xs tabular-nums fg-muted">{txnCount}</span>}
-                        <ChevronRight className="h-3.5 w-3.5 shrink-0 fg-muted" aria-hidden="true" />
-                      </button>
+                        {txnCount > 0 && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{txnCount}</span>}
+                        <ChevronRight data-icon="inline-end" className="text-muted-foreground" aria-hidden="true" />
+                      </Button>
                       {showProgress && (
                         <Progress
                           value={progressPct}
@@ -804,8 +794,8 @@ function BudgetSection({
                         />
                       )}
                     </td>
-                    <td className="py-2 text-right pl-6">
-                      <input
+                    <td className="py-2 pl-6 text-right">
+                      <Input
                         data-onboarding-target={index === 0 ? (isIncome ? 'budget-plan-income' : 'budget-plan-expense') : undefined}
                         type="number"
                         min={0}
@@ -828,12 +818,12 @@ function BudgetSection({
                       />
                       <CellFeedback status={status} onRetry={() => onLiveCommit(sub.id)} />
                     </td>
-                    <td className="py-2 text-right pl-10">
-                      <div className="tabular-nums fg-secondary">{formatMoney(amount)}</div>
+                    <td className="py-2 pl-10 text-right">
+                      <div className="tabular-nums text-muted-foreground">{formatMoney(amount)}</div>
                     </td>
                     {!isIncome && (
                       <td className={clsx(
-                        'py-2 text-right font-semibold tabular-nums pl-6',
+                        'py-2 pl-6 text-right font-semibold tabular-nums',
                         remaining < 0
                           ? 'text-rose-600 dark:text-rose-400'
                           : 'text-emerald-600 dark:text-emerald-400',
@@ -845,12 +835,12 @@ function BudgetSection({
                 );
               })}
               <tr>
-                <td className="py-2 font-semibold fg-primary">Total {title}</td>
-                <td className="py-2 text-right font-semibold tabular-nums fg-secondary pl-6">{formatMoney(totalPlanned)}</td>
-                <td className="py-2 text-right font-semibold tabular-nums fg-secondary pl-10">{formatMoney(totalAmount)}</td>
+                <td className="py-2 font-semibold text-foreground">Total {title}</td>
+                <td className="py-2 pl-6 text-right font-semibold tabular-nums text-muted-foreground">{formatMoney(totalPlanned)}</td>
+                <td className="py-2 pl-10 text-right font-semibold tabular-nums text-muted-foreground">{formatMoney(totalAmount)}</td>
                 {!isIncome && (
                   <td className={clsx(
-                    'py-2 text-right font-semibold tabular-nums pl-6',
+                    'py-2 pl-6 text-right font-semibold tabular-nums',
                     totalRemaining < 0
                       ? 'text-rose-600 dark:text-rose-400'
                       : 'text-emerald-600 dark:text-emerald-400',
@@ -861,9 +851,9 @@ function BudgetSection({
               </tr>
             </tbody>
           </table>
-        </div>
+        </CardContent>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -881,8 +871,6 @@ function BudgetTransactionsModal({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const titleId = useId();
-  const closeRef = useRef<HTMLButtonElement>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [moveIds, setMoveIds] = useState<string[] | null>(null);
@@ -947,125 +935,119 @@ function BudgetTransactionsModal({
 
   return (
     <Dialog
-      aria-labelledby={titleId}
-      aria-busy={isPending}
-      onClose={closeViewer}
-      closeDisabled={isPending}
-      initialFocusRef={closeRef}
-      overlayClassName="dialog-overlay--dim"
-      contentClassName="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-xl border border-default bg-surface shadow-2xl"
+      open
+      onOpenChange={(open) => {
+        if (!open) closeViewer();
+      }}
     >
-        <div className="flex items-start justify-between gap-3 border-b border-default p-4 sm:p-5">
-          <div className="min-w-0">
-            <h2 id={titleId} className="truncate text-lg font-semibold fg-primary">{selection.subCategory}</h2>
-            <p className="mt-1 text-sm fg-muted">{selection.category} · {monthLabel}</p>
-          </div>
-          <button
-            ref={closeRef}
-            type="button"
-            onClick={closeViewer}
-            disabled={isPending}
-            className="close-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
-            aria-label="Close transaction details"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+      <DialogContent
+        aria-busy={isPending}
+        showCloseButton={!isPending}
+        className="flex max-h-[90vh] w-full max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        onEscapeKeyDown={(event) => { if (isPending) event.preventDefault(); }}
+        onPointerDownOutside={(event) => { if (isPending) event.preventDefault(); }}
+      >
+        <DialogHeader className="border-b p-4 pr-12 sm:p-5 sm:pr-12">
+          <DialogTitle className="truncate">{selection.subCategory}</DialogTitle>
+          <DialogDescription>{selection.category} · {monthLabel}</DialogDescription>
+        </DialogHeader>
 
-        <div className="border-b border-default bg-canvas-subtle px-4 py-3 sm:px-5">
+        <div className="border-b bg-muted/40 px-4 py-3 sm:px-5">
           <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="fg-secondary">{rows.length} transaction{rows.length === 1 ? '' : 's'}</span>
-            <span className="font-semibold tabular-nums fg-primary">{formatMoney(total)} {selection.type === 'income' ? 'earned' : 'spent'}</span>
+            <span className="text-muted-foreground">{rows.length} transaction{rows.length === 1 ? '' : 's'}</span>
+            <span className="font-semibold tabular-nums text-foreground">{formatMoney(total)} {selection.type === 'income' ? 'earned' : 'spent'}</span>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {eligibleIds.length > 0 && (
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 disabled={isPending}
-                className="flex h-11 items-center rounded-lg border border-default bg-surface px-3 text-sm font-medium fg-secondary hover:fg-primary"
                 onClick={() => {
                   setSelectMode((current) => !current);
                   setSelectedIds(new Set());
                 }}
               >
                 {selectMode ? 'Exit select' : 'Select transactions'}
-              </button>
+              </Button>
             )}
             {selectMode && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 disabled={isPending}
-                className="flex h-11 items-center rounded-lg px-3 text-sm font-medium fg-secondary hover:fg-primary"
                 onClick={() => setSelectedIds(allEligibleSelected ? new Set() : new Set(eligibleIds))}
               >
                 {allEligibleSelected ? 'Clear eligible' : 'Select all eligible'}
-              </button>
+              </Button>
             )}
-            <Link
-              to={transactionHref()}
-              className="ml-auto inline-flex h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-amber-700 hover:underline dark:text-amber-300"
-            >
-              View all in Transactions <ExternalLink className="h-4 w-4" aria-hidden="true" />
-            </Link>
+            <Button variant="link" asChild className="ml-auto">
+              <Link to={transactionHref()}>
+                View all in Transactions <ExternalLink data-icon="inline-end" />
+              </Link>
+            </Button>
           </div>
-          {selectMode && <p className="mt-2 text-xs fg-muted" aria-live="polite">{visibleSelectedCount} selected · Split transactions are not eligible.</p>}
+          {selectMode && <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">{visibleSelectedCount} selected · Split transactions are not eligible.</p>}
         </div>
 
         {(lastMove || undoError) && (
-          <div className="flex items-center justify-between gap-3 border-b border-default px-4 py-3 text-sm sm:px-5" role={undoError ? 'alert' : 'status'}>
-            <span className={undoError ? 'text-rose-600 dark:text-rose-400' : 'fg-secondary'}>
+          <Alert variant={undoError ? 'destructive' : 'default'} className="rounded-none border-x-0 border-t-0">
+            <AlertDescription>
               {undoError ?? `${lastMove?.ids.length ?? 0} transaction${lastMove?.ids.length === 1 ? '' : 's'} moved.`}
-            </span>
+            </AlertDescription>
             {lastMove && (
-              <button
-                ref={undoRef}
-                type="button"
-                disabled={isPending}
-                className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-amber-700 hover:underline disabled:cursor-wait disabled:opacity-60 dark:text-amber-300"
-                onClick={async () => {
-                  undo.reset();
-                  setUndoError(null);
-                  setUndoPending(true);
-                  try {
-                    const result = await undo.mutateAsync(lastMove);
-                    if (result.updated !== lastMove.ids.length) throw new Error('Not all transactions could be restored. Refresh and try again.');
-                    await invalidateFinancialQueries();
-                    setLastMove(null);
-                  } catch (error) {
-                    setUndoError((error as Error).message);
-                  } finally {
-                    setUndoPending(false);
-                  }
-                }}
-              >
-                {undoPending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Undo2 className="h-4 w-4" aria-hidden="true" />}
-                {undoPending ? 'Undoing…' : 'Undo'}
-              </button>
+              <AlertAction>
+                <Button
+                  ref={undoRef}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={isPending}
+                  onClick={async () => {
+                    undo.reset();
+                    setUndoError(null);
+                    setUndoPending(true);
+                    try {
+                      const result = await undo.mutateAsync(lastMove);
+                      if (result.updated !== lastMove.ids.length) throw new Error('Not all transactions could be restored. Refresh and try again.');
+                      await invalidateFinancialQueries();
+                      setLastMove(null);
+                    } catch (error) {
+                      setUndoError((error as Error).message);
+                    } finally {
+                      setUndoPending(false);
+                    }
+                  }}
+                >
+                  {undoPending ? <Spinner data-icon="inline-start" /> : <Undo2 data-icon="inline-start" />}
+                  {undoPending ? 'Undoing…' : 'Undo'}
+                </Button>
+              </AlertAction>
             )}
-          </div>
+          </Alert>
         )}
 
         <div className="min-h-0 overflow-y-auto">
           {rows.length === 0 ? (
-            <div className="flex flex-col items-center px-5 py-12 text-center">
-              <ReceiptText className="h-8 w-8 fg-muted" aria-hidden="true" />
-              <p className="mt-3 text-sm font-medium fg-primary">No transactions</p>
-              <p className="mt-1 text-xs fg-muted">Nothing currently contributes to this subcategory for {monthLabel}.</p>
-            </div>
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><ReceiptText /></EmptyMedia>
+                <EmptyTitle>No transactions</EmptyTitle>
+                <EmptyDescription>Nothing currently contributes to this subcategory for {monthLabel}.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
-            <ul className="divide-y divide-slate-100 dark:divide-slate-700">
+            <ul className="divide-y">
               {rows.map((row) => {
                 const checked = selectedIds.has(row.id);
                 return (
                   <li key={row.id} className="flex items-start gap-3 px-4 py-3 sm:px-5">
                     {selectMode && !row.hasSplits && (
                       <label className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-lg">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={checked}
                           disabled={isPending}
-                          onChange={() => toggleSelected(row.id)}
-                          className="h-5 w-5 accent-amber-600 disabled:cursor-wait disabled:opacity-50"
+                          onCheckedChange={() => toggleSelected(row.id)}
                           aria-label={`Select ${row.merchant || 'unknown merchant'} transaction from ${formatDate(row.date)}`}
                         />
                       </label>
@@ -1079,20 +1061,21 @@ function BudgetTransactionsModal({
                           : 'grid-cols-[minmax(0,1fr)_auto]',
                       )}>
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium fg-primary">{row.merchant || 'Unknown merchant'}</p>
-                          <p className="mt-0.5 text-xs fg-muted">{formatDate(row.date)} · {row.account || 'Unknown account'}</p>
+                          <p className="truncate text-sm font-medium text-foreground">{row.merchant || 'Unknown merchant'}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{formatDate(row.date)} · {row.account || 'Unknown account'}</p>
                         </div>
                         {!row.hasSplits && !selectMode && (
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="icon"
                             disabled={isPending}
-                            className="inline-flex h-11 w-11 items-center justify-center rounded-full fg-secondary hover:bg-slate-100 hover:fg-primary disabled:cursor-wait disabled:opacity-50 dark:hover:bg-slate-700"
                             onClick={() => openMove([row.id])}
                             aria-label={`Move ${row.merchant || 'unknown merchant'} transaction to another category`}
                             title="Move to another category"
                           >
-                            <ArrowRight className="h-5 w-5" aria-hidden="true" />
-                          </button>
+                            <ArrowRight />
+                          </Button>
                         )}
                         <span className={clsx(
                           'shrink-0 text-right text-sm font-semibold tabular-nums',
@@ -1106,16 +1089,15 @@ function BudgetTransactionsModal({
                       {row.hasSplits && (
                         <div className="mt-2 flex min-h-11 flex-wrap items-center gap-2">
                           <>
-                            <span className="inline-flex items-center gap-1 rounded-full border border-default bg-canvas-subtle px-2 py-1 text-xs font-semibold fg-secondary">
-                              <Layers3 className="h-3.5 w-3.5" aria-hidden="true" /> Split
-                            </span>
-                            <span className="text-xs fg-muted">{formatMoney(row.amount)} allocated of {formatMoney(row.parentAmount)}</span>
-                            <Link
-                              to={transactionHref(row.merchant || undefined)}
-                              className="ml-auto inline-flex h-11 items-center gap-1 rounded-lg px-2 text-sm font-medium text-amber-700 hover:underline dark:text-amber-300"
-                            >
-                              Open split <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                            </Link>
+                            <Badge variant="outline">
+                              <Layers3 data-icon="inline-start" /> Split
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">{formatMoney(row.amount)} allocated of {formatMoney(row.parentAmount)}</span>
+                            <Button variant="link" asChild className="ml-auto">
+                              <Link to={transactionHref(row.merchant || undefined)}>
+                                Open split <ExternalLink data-icon="inline-end" />
+                              </Link>
+                            </Button>
                           </>
                         </div>
                       )}
@@ -1128,16 +1110,17 @@ function BudgetTransactionsModal({
         </div>
 
         {selectMode && visibleSelectedCount > 0 && (
-          <div className="sticky bottom-0 border-t border-default bg-surface p-3 sm:p-4">
-            <button
+          <DialogFooter className="mx-0 mb-0">
+            <Button
               type="button"
               disabled={isPending}
-              className="btn-primary flex h-11 w-full items-center justify-center gap-2 px-4 text-sm sm:ml-auto sm:w-auto"
+              className="w-full sm:ml-auto sm:w-auto"
               onClick={() => openMove(eligibleIds.filter((id) => selectedIds.has(id)))}
             >
-              Move {visibleSelectedCount} transaction{visibleSelectedCount === 1 ? '' : 's'} <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
+              Move {visibleSelectedCount} transaction{visibleSelectedCount === 1 ? '' : 's'}
+              <ArrowRight data-icon="inline-end" />
+            </Button>
+          </DialogFooter>
         )}
 
         {moveIds && (
@@ -1173,6 +1156,7 @@ function BudgetTransactionsModal({
             }}
           />
         )}
+      </DialogContent>
     </Dialog>
   );
 }
@@ -1223,69 +1207,84 @@ function MoveTransactionsDialog({
 
   return (
     <Dialog
-      aria-labelledby={titleId}
-      aria-busy={isPending}
-      onClose={onClose}
-      closeDisabled={isPending}
-      initialFocusRef={searchRef}
-      overlayClassName="dialog-overlay--dim"
-      contentClassName="flex w-full max-w-lg flex-col overflow-hidden rounded-xl border border-default bg-surface shadow-2xl"
+      open
+      onOpenChange={(open) => {
+        if (!open && !isPending) onClose();
+      }}
     >
-      <div className="border-b border-default p-4 sm:p-5">
-        <h3 id={titleId} className="text-lg font-semibold fg-primary">Move {count} transaction{count === 1 ? '' : 's'}</h3>
-        <p className="mt-1 text-sm fg-muted">Choose the new budget category. Split transactions cannot be moved here.</p>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 p-4 sm:p-5">
-        <label htmlFor={`${titleId}-category-search`} className="text-sm font-medium fg-secondary">Find a destination</label>
-        <InputGroup className="h-11 disabled:cursor-wait">
-          <InputGroupAddon>
-            <Search className="h-4 w-4" aria-hidden="true" />
-          </InputGroupAddon>
-          <InputGroupInput
-            ref={searchRef}
-            id={`${titleId}-category-search`}
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search categories"
-            autoComplete="off"
-            disabled={isPending}
-            className="disabled:cursor-wait disabled:opacity-60"
-          />
-        </InputGroup>
+      <DialogContent
+        aria-busy={isPending}
+        showCloseButton={!isPending}
+        className="flex w-full max-w-lg flex-col overflow-hidden sm:max-w-lg"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          searchRef.current?.focus();
+        }}
+        onEscapeKeyDown={(event) => { if (isPending) event.preventDefault(); }}
+        onPointerDownOutside={(event) => { if (isPending) event.preventDefault(); }}
+      >
+        <DialogHeader>
+          <DialogTitle>Move {count} transaction{count === 1 ? '' : 's'}</DialogTitle>
+          <DialogDescription>Choose the new budget category. Split transactions cannot be moved here.</DialogDescription>
+        </DialogHeader>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor={`${titleId}-category-search`}>Find a destination</FieldLabel>
+            <InputGroup className="h-11">
+              <InputGroupAddon>
+                <Search aria-hidden="true" />
+              </InputGroupAddon>
+              <InputGroupInput
+                ref={searchRef}
+                id={`${titleId}-category-search`}
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search categories"
+                autoComplete="off"
+                disabled={isPending}
+              />
+            </InputGroup>
+          </Field>
+        </FieldGroup>
         <div
           role="radiogroup"
           aria-label="Destination category"
-          className="max-h-[min(50vh,22rem)] min-h-32 overflow-y-auto overscroll-contain rounded-lg border border-default bg-canvas-subtle p-2"
+          className="max-h-[min(50vh,22rem)] min-h-32 overflow-y-auto overscroll-contain rounded-lg border bg-muted/30 p-2"
         >
           {filteredCategories.length === 0 ? (
-            <p className="px-3 py-8 text-center text-sm fg-muted">No categories match your search.</p>
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>No categories match your search.</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           ) : filteredCategories.map((category) => (
             <section key={category.id} className="mb-3 last:mb-0" aria-labelledby={`${titleId}-${category.id}`}>
-              <h4 id={`${titleId}-${category.id}`} className="px-2 py-1 text-xs font-semibold uppercase tracking-wide fg-muted">
+              <h4 id={`${titleId}-${category.id}`} className="px-2 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                 {category.name}
               </h4>
-              <div className="space-y-1">
+              <div className="flex flex-col gap-1">
                 {category.subCategories.map((subCategory) => {
                   const selected = destination?.category === category.name && destination.subCategory === subCategory.name;
                   return (
-                    <button
+                    <Button
                       key={subCategory.id}
                       type="button"
+                      variant="ghost"
                       role="radio"
                       aria-checked={selected}
                       disabled={isPending}
                       onClick={() => setDestination({ category: category.name, subCategory: subCategory.name })}
                       className={clsx(
-                        'flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors disabled:cursor-wait disabled:opacity-60',
+                        'h-auto min-h-11 w-full justify-between px-3 py-2 text-left whitespace-normal',
                         selected
                           ? 'bg-amber-100 font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
-                          : 'fg-primary hover:bg-slate-100 dark:hover:bg-slate-700',
+                          : '',
                       )}
                     >
                       <span>{subCategory.name}</span>
-                      {selected && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
-                    </button>
+                      {selected && <Check className="shrink-0" aria-hidden="true" />}
+                    </Button>
                   );
                 })}
               </div>
@@ -1293,31 +1292,34 @@ function MoveTransactionsDialog({
           ))}
         </div>
         {destination && (
-          <p className="text-xs fg-secondary" aria-live="polite">
-            Moving to <span className="font-semibold fg-primary">{destination.category} › {destination.subCategory}</span>
+          <p className="text-xs text-muted-foreground" aria-live="polite">
+            Moving to <span className="font-semibold text-foreground">{destination.category} › {destination.subCategory}</span>
           </p>
         )}
-        {error && <p className="text-sm text-rose-600 dark:text-rose-400" role="alert">{error}</p>}
-      </div>
-      <div className="flex flex-col-reverse gap-2 border-t border-default p-4 sm:flex-row sm:justify-end">
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={onClose}
-          className="flex h-11 items-center justify-center rounded-lg border border-default px-4 text-sm font-medium fg-secondary disabled:cursor-wait disabled:opacity-60"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          disabled={!destination || isPending}
-          onClick={() => { if (destination) void onSave(destination); }}
-          className="btn-primary flex h-11 items-center justify-center gap-2 px-4 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isPending && <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />}
-          {isPending ? 'Moving…' : 'Save move'}
-        </button>
-      </div>
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isPending}
+            onClick={onClose}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={!destination || isPending}
+            onClick={() => { if (destination) void onSave(destination); }}
+          >
+            {isPending && <Spinner data-icon="inline-start" />}
+            {isPending ? 'Moving…' : 'Save move'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -1325,9 +1327,9 @@ function MoveTransactionsDialog({
 function CellFeedback({ status, onRetry }: { status?: PlannedCellStatus; onRetry: () => void }) {
   if (status !== 'error') return null;
   return (
-    <span className="block text-xs text-rose-600 dark:text-rose-400 mt-0.5">
+    <span className="mt-0.5 block text-xs text-destructive">
       Error{' '}
-      <button type="button" className="underline" onMouseDown={(e) => e.preventDefault()} onClick={onRetry}>Retry</button>
+      <Button type="button" variant="link" size="sm" className="h-auto px-0" onMouseDown={(e) => e.preventDefault()} onClick={onRetry}>Retry</Button>
     </span>
   );
 }

@@ -1,232 +1,382 @@
-/**
- * shadcn-style chart primitives — thin wrapper over `recharts` that:
- *   1. Declares a per-series color via CSS variables (`--color-{key}`)
- *      so light/dark mode swaps automatically. The `<ChartStyle>` block
- *      emits the variables based on the `ChartConfig` passed in.
- *   2. Exposes `ChartContainer` as a styled div that wraps the chart
- *      in the project's `card` surface so it matches the rest of the UI.
- *   3. Re-exports `ChartTooltip` (Recharts' Tooltip) and ships a
- *      `ChartTooltipContent` that knows how to render a labeled list
- *      of series values, skipping zero-value rows so paid-off
- *      accounts don't clutter the hover while preserving negatives.
- *
- * Usage mirrors the shadcn example:
- *
- *   const cfg: ChartConfig = {
- *     total:    { label: 'Total',    color: 'var(--chart-total)' },
- *     baseline: { label: 'Baseline', color: 'var(--chart-baseline)' },
- *     ...Object.fromEntries(accounts.map((a, i) => [a.id, { label: a.name, color: palette[i] }])),
- *   };
- *   <ChartContainer config={cfg} className="h-[360px]">
- *     <LineChart data={data}>
- *       <CartesianGrid vertical={false} />
- *       <XAxis dataKey="month" />
- *       <YAxis />
- *       <ChartTooltip content={<ChartTooltipContent config={cfg} />} />
- *       <Line dataKey="total" stroke="var(--color-total)" />
- *     </LineChart>
- *   </ChartContainer>
- */
-import { useId, type ReactElement } from 'react';
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import { currencySymbol, formatMoney } from '../../lib/format';
+import * as React from "react"
+import { cn } from "cn"
+import * as RechartsPrimitive from "recharts"
+import type { TooltipValueType } from "recharts"
+import { currencySymbol, formatMoney } from "../../lib/format"
 
-export interface ChartConfig {
-  [seriesKey: string]: {
-    label: string;
-    color: string;
-  };
+// Format: { THEME_NAME: CSS_SELECTOR }
+const THEMES = { light: "", dark: ".dark" } as const
+
+const INITIAL_DIMENSION = { width: 320, height: 200 } as const
+type TooltipNameType = number | string
+
+export type ChartConfig = Record<
+  string,
+  {
+    label?: React.ReactNode
+    icon?: React.ComponentType
+  } & (
+    | { color?: string; theme?: never }
+    | { color?: never; theme: Record<keyof typeof THEMES, string> }
+  )
+>
+
+type ChartContextProps = {
+  config: ChartConfig
 }
 
-/**
- * Container that sets up the CSS variables and lays the chart on the
- * project's `card` surface. Pass any sizing through `className`
- * (e.g. `h-[360px]` or `aspect-video`).
- *
- * The inner Recharts element should be a `<LineChart>` (or other
- * Recharts root) — we don't enforce a specific child type because
- * Recharts types its children with a discriminated union that's
- * awkward to forward.
- */
-export function ChartContainer({
-  config,
+const ChartContext = React.createContext<ChartContextProps | null>(null)
+
+function useChart() {
+  const context = React.useContext(ChartContext)
+
+  if (!context) {
+    throw new Error("useChart must be used within a <ChartContainer />")
+  }
+
+  return context
+}
+
+function ChartContainer({
+  id,
   className,
-  style,
-  framed = true,
-  'aria-hidden': ariaHidden,
   children,
-}: {
-  config: ChartConfig;
-  className?: string;
-  style?: React.CSSProperties;
-  /** Draw the chart on its own `card` surface. Pass `false` when the
-   *  caller already provides a card, so the plot is not double-framed. */
-  framed?: boolean;
-  'aria-hidden'?: boolean;
-  children: React.ReactNode;
+  config,
+  initialDimension = INITIAL_DIMENSION,
+  framed = true,
+  ...props
+}: React.ComponentProps<"div"> & {
+  config: ChartConfig
+  children: React.ComponentProps<
+    typeof RechartsPrimitive.ResponsiveContainer
+  >["children"]
+  initialDimension?: {
+    width: number
+    height: number
+  }
+  framed?: boolean
 }) {
-  const id = useId().replace(/:/g, '');
-  const chartId = `chart-${id}`;
+  const uniqueId = React.useId()
+  const chartId = `chart-${id ?? uniqueId.replace(/:/g, "")}`
+
   return (
-    <div
-      data-chart={chartId}
-      aria-hidden={ariaHidden}
-      style={style}
-      className={`${framed ? 'card' : 'w-full'} flex justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-[var(--chart-axis)] [&_.recharts-cartesian-grid_line]:stroke-[var(--chart-grid)] [&_.recharts-tooltip-cursor]:stroke-[var(--chart-axis)] ${className ?? ''}`}
-    >
-      <ChartStyle id={chartId} config={config} />
-      <ResponsiveContainer width="100%" height="100%">
-        {children as ReactElement}
-      </ResponsiveContainer>
-    </div>
-  );
+    <ChartContext.Provider value={{ config }}>
+      <div
+        data-slot="chart"
+        data-chart={chartId}
+        className={cn(
+          "flex aspect-video justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-hidden [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border [&_.recharts-sector]:outline-hidden [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-surface]:outline-hidden",
+          framed && "rounded-xl bg-card p-4 ring-1 ring-foreground/10",
+          className
+        )}
+        {...props}
+      >
+        <ChartStyle id={chartId} config={config} />
+        <RechartsPrimitive.ResponsiveContainer
+          initialDimension={initialDimension}
+        >
+          {children}
+        </RechartsPrimitive.ResponsiveContainer>
+      </div>
+    </ChartContext.Provider>
+  )
 }
 
-/**
- * Emit `:root { --color-{key}: {color}; }` for every entry in the
- * config. The shadcn pattern — components reference `var(--color-X)`
- * in their `stroke` / `fill` props, and we set the variable on the
- * chart's wrapper so the cascade keeps the value scoped.
- */
-function ChartStyle({ id, config }: { id: string; config: ChartConfig }) {
-  const rules = Object.entries(config)
-    .map(([key, c]) => `  --color-${key}: ${c.color};`)
-    .join('\n');
+const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
+  const colorConfig = Object.entries(config).filter(
+    ([, config]) => config.theme ?? config.color
+  )
+
+  if (!colorConfig.length) {
+    return null
+  }
+
   return (
     <style
       dangerouslySetInnerHTML={{
-        __html: `[data-chart="${id}"] {\n${rules}\n}\n.dark [data-chart="${id}"] {\n${rules}\n}`,
+        __html: Object.entries(THEMES)
+          .map(
+            ([theme, prefix]) => `
+${prefix} [data-chart=${id}] {
+${colorConfig
+  .map(([key, itemConfig]) => {
+    const color =
+      itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ??
+      itemConfig.color
+    return color ? `  --color-${key}: ${color};` : null
+  })
+  .join("\n")}
+}
+`
+          )
+          .join("\n"),
       }}
     />
-  );
+  )
 }
 
-export const ChartTooltip = Tooltip;
+const ChartTooltip = RechartsPrimitive.Tooltip
 
-interface TooltipPayloadEntry {
-  dataKey?: string | number;
-  name?: string | number;
-  value?: number | string;
-  color?: string;
-}
-
-/**
- * Props for `ChartTooltipContent`. Recharts 3.x passes these via the
- * `content` render-prop pattern, but typing it as a forwarded
- * `TooltipProps` is awkward because the official type doesn't expose
- * `payload` / `label` as direct props. We define the shape we
- * actually use.
- */
-export interface ChartTooltipContentProps {
-  active?: boolean;
-  payload?: TooltipPayloadEntry[];
-  label?: string | number;
-  config: ChartConfig;
-  valueFormatter?: (v: number) => string;
-  labelFormatter?: (l: string | number) => string;
-  hideLabel?: boolean;
-}
-
-/**
- * Labeled-list tooltip. Renders the X-axis label as the title, then
- * one row per series with its configured color dot and a
- * tabular-number formatted dollar value. Rows where the value is 0
- * or `null`/`undefined` are hidden — that keeps paid-off accounts
- * from cluttering the hover on a 30-year timeline.
- *
- * `valueFormatter` defaults to `formatMoney` (no decimals) — pass a
- * different one for non-currency charts. `labelFormatter` lets the
- * caller prettify the X-axis label (e.g. "2026-07" → "Jul 2026")
- * without rewriting the data shape.
- */
-export function ChartTooltipContent({
+function ChartTooltipContent({
   active,
   payload,
-  label,
-  config,
-  valueFormatter = (v: number) => formatMoney(v),
-  labelFormatter,
+  className,
+  indicator = "dot",
   hideLabel = false,
-}: ChartTooltipContentProps) {
-  if (!active || !payload || payload.length === 0) return null;
-  const items = payload.filter((p) =>
-    typeof p.value === 'number' && Number.isFinite(p.value) && p.value !== 0,
-  );
-  if (items.length === 0) return null;
-  const labelText = label !== undefined ? (labelFormatter ? labelFormatter(label) : String(label)) : undefined;
+  hideIndicator = false,
+  label,
+  labelFormatter,
+  labelClassName,
+  formatter,
+  color,
+  nameKey,
+  labelKey,
+  config: _config,
+  valueFormatter,
+}: React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
+  React.ComponentProps<"div"> & {
+    hideLabel?: boolean
+    hideIndicator?: boolean
+    indicator?: "line" | "dot" | "dashed"
+    nameKey?: string
+    labelKey?: string
+    config?: ChartConfig
+    valueFormatter?: (value: number) => string
+  } & Omit<
+    RechartsPrimitive.DefaultTooltipContentProps<
+      TooltipValueType,
+      TooltipNameType
+    >,
+    "accessibilityLayer"
+  >) {
+  const { config } = useChart()
+
+  const tooltipLabel = React.useMemo(() => {
+    if (hideLabel || !payload?.length) {
+      return null
+    }
+
+    const [item] = payload
+    const key = `${labelKey ?? item?.dataKey ?? item?.name ?? "value"}`
+    const itemConfig = getPayloadConfigFromPayload(config, item, key)
+    const value =
+      !labelKey && typeof label === "string"
+        ? (config[label]?.label ?? label)
+        : itemConfig?.label
+
+    if (labelFormatter) {
+      return (
+        <div className={cn("font-medium", labelClassName)}>
+          {labelFormatter(value, payload)}
+        </div>
+      )
+    }
+
+    if (!value) {
+      return null
+    }
+
+    return <div className={cn("font-medium", labelClassName)}>{value}</div>
+  }, [
+    label,
+    labelFormatter,
+    payload,
+    hideLabel,
+    labelClassName,
+    config,
+    labelKey,
+  ])
+
+  if (!active || !payload?.length) {
+    return null
+  }
+
+  const nestLabel = payload.length === 1 && indicator !== "dot"
+
   return (
     <div
-      className="rounded-lg border bg-[var(--chart-tooltip-bg)] text-[var(--chart-tooltip-fg)] shadow-lg p-3 text-xs min-w-[180px]"
-      style={{ borderColor: 'var(--chart-tooltip-border)' }}
-    >
-      {!hideLabel && labelText !== undefined && (
-        <div className="font-semibold mb-2">{labelText}</div>
+      className={cn(
+        "grid min-w-32 items-start gap-1.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl",
+        className
       )}
-      <div className="space-y-1">
-        {items.map((p) => {
-          const key = String(p.name ?? p.dataKey ?? '');
-          const meta = config[key];
-          if (!meta) return null;
-          const v = typeof p.value === 'number' ? p.value : 0;
-          return (
-            <div key={key} className="flex items-center justify-between gap-4">
-              <span className="flex items-center gap-2">
-                <span
-                  className="h-2 w-2 rounded-full shrink-0"
-                  style={{ backgroundColor: p.color ?? meta.color }}
-                />
-                <span style={{ color: 'var(--chart-tooltip-muted)' }}>{meta.label}</span>
-              </span>
-              <span className="tabular-nums font-medium">
-                {valueFormatter(v)}
-              </span>
-            </div>
-          );
-        })}
+    >
+      {!nestLabel ? tooltipLabel : null}
+      <div className="grid gap-1.5">
+        {payload
+          .filter((item) => item.type !== "none")
+          .map((item, index) => {
+            const key = `${nameKey ?? item.name ?? item.dataKey ?? "value"}`
+            const itemConfig = getPayloadConfigFromPayload(config, item, key)
+            const indicatorColor = color ?? item.payload?.fill ?? item.color
+
+            return (
+              <div
+                key={index}
+                className={cn(
+                  "flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground",
+                  indicator === "dot" && "items-center"
+                )}
+              >
+                {formatter && item?.value !== undefined && item.name ? (
+                  formatter(item.value, item.name, item, index, item.payload)
+                ) : (
+                  <>
+                    {itemConfig?.icon ? (
+                      <itemConfig.icon />
+                    ) : (
+                      !hideIndicator && (
+                        <div
+                          className={cn(
+                            "shrink-0 rounded-[2px] border-(--color-border) bg-(--color-bg)",
+                            {
+                              "h-2.5 w-2.5": indicator === "dot",
+                              "w-1": indicator === "line",
+                              "w-0 border-[1.5px] border-dashed bg-transparent":
+                                indicator === "dashed",
+                              "my-0.5": nestLabel && indicator === "dashed",
+                            }
+                          )}
+                          style={
+                            {
+                              "--color-bg": indicatorColor,
+                              "--color-border": indicatorColor,
+                            } as React.CSSProperties
+                          }
+                        />
+                      )
+                    )}
+                    <div
+                      className={cn(
+                        "flex flex-1 justify-between leading-none",
+                        nestLabel ? "items-end" : "items-center"
+                      )}
+                    >
+                      <div className="grid gap-1.5">
+                        {nestLabel ? tooltipLabel : null}
+                        <span className="text-muted-foreground">
+                          {itemConfig?.label ?? item.name}
+                        </span>
+                      </div>
+                      {item.value != null && (
+                        <span className="font-mono font-medium text-foreground tabular-nums">
+                          {typeof item.value === "number"
+                            ? (valueFormatter?.(item.value) ?? item.value.toLocaleString())
+                            : String(item.value)}
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )
+          })}
       </div>
     </div>
-  );
+  )
 }
 
-/**
- * Compact currency formatter for chart axes & ticks. Switches to $K / $M
- * once values exceed $10,000 so the labels don't push the chart into 9
- * characters of "$1,234,567". Keeps at most one decimal in the compact
- * form, dropping it when it is zero so round steps read as "$2K".
- */
-export function formatShortMoney(n: number): string {
-  if (!Number.isFinite(n)) return '—';
-  const abs = Math.abs(n);
-  const sign = n < 0 ? '-' : '';
-  const sym = currencySymbol();
-  const compact = (value: number, digits: number) => Number(value.toFixed(digits)).toString();
-  if (abs >= 1_000_000) return `${sign}${sym}${compact(abs / 1_000_000, abs >= 10_000_000 ? 0 : 1)}M`;
-  if (abs >= 10_000) return `${sign}${sym}${compact(abs / 1_000, 0)}K`;
-  if (abs >= 1_000) return `${sign}${sym}${compact(abs / 1_000, 1)}K`;
-  return formatMoney(n, true);
+const ChartLegend = RechartsPrimitive.Legend
+
+function ChartLegendContent({
+  className,
+  hideIcon = false,
+  payload,
+  verticalAlign = "bottom",
+  nameKey,
+}: React.ComponentProps<"div"> & {
+  hideIcon?: boolean
+  nameKey?: string
+} & RechartsPrimitive.DefaultLegendContentProps) {
+  const { config } = useChart()
+
+  if (!payload?.length) {
+    return null
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-center gap-4",
+        verticalAlign === "top" ? "pb-3" : "pt-3",
+        className
+      )}
+    >
+      {payload
+        .filter((item) => item.type !== "none")
+        .map((item, index) => {
+          const key = `${nameKey ?? item.dataKey ?? "value"}`
+          const itemConfig = getPayloadConfigFromPayload(config, item, key)
+
+          return (
+            <div
+              key={index}
+              className={cn(
+                "flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground"
+              )}
+            >
+              {itemConfig?.icon && !hideIcon ? (
+                <itemConfig.icon />
+              ) : (
+                <div
+                  className="h-2 w-2 shrink-0 rounded-[2px]"
+                  style={{
+                    backgroundColor: item.color,
+                  }}
+                />
+              )}
+              {itemConfig?.label}
+            </div>
+          )
+        })}
+    </div>
+  )
 }
 
-/**
- * Re-export the most common Recharts pieces under the shadcn naming
- * so the consuming code reads like the example even though we're
- * not pulling in the full shadcn dependency.
- */
+function getPayloadConfigFromPayload(
+  config: ChartConfig,
+  payload: unknown,
+  key: string
+) {
+  if (typeof payload !== "object" || payload === null) {
+    return undefined
+  }
+
+  const payloadPayload =
+    "payload" in payload &&
+    typeof payload.payload === "object" &&
+    payload.payload !== null
+      ? payload.payload
+      : undefined
+
+  let configLabelKey: string = key
+
+  if (
+    key in payload &&
+    typeof payload[key as keyof typeof payload] === "string"
+  ) {
+    configLabelKey = payload[key as keyof typeof payload] as string
+  } else if (
+    payloadPayload &&
+    key in payloadPayload &&
+    typeof payloadPayload[key as keyof typeof payloadPayload] === "string"
+  ) {
+    configLabelKey = payloadPayload[
+      key as keyof typeof payloadPayload
+    ] as string
+  }
+
+  return configLabelKey in config ? config[configLabelKey] : config[key]
+}
+
+export {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
+  ChartStyle,
+}
+
 export {
   Area,
   AreaChart,
@@ -239,7 +389,18 @@ export {
   Pie,
   PieChart,
   ReferenceLine,
-  ResponsiveContainer,
   XAxis,
   YAxis,
-};
+} from "recharts"
+
+export function formatShortMoney(n: number): string {
+  if (!Number.isFinite(n)) return "—"
+  const abs = Math.abs(n)
+  const sign = n < 0 ? "-" : ""
+  const sym = currencySymbol()
+  const compact = (value: number, digits: number) => Number(value.toFixed(digits)).toString()
+  if (abs >= 1_000_000) return `${sign}${sym}${compact(abs / 1_000_000, abs >= 10_000_000 ? 0 : 1)}M`
+  if (abs >= 10_000) return `${sign}${sym}${compact(abs / 1_000, 0)}K`
+  if (abs >= 1_000) return `${sign}${sym}${compact(abs / 1_000, 1)}K`
+  return formatMoney(n, true)
+}

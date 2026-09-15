@@ -1,41 +1,15 @@
-/**
- * ReviewCarouselModal — one-at-a-time review flow for the bell.
- *
- * One slide per pending transaction. Each slide lets the user pick
- * a category / sub-category / type (matching the inline picker on
- * the Transactions page) and confirm with "Categorize", or accept
- * the imported suggestion without creating a rule.
- *
- * Internal state:
- *   - `idx`     — current slide index. Auto-advances on a successful
- *                  decision so the user clicks once to dispatch.
- *   - `editState` — a per-id cache of the user's edits. Carries over
- *                    between slides (typing for slide 2 doesn't affect
- *                    slide 3's defaults) and resets `idx` when the
- *                    user manually prev/next without dispatching.
- *
- * Empty-state handling:
- *   - `queue.length === 0` from the moment the modal opens: render
- *     an info panel ("nothing to review") with a Close button. This
- *     covers the transient state during the queue fetch.
- *   - Completion is based on the server's canonical pending count, not
- *     the loaded row slice or current slide index.
- *
- * Keyboard:
- *   - Escape  → close
- *   - ←/→     → prev / next slide (without dispatching)
- */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
   ChevronLeft,
   ChevronRight,
-  X,
+  CircleCheck,
+  Inbox,
+  MoreHorizontal,
 } from 'lucide-react';
-import clsx from 'clsx';
 import { api } from '../lib/api';
-import { formatMoney, formatDate } from '../lib/format';
+import { formatDate, formatMoney } from '../lib/format';
 import {
   confirmReviewedTransactionRule,
   createReviewedTransactionRule,
@@ -43,11 +17,56 @@ import {
   type ReviewRule,
   type ReviewTransaction,
 } from '../lib/reviews';
-import { ConfirmDialog } from './ui/confirm-dialog';
-import { Dialog } from './ui/dialog';
-
-const INPUT_CLS =
-  'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
+import { cn } from '@/lib/utils';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from '@/components/ui/field';
+import { Progress } from '@/components/ui/progress';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 type TxType = 'income' | 'expense' | 'transfer';
 
@@ -69,15 +88,17 @@ const TYPE_LABEL: Record<TxType, string> = {
   expense: 'Expense',
   transfer: 'Transfer',
 };
+
 const TYPE_SIGN: Record<TxType, string> = {
   income: '+',
   expense: '−',
   transfer: '⇄',
 };
-const TYPE_COLOR: Record<TxType, string> = {
+
+const TYPE_AMOUNT_CLASS: Record<TxType, string> = {
   income: 'text-emerald-600 dark:text-emerald-400',
   expense: 'text-rose-600 dark:text-rose-400',
-  transfer: 'text-slate-600 dark:text-slate-400',
+  transfer: 'text-muted-foreground',
 };
 
 function defaultEdit(tx: ReviewTransaction): EditState {
@@ -122,9 +143,8 @@ export function ReviewCarouselModal({
   onSkipAll,
 }: ReviewCarouselModalProps) {
   const queryClient = useQueryClient();
+  const rememberId = useId();
   const [idx, setIdx] = useState(0);
-  // Per-id edit cache. Cleared when the modal resets (queue empty +
-  // remount).
   const [edits, setEdits] = useState<Record<string, EditState>>({});
   const [err, setErr] = useState<string | null>(null);
   const [rememberRules, setRememberRules] = useState<Record<string, boolean>>({});
@@ -139,17 +159,12 @@ export function ReviewCarouselModal({
   } | null>(null);
   const [confirmAcceptAll, setConfirmAcceptAll] = useState(false);
 
-  // Categories are a sibling concern — same query as the Transactions
-  // page, shared via React Query so the cache is hot as soon as the
-  // user has visited any page.
   const cats = useQuery({
     queryKey: ['categories'],
     queryFn: () => api.get<MainCategory[]>('/api/categories'),
     staleTime: 60_000,
   });
 
-  // Keep the same position when the current row is removed, but clamp to
-  // the new last row when the user accepts the final visible slide.
   useEffect(() => {
     if (queue.length === 0) {
       setIdx(0);
@@ -161,55 +176,44 @@ export function ReviewCarouselModal({
   const currentIdx = Math.min(idx, Math.max(0, queue.length - 1));
   const slide = queue[currentIdx] ?? null;
   const edit = slide ? edits[slide.id] ?? defaultEdit(slide) : null;
+  const blocking = Boolean(ruleConfirmation || confirmAcceptAll || ruleOperation?.status === 'pending');
+  const closeLocked = isMutating || ruleOperation?.status === 'pending';
 
-  // Arrow navigation is modal-local; Escape and focus containment live in
-  // Overlay so nested confirmation dialogs do not also close this modal.
   useEffect(() => {
-    if (ruleConfirmation || ruleOperation || confirmAcceptAll) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === 'ArrowLeft') {
-        setIdx((p) => Math.max(0, p - 1));
-      }
-      if (e.key === 'ArrowRight') {
-        if (idx >= queue.length - 1) return;
-        setIdx((p) => p + 1);
-      }
+    if (blocking) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement) return;
+      if (event.target instanceof HTMLElement && event.target.closest('[data-slot="select-trigger"], [data-slot="select-content"]')) return;
+      if (event.key === 'ArrowLeft') setIdx((prev) => Math.max(0, prev - 1));
+      if (event.key === 'ArrowRight' && idx < queue.length - 1) setIdx((prev) => prev + 1);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [confirmAcceptAll, idx, queue.length, ruleConfirmation, ruleOperation]);
+  }, [blocking, idx, queue.length]);
 
-  const updateEdit = useCallback(
-    (id: string, patch: Partial<EditState>) => {
-      setEdits((prev) => {
-        const base = prev[id] ?? defaultEdit(queue.find((q) => q.id === id)!);
-        return { ...prev, [id]: { ...base, ...patch } };
-      });
-    },
-    [queue],
-  );
+  const updateEdit = useCallback((id: string, patch: Partial<EditState>) => {
+    setEdits((prev) => {
+      const current = queue.find((row) => row.id === id);
+      if (!current) return prev;
+      const base = prev[id] ?? defaultEdit(current);
+      return { ...prev, [id]: { ...base, ...patch } };
+    });
+  }, [queue]);
 
-  const handleSkip = useCallback(async () => {
-    if (!slide || isMutating) return;
-    setErr(null);
-    try {
-      await onDecide(slide.id, { action: 'skip' });
-    } catch (caught) {
-      setErr(caught instanceof Error ? caught.message : 'Could not accept the suggestion');
+  const visibleCats = useMemo(() => {
+    if (!edit || !cats.data) return [];
+    return cats.data.filter((category) => category.type === edit.type || category.name === 'Pay down goals');
+  }, [cats.data, edit]);
+
+  useEffect(() => {
+    if (!edit || !cats.data || !slide) return;
+    const valid = visibleCats.some((category) =>
+      category.name === edit.category && category.subCategories.some((sub) => sub.name === edit.subCategory),
+    );
+    if ((edit.category || edit.subCategory) && !valid) {
+      updateEdit(slide.id, { category: '', subCategory: '' });
     }
-  }, [slide, isMutating, onDecide]);
-
-  const handleSkipAll = useCallback(async () => {
-    if (isMutating || queue.length === 0) return;
-    setErr(null);
-    try {
-      await onSkipAll();
-    } catch (caught) {
-      setErr(caught instanceof Error ? caught.message : 'Could not accept all suggestions');
-      throw caught;
-    }
-  }, [isMutating, queue.length, onSkipAll]);
+  }, [cats.data, edit, slide, updateEdit, visibleCats]);
 
   const createScopedRule = useCallback(async (transactionId: string) => {
     setRuleOperation({ transactionId, status: 'pending' });
@@ -229,9 +233,29 @@ export function ReviewCarouselModal({
     }
   }, [queryClient]);
 
-  const handleCategorize = useCallback(async () => {
+  const handleSkip = useCallback(async () => {
     if (!slide || isMutating) return;
-    if (!edit?.category || !edit.subCategory) return;
+    setErr(null);
+    try {
+      await onDecide(slide.id, { action: 'skip' });
+    } catch (caught) {
+      setErr(caught instanceof Error ? caught.message : 'Could not keep the imported category.');
+    }
+  }, [isMutating, onDecide, slide]);
+
+  const handleSkipAll = useCallback(async () => {
+    if (isMutating || pendingCount === 0) return;
+    setErr(null);
+    try {
+      await onSkipAll();
+    } catch (caught) {
+      setErr(caught instanceof Error ? caught.message : 'Could not accept all suggestions.');
+      throw caught;
+    }
+  }, [isMutating, onSkipAll, pendingCount]);
+
+  const handleCategorize = useCallback(async () => {
+    if (!slide || isMutating || !edit?.category || !edit.subCategory) return;
     setErr(null);
     try {
       await onDecide(slide.id, {
@@ -241,455 +265,400 @@ export function ReviewCarouselModal({
         type: edit.type,
       });
     } catch (caught) {
-      setErr(caught instanceof Error ? caught.message : 'Could not save');
+      setErr(caught instanceof Error ? caught.message : 'Could not save this category.');
       return;
     }
     if (rememberRules[slide.id] === true) {
       await createScopedRule(slide.id);
     }
-  }, [slide, edit, isMutating, onDecide, rememberRules, createScopedRule]);
+  }, [createScopedRule, edit, isMutating, onDecide, rememberRules, slide]);
 
-  const isLoadingFirst = isLoading && !queueError;
-  const isFinished = !isLoading && pendingCount === 0 && completedCount > 0 && !isMutating;
   const total = completedCount + pendingCount;
+  const progress = total === 0 ? 0 : (completedCount / total) * 100;
+  const isLoadingFirst = isLoading && !queueError;
+  const isFinished = !isLoading && pendingCount === 0 && completedCount > 0 && !isMutating && !ruleOperation;
+  const isEmpty = !isLoading && queue.length === 0 && pendingCount === 0 && completedCount === 0 && !isMutating;
+  const waitingForRows = !isFinished && !isEmpty && !queueError && queue.length === 0 && !ruleOperation && (pendingCount > 0 || isMutating);
+  const reviewing = Boolean(slide && edit && !ruleOperation && !isLoadingFirst && !isFinished && !isEmpty);
+  const categoryValue = slide && edit?.category && edit.subCategory
+    ? JSON.stringify({ category: edit.category, subCategory: edit.subCategory })
+    : undefined;
 
-  // Dedupe and filter categories by the current edit's type — the
-  // Transactions page renders the same filter (type-scoped groupings).
-  const visibleCats = useMemo(() => {
-    if (!edit || !cats.data) return [];
-    return cats.data.filter((c) => c.type === edit.type || c.name === 'Pay down goals');
-  }, [cats.data, edit]);
+  const title = isFinished || isEmpty
+    ? 'All caught up'
+    : ruleOperation?.status === 'pending'
+      ? 'Creating rule'
+      : ruleOperation?.status === 'error'
+        ? 'Rule was not created'
+        : 'Review transactions';
 
-  // A type change can invalidate the selected leaf, so clear the full
-  // assignment rather than leaving a sub-category under the wrong parent.
-  useEffect(() => {
-    if (!edit || !cats.data) return;
-    const valid = visibleCats.some((c) =>
-      c.name === edit.category && c.subCategories.some((s) => s.name === edit.subCategory),
-    );
-    if ((edit.category || edit.subCategory) && !valid) {
-      updateEdit(slide!.id, { category: '', subCategory: '' });
-    }
-  }, [cats.data, edit?.type, edit?.category, edit?.subCategory, edit, slide, updateEdit, visibleCats]);
+  const description = isFinished
+    ? `You reviewed ${completedCount} transaction${completedCount === 1 ? '' : 's'}.`
+    : isEmpty
+      ? 'New SimpleFIN imports will wait here before they appear on Home.'
+      : ruleOperation?.status === 'pending'
+        ? 'The transaction is saved. Checking existing rules…'
+        : reviewing
+          ? `${pendingCount} remaining`
+          : 'Imported transactions that still need a category.';
 
-  // ----- Render branches ---------------------------------------------------
-
-  if (ruleConfirmation) {
-    return (
-      <ConfirmDialog
-        title={ruleConfirmation.rule.accountId ? 'Update existing scoped rule?' : 'Narrow existing broad rule?'}
-        confirmLabel={ruleConfirmation.rule.accountId ? 'Update rule' : 'Narrow rule'}
-        onConfirm={async () => {
-          const result = await confirmReviewedTransactionRule(ruleConfirmation.transactionId, ruleConfirmation.rule);
-          if (result.status === 'confirmation_required') {
-            setRuleConfirmation({ transactionId: ruleConfirmation.transactionId, rule: result.rule });
-            throw new Error('The matching rule changed. Review the updated rule and confirm again.');
-          }
-          queryClient.invalidateQueries({ queryKey: ['rules'] });
-        }}
-        onClose={() => setRuleConfirmation(null)}
-      >
-        <p>
-          The existing rule for <span className="font-medium fg-primary">{ruleConfirmation.rule.matchValue}</span>{' '}
-          currently sets {ruleConfirmation.rule.category}
-          {ruleConfirmation.rule.subCategory ? ` › ${ruleConfirmation.rule.subCategory}` : ''}.
-        </p>
-        <p>Confirming replaces it with the reviewed transaction&apos;s scoped conditions and assignment.</p>
-      </ConfirmDialog>
-    );
-  }
-
-  if (confirmAcceptAll) {
-    return (
-      <ConfirmDialog
-        title="Accept all suggestions?"
-        confirmLabel={`Accept all ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'}`}
-        onConfirm={async () => {
-          await handleSkipAll();
-          setConfirmAcceptAll(false);
-        }}
-        onClose={() => setConfirmAcceptAll(false)}
-      >
-        <p>
-          This will accept the imported category and type for {pendingCount} pending transaction{pendingCount === 1 ? '' : 's'} without creating rules.
-        </p>
-      </ConfirmDialog>
-    );
-  }
-
-  if (ruleOperation) {
-    return (
-      <Overlay
-        onClose={() => { if (ruleOperation.status === 'error') setRuleOperation(null); }}
-        closeDisabled={ruleOperation.status === 'pending'}
-      >
-        <div className="card w-full max-w-md space-y-3">
-          <h3 className="text-lg font-semibold fg-primary">
-            {ruleOperation.status === 'pending' ? 'Creating scoped rule' : 'Rule was not created'}
-          </h3>
-          {ruleOperation.status === 'pending' ? (
-            <p className="text-sm fg-secondary">The transaction is saved. Checking existing rules…</p>
-          ) : (
-            <>
-              <p className="text-sm fg-secondary">
-                The transaction was saved, but its rule failed: {ruleOperation.error}
-              </p>
-              <div className="flex justify-end gap-2">
-                <button type="button" onClick={() => setRuleOperation(null)} className="px-3 py-2 text-sm fg-tertiary">
-                  Continue without rule
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void createScopedRule(ruleOperation.transactionId)}
-                  className="btn-primary"
-                >
-                  Retry
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </Overlay>
-    );
-  }
-
-  if (isLoadingFirst) {
-    return (
-      <Overlay onClose={onClose}>
-        <div className="card w-full max-w-lg">
-          <div className="text-sm fg-muted">Loading review queue…</div>
-        </div>
-      </Overlay>
-    );
-  }
-
-  if (queueError && queue.length === 0) {
-    return (
-      <Overlay onClose={onClose}>
-        <div className="card w-full max-w-lg space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold fg-primary">Review queue unavailable</h3>
-            <CloseButton onClose={onClose} />
-          </div>
-          <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{queueError}</p>
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={onClose} className="px-3 py-2 text-sm fg-tertiary">Close</button>
-            <button type="button" onClick={() => void onRetryQueue()} className="btn-primary">Retry</button>
-          </div>
-        </div>
-      </Overlay>
-    );
-  }
-
-  if (queue.length === 0 && pendingCount === 0 && completedCount === 0) {
-    return (
-      <Overlay onClose={onClose}>
-        <div className="card w-full max-w-lg space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold fg-primary">All caught up</h3>
-            <CloseButton onClose={onClose} />
-          </div>
-          <p className="text-sm fg-secondary">
-            Nothing here right now. New SimpleFIN imports will land here for
-            confirmation before they show up on Home.
-          </p>
-          {err && <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p>}
-          <div className="flex justify-end">
-            <button type="button" onClick={onClose} className="btn-primary">
-              Got it
-            </button>
-          </div>
-        </div>
-      </Overlay>
-    );
-  }
-
-  if (isFinished) {
-    return (
-      <Overlay onClose={onClose}>
-        <div className="card w-full max-w-lg space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold fg-primary">All caught up</h3>
-            <CloseButton onClose={onClose} />
-          </div>
-          <p className="text-sm fg-secondary">
-            You've reviewed {completedCount} transaction{completedCount === 1 ? '' : 's'}.
-          </p>
-          {err && <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p>}
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              className="btn-primary flex items-center gap-2"
-            >
-              <Check className="h-4 w-4" />
-              Done
-            </button>
-          </div>
-        </div>
-      </Overlay>
-    );
-  }
-
-  if (queue.length === 0) {
-    return (
-      <Overlay onClose={onClose}>
-        <div className="card w-full max-w-lg space-y-3">
-          <div className="text-sm fg-muted">Loading the next pending transactions…</div>
-          {queueError && <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{queueError}</p>}
-          {queueError && <button type="button" onClick={() => void onRetryQueue()} className="btn-primary">Retry</button>}
-        </div>
-      </Overlay>
-    );
-  }
-
-  // Active slide.
   return (
-    <Overlay onClose={onClose} closeDisabled={isMutating}>
-      <div className="card w-full max-w-lg flex flex-col">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold fg-primary">
-            Review transactions
-            <span className="ml-2 text-xs fg-muted tabular-nums">
-              {completedCount} completed · {pendingCount} remaining · {total} total
-            </span>
-          </h3>
-          <CloseButton onClose={onClose} disabled={isMutating} />
-        </div>
+    <>
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open && !closeLocked && !blocking) onClose();
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-lg"
+          showCloseButton={!closeLocked}
+          onEscapeKeyDown={(event) => {
+            if (closeLocked || blocking) event.preventDefault();
+          }}
+          onInteractOutside={(event) => {
+            if (closeLocked || blocking) event.preventDefault();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
+          </DialogHeader>
 
-        {slide && edit && (
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <div className="text-xs fg-muted">{formatDate(slide.date)}</div>
-              <div className="text-xl font-semibold fg-primary leading-tight">
-                {slide.merchant}
-              </div>
-              <div className="text-sm fg-tertiary">{slide.account}</div>
+          {reviewing && total > 0 ? (
+            <div className="flex flex-col gap-2">
+              <Progress value={progress} className="h-1" />
+              <p className="text-xs text-muted-foreground tabular-nums">
+                {completedCount} of {total} reviewed
+              </p>
             </div>
+          ) : null}
 
-            <div className="flex items-baseline gap-3">
-              <div
-                className={clsx(
-                  'text-2xl font-semibold tabular-nums',
-                  TYPE_COLOR[edit.type],
-                )}
-              >
-                {TYPE_SIGN[edit.type]}
-                {formatMoney(slide.amount)}
-              </div>
+          {ruleOperation?.status === 'pending' ? (
+            <div className="flex items-center gap-3 rounded-lg border bg-muted/40 px-3 py-4 text-sm">
+              <Spinner />
+              <p className="text-muted-foreground">Saving a scoped merchant rule…</p>
             </div>
+          ) : null}
 
-            {slide.notes && (
-              <div className="text-sm fg-tertiary border-l-2 border-default pl-3">
-                {slide.notes}
-              </div>
-            )}
+          {ruleOperation?.status === 'error' ? (
+            <Alert variant="destructive">
+              <AlertTitle>The transaction was saved</AlertTitle>
+              <AlertDescription>
+                Its rule failed: {ruleOperation.error}
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
-            {/* Editor */}
-            <div className="grid grid-cols-1 gap-3">
-              <label className="block">
-                <span className="text-xs fg-secondary uppercase tracking-wide">
-                  Type
-                </span>
-                {/* Three pill buttons in a single row below the label,
-                    matching the layout the other form fields use
-                    (label on top, control below). `flex` (not inline-
-                    flex) keeps the row on its own line. */}
-                <div className="mt-1 flex gap-1.5">
-                  {(['income', 'expense', 'transfer'] as TxType[]).map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => updateEdit(slide.id, { type: t })}
-                      disabled={isMutating}
-                      className={clsx(
-                        'flex-1 inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50',
-                        edit.type === t
-                          ? 'bg-amber-500 text-slate-900 border-amber-500'
-                          : 'bg-surface fg-secondary border-default hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-400',
-                      )}
-                    >
-                      {TYPE_LABEL[t]}
-                    </button>
-                  ))}
-                </div>
-              </label>
+          {isLoadingFirst || waitingForRows ? <ReviewLoadingState /> : null}
 
-              <label className="flex items-start gap-2 rounded-lg border border-default bg-surface px-3 py-2 text-sm fg-secondary">
-                <input
-                  type="checkbox"
-                  checked={rememberRules[slide.id] === true}
-                  onChange={(event) => setRememberRules((current) => ({
-                    ...current,
-                    [slide.id]: event.target.checked,
-                  }))}
-                  disabled={isMutating}
-                  className="mt-0.5 h-4 w-4 accent-amber-500"
-                />
-                <span>
-                  {slide.sourceClassificationTrusted
-                    ? 'Create a scoped rule using this transaction\'s account, original type, and original category.'
-                    : 'Create an account-scoped rule. Original type/category was not retained for this older transaction.'}
-                </span>
-              </label>
+          {queueError && queue.length === 0 && !isLoadingFirst ? (
+            <Alert variant="destructive">
+              <AlertTitle>Could not load reviews</AlertTitle>
+              <AlertDescription>{queueError}</AlertDescription>
+              <AlertAction>
+                <Button type="button" size="sm" variant="outline" onClick={() => void onRetryQueue()}>
+                  Retry
+                </Button>
+              </AlertAction>
+            </Alert>
+          ) : null}
 
-              <label className="block">
-                <span className="text-xs fg-secondary uppercase tracking-wide">
-                  Category
-                </span>
-                <select
-                  value={edit.category && edit.subCategory
-                    ? JSON.stringify({ category: edit.category, subCategory: edit.subCategory })
-                    : ''}
-                  onChange={(e) => {
-                    if (!e.target.value) {
-                      updateEdit(slide.id, { category: '', subCategory: '' });
-                      return;
-                    }
-                    const selected = JSON.parse(e.target.value) as { category: string; subCategory: string };
-                    updateEdit(slide.id, selected);
-                  }}
-                  disabled={isMutating || (!cats.data && (cats.isLoading || cats.isError))}
-                  className={`mt-1 w-full ${INPUT_CLS}`}
-                >
-                  <option value="">{cats.isLoading ? 'Loading categories…' : 'Pick a category…'}</option>
-                  {visibleCats.map((c) => (
-                    <optgroup key={c.id} label={c.name}>
-                      {c.subCategories.map((s) => (
-                        <option
-                          key={s.id}
-                          value={JSON.stringify({ category: c.name, subCategory: s.name })}
-                        >
-                          {s.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-                {cats.isError && (
-                  <span className="mt-1 flex items-center justify-between gap-2 text-xs text-rose-600 dark:text-rose-400">
-                    Categories could not be loaded.
-                    <button type="button" onClick={() => void cats.refetch()} className="underline">Retry</button>
-                  </span>
-                )}
-              </label>
+          {isEmpty ? (
+            <Empty className="border-0 py-2">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Inbox />
+                </EmptyMedia>
+                <EmptyTitle>Nothing to review</EmptyTitle>
+                <EmptyDescription>
+                  New SimpleFIN imports will land here for confirmation before they show up on Home.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : null}
 
-              {err && (
-                <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p>
-              )}
-              {queueError && (
-                <p role="alert" className="flex items-center justify-between gap-2 text-sm text-rose-600 dark:text-rose-400">
-                  {queueError}
-                  <button type="button" onClick={() => void onRetryQueue()} className="underline">Retry queue</button>
+          {isFinished ? (
+            <Empty className="border-0 py-2">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <CircleCheck />
+                </EmptyMedia>
+                <EmptyTitle>You&apos;re all caught up</EmptyTitle>
+                <EmptyDescription>
+                  You reviewed {completedCount} transaction{completedCount === 1 ? '' : 's'}.
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button type="button" onClick={onClose}>
+                  <Check data-icon="inline-start" />
+                  Done
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : null}
+
+          {reviewing && slide && edit ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <p className="text-sm text-muted-foreground">
+                  {formatDate(slide.date)}
+                  <span className="px-1.5 text-border">·</span>
+                  {slide.account}
                 </p>
-              )}
-            </div>
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-lg font-semibold leading-tight">{slide.merchant}</h3>
+                  <Badge variant="outline">{TYPE_LABEL[edit.type]}</Badge>
+                </div>
+                <p className={cn('text-2xl font-semibold tabular-nums', TYPE_AMOUNT_CLASS[edit.type])}>
+                  {TYPE_SIGN[edit.type]}
+                  {formatMoney(slide.amount)}
+                </p>
+                {slide.notes ? (
+                  <p className="text-sm text-muted-foreground">{slide.notes}</p>
+                ) : null}
+              </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-default">
+              <Separator />
+
+              <FieldGroup className="gap-4">
+                <Field>
+                  <FieldLabel>Type</FieldLabel>
+                  <ToggleGroup
+                    type="single"
+                    value={edit.type}
+                    onValueChange={(value) => {
+                      if (value) updateEdit(slide.id, { type: value as TxType });
+                    }}
+                    variant="outline"
+                    className="w-full"
+                    disabled={isMutating}
+                  >
+                    {(['income', 'expense', 'transfer'] as const).map((type) => (
+                      <ToggleGroupItem key={type} value={type} className="flex-1">
+                        {TYPE_LABEL[type]}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </Field>
+
+                <Field>
+                  <FieldLabel>Category</FieldLabel>
+                  <Select
+                    value={categoryValue}
+                    onValueChange={(value) => {
+                      if (!value) {
+                        updateEdit(slide.id, { category: '', subCategory: '' });
+                        return;
+                      }
+                      const selected = JSON.parse(value) as { category: string; subCategory: string };
+                      updateEdit(slide.id, selected);
+                    }}
+                    disabled={isMutating || (!cats.data && (cats.isLoading || cats.isError))}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={cats.isLoading ? 'Loading categories…' : 'Pick a category…'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {visibleCats.map((category) => (
+                        <SelectGroup key={category.id}>
+                          <SelectLabel>{category.name}</SelectLabel>
+                          {category.subCategories.map((sub) => (
+                            <SelectItem
+                              key={sub.id}
+                              value={JSON.stringify({ category: category.name, subCategory: sub.name })}
+                            >
+                              {sub.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {cats.isError ? (
+                    <Alert variant="destructive">
+                      <AlertDescription>Categories could not be loaded.</AlertDescription>
+                      <AlertAction>
+                        <Button type="button" size="sm" variant="outline" onClick={() => void cats.refetch()}>
+                          Retry
+                        </Button>
+                      </AlertAction>
+                    </Alert>
+                  ) : null}
+                </Field>
+
+                <Field orientation="horizontal">
+                  <Checkbox
+                    id={rememberId}
+                    checked={rememberRules[slide.id] === true}
+                    onCheckedChange={(checked) => setRememberRules((current) => ({
+                      ...current,
+                      [slide.id]: checked === true,
+                    }))}
+                    disabled={isMutating}
+                  />
+                  <FieldContent>
+                    <FieldLabel htmlFor={rememberId}>Create a rule</FieldLabel>
+                    <FieldDescription>
+                      {slide.sourceClassificationTrusted
+                        ? 'Apply this category to the same merchant, account, and original type next time.'
+                        : 'Apply this category to the same merchant and account. Original type and category were not kept for this older transaction.'}
+                    </FieldDescription>
+                  </FieldContent>
+                </Field>
+
+                {err ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>{err}</AlertDescription>
+                  </Alert>
+                ) : null}
+                {queueError ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>{queueError}</AlertDescription>
+                    <AlertAction>
+                      <Button type="button" size="sm" variant="outline" onClick={() => void onRetryQueue()}>
+                        Retry queue
+                      </Button>
+                    </AlertAction>
+                  </Alert>
+                ) : null}
+              </FieldGroup>
+            </div>
+          ) : null}
+
+          {ruleOperation?.status === 'error' ? (
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRuleOperation(null)}>
+                Continue without rule
+              </Button>
+              <Button type="button" onClick={() => void createScopedRule(ruleOperation.transactionId)}>
+                Retry rule
+              </Button>
+            </DialogFooter>
+          ) : null}
+
+          {reviewing && slide && edit ? (
+            <DialogFooter className="sm:justify-between">
               <div className="flex items-center gap-1">
-                <button
+                <Button
                   type="button"
-                  onClick={() => setIdx((p) => Math.max(0, p - 1))}
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setIdx((prev) => Math.max(0, prev - 1))}
                   disabled={currentIdx === 0 || isMutating}
                   aria-label="Previous transaction"
-                  className="p-2 rounded-lg fg-muted hover:fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <button
+                  <ChevronLeft />
+                </Button>
+                <Button
                   type="button"
-                  onClick={() =>
-                    setIdx((p) => Math.min(queue.length - 1, p + 1))
-                  }
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setIdx((prev) => Math.min(queue.length - 1, prev + 1))}
                   disabled={currentIdx >= queue.length - 1 || isMutating}
                   aria-label="Next transaction"
-                  className="p-2 rounded-lg fg-muted hover:fg-secondary hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+                  <ChevronRight />
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" variant="ghost" size="icon" aria-label="More review actions" disabled={isMutating}>
+                      <MoreHorizontal />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuGroup>
+                      <DropdownMenuItem
+                        disabled={pendingCount === 0}
+                        onClick={() => setConfirmAcceptAll(true)}
+                      >
+                        Accept all suggestions
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
-
-              <div className="flex items-center gap-2">
-                <button
+              <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                <Button type="button" variant="outline" onClick={() => void handleSkip()} disabled={isMutating}>
+                  Keep suggestion
+                </Button>
+                <Button
                   type="button"
-                  onClick={() => setConfirmAcceptAll(true)}
-                  disabled={isMutating || pendingCount === 0}
-                  className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  Accept all suggestions
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSkip}
-                  disabled={isMutating}
-                  className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  Accept suggestion
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCategorize}
+                  onClick={() => void handleCategorize()}
                   disabled={isMutating || !edit.category || !edit.subCategory}
-                  className={clsx(
-                    'btn-primary flex items-center gap-1',
-                    'disabled:opacity-50 disabled:cursor-not-allowed',
-                  )}
                 >
-                  <Check className="h-4 w-4" />
-                  {isMutating ? 'Saving…' : rememberRules[slide.id] ? 'Categorize, create rule & next' : 'Categorize & next'}
-                </button>
+                  {isMutating ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
+                  {isMutating ? 'Saving…' : rememberRules[slide.id] ? 'Save with rule' : 'Save & next'}
+                </Button>
               </div>
-            </div>
-          </div>
-        )}
+            </DialogFooter>
+          ) : null}
 
-        {/* Dots row */}
-        <div className="flex items-center justify-center gap-1 mt-4">
-          {queue.map((transaction, i) => (
-            <button
-              key={transaction.id}
-              type="button"
-              onClick={() => setIdx(i)}
-              aria-label={`Go to transaction ${i + 1}`}
-              className={clsx(
-                'h-1.5 rounded-full transition-all',
-                i === currentIdx
-                  ? 'w-6 bg-amber-500'
-                  : i < currentIdx
-                    ? 'w-1.5 bg-amber-300 dark:bg-amber-700'
-                    : 'w-1.5 bg-slate-200 dark:bg-slate-700',
-              )}
-            />
-          ))}
-        </div>
+          {(isEmpty || (queueError && queue.length === 0 && !isLoadingFirst)) ? (
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose}>
+                Close
+              </Button>
+            </DialogFooter>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {confirmAcceptAll ? (
+        <ConfirmDialog
+          title="Accept all suggestions?"
+          confirmLabel={`Accept all ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'}`}
+          onConfirm={async () => {
+            await handleSkipAll();
+            setConfirmAcceptAll(false);
+          }}
+          onClose={() => setConfirmAcceptAll(false)}
+        >
+          <p>
+            This keeps the imported category and type for {pendingCount} pending
+            transaction{pendingCount === 1 ? '' : 's'} without creating rules.
+          </p>
+        </ConfirmDialog>
+      ) : null}
+
+      {ruleConfirmation ? (
+        <ConfirmDialog
+          title={ruleConfirmation.rule.accountId ? 'Update existing scoped rule?' : 'Narrow existing broad rule?'}
+          confirmLabel={ruleConfirmation.rule.accountId ? 'Update rule' : 'Narrow rule'}
+          onConfirm={async () => {
+            const result = await confirmReviewedTransactionRule(ruleConfirmation.transactionId, ruleConfirmation.rule);
+            if (result.status === 'confirmation_required') {
+              setRuleConfirmation({ transactionId: ruleConfirmation.transactionId, rule: result.rule });
+              throw new Error('The matching rule changed. Review the updated rule and confirm again.');
+            }
+            queryClient.invalidateQueries({ queryKey: ['rules'] });
+          }}
+          onClose={() => setRuleConfirmation(null)}
+        >
+          <p>
+            The existing rule for <span className="font-medium text-foreground">{ruleConfirmation.rule.matchValue}</span>
+            {' '}currently sets {ruleConfirmation.rule.category}
+            {ruleConfirmation.rule.subCategory ? ` › ${ruleConfirmation.rule.subCategory}` : ''}.
+          </p>
+          <p>Confirming replaces it with this transaction&apos;s scoped conditions and assignment.</p>
+        </ConfirmDialog>
+      ) : null}
+    </>
+  );
+}
+
+function ReviewLoadingState() {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-6 w-3/4" />
+        <Skeleton className="h-8 w-28" />
       </div>
-    </Overlay>
-  );
-}
-
-function Overlay({ children, onClose, closeDisabled = false }: { children: React.ReactNode; onClose: () => void; closeDisabled?: boolean }) {
-  return (
-    <Dialog
-      aria-label="Review transactions"
-      onClose={onClose}
-      closeDisabled={closeDisabled}
-      contentClassName="flex w-full max-w-lg justify-center"
-    >
-      {children}
-    </Dialog>
-  );
-}
-
-function CloseButton({ onClose, disabled = false }: { onClose: () => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClose}
-      disabled={disabled}
-      className="close-button rounded-lg p-2 disabled:opacity-50"
-      aria-label="Close"
-    >
-      <X className="h-4 w-4" />
-    </button>
+      <Separator />
+      <Skeleton className="h-9 w-full" />
+      <Skeleton className="h-9 w-full" />
+      <Skeleton className="h-14 w-full" />
+    </div>
   );
 }

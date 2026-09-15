@@ -26,7 +26,9 @@
  */
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { Button } from './ui/button';
 import { ChartContainer, ChartTooltip, formatShortMoney, type ChartConfig } from './ui/chart';
+import { Empty, EmptyHeader, EmptyTitle } from './ui/empty';
 import { formatMoney, monthYearLong, monthYearShort } from '../lib/format';
 
 export interface PayoffChartSeries {
@@ -92,13 +94,21 @@ export function PayoffProjectionChart({
   const series = model.series;
 
   if (projection.timeline.length === 0) {
-    return <div className="py-10 text-center text-sm fg-muted">No data yet.</div>;
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>No data yet.</EmptyTitle>
+        </EmptyHeader>
+      </Empty>
+    );
   }
   if (series.length === 0) {
     return (
-      <div className="py-10 text-center text-sm fg-muted">
-        No accounts included in paydown. Toggle one in the list below.
-      </div>
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>No accounts included in paydown. Toggle one in the list below.</EmptyTitle>
+        </EmptyHeader>
+      </Empty>
     );
   }
 
@@ -222,14 +232,15 @@ export function PayoffProjectionChart({
       <ul className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5">
         {series.map((item) => (
           <li key={item.id}>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onPointerEnter={() => setFocusKey(item.id)}
               onPointerLeave={() => setFocusKey(null)}
               onFocus={() => setFocusKey(item.id)}
               onBlur={() => setFocusKey(null)}
               aria-label={`Highlight ${item.name}`}
-              className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-xs fg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
             >
               {item.id === BASELINE_KEY ? (
                 <span className="inline-block w-3 shrink-0 border-t-2 border-dashed" style={{ borderColor: item.color }} />
@@ -237,7 +248,7 @@ export function PayoffProjectionChart({
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
               )}
               {item.name}
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
@@ -604,7 +615,7 @@ function PayoffTooltip({
       {rows.length === 0 ? (
         <div style={{ color: 'var(--chart-tooltip-muted)' }}>Debt-free</div>
       ) : (
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           {rows.map((row) => (
             <div key={row.key} className="flex items-center justify-between gap-4">
               <span className="flex items-center gap-2">

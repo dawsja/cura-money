@@ -18,11 +18,17 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } from 'motion/react';
 import { api } from '../lib/api';
 import { currencySymbol, formatMoney } from '../lib/format';
-import { Dialog } from '../components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
 import {
   PiggyBank,
   Plus,
-  X,
   Check,
   Pencil,
   Trash2,
@@ -36,7 +42,17 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { AsyncQueryState } from '../components/ui/AsyncQueryState';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../components/ui/empty';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '../components/ui/field';
+import { Input } from '../components/ui/input';
+import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from '../components/ui/input-group';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Spinner } from '../components/ui/spinner';
 import { GoalProgressBar } from '../components/GoalProgressBar';
 
 interface Goal {
@@ -56,7 +72,6 @@ interface Account {
   hidden: boolean;
 }
 
-const INPUT_CLS = 'rounded-lg border border-default bg-surface fg-primary placeholder-slate-400 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none';
 const MILESTONES = [25, 50, 75, 100] as const;
 
 export function SaveUp() {
@@ -74,8 +89,8 @@ export function SaveUp() {
 
   if (goals.isLoading || accounts.isLoading) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold fg-primary">Save up</h1>
+      <div className="flex flex-col gap-6">
+        <h1 className="text-2xl font-bold text-foreground">Save up</h1>
         <AsyncQueryState status="loading" title="Loading savings goals…" message="Fetching your goals and available accounts." />
       </div>
     );
@@ -83,8 +98,8 @@ export function SaveUp() {
 
   if (goals.isError || accounts.isError) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold fg-primary">Save up</h1>
+      <div className="flex flex-col gap-6">
+        <h1 className="text-2xl font-bold text-foreground">Save up</h1>
         <AsyncQueryState
           status="error"
           title="Could not load savings goals"
@@ -104,82 +119,85 @@ export function SaveUp() {
   const activeGoals = list.filter((goal) => goal.accountBalance === null || goal.accountBalance < goal.target);
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold fg-primary">Save up</h1>
-        <button
+        <h1 className="text-2xl font-bold text-foreground">Save up</h1>
+        <Button
+          type="button"
           onClick={() => setCreatingNew(true)}
           data-onboarding-target="saveup-new-goal"
-          className="btn-primary flex items-center gap-2"
         >
-          <Plus className="h-4 w-4" /> New goal
-        </button>
+          <Plus data-icon="inline-start" /> New goal
+        </Button>
       </div>
 
-      <p className="text-sm fg-tertiary max-w-xl">
+      <p className="max-w-xl text-sm text-muted-foreground">
         Pick a savings goal and the account you're stashing money in.
         The progress bar tracks that account's live balance — every
         dollar in counts toward your target.
       </p>
 
       {accList.length === 0 && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200" role="status">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <div>
-            <p className="text-sm font-semibold">A savings goal needs an eligible account</p>
-            <p className="mt-0.5 text-xs">
-              Add a cash, checking, savings, or investment account from Accounts, then return here to track its balance.
-            </p>
-          </div>
-        </div>
+        <Alert>
+          <AlertTriangle />
+          <AlertTitle>A savings goal needs an eligible account</AlertTitle>
+          <AlertDescription>
+            Add a cash, checking, savings, or investment account from Accounts, then return here to track its balance.
+          </AlertDescription>
+        </Alert>
       )}
 
       {list.length > 0 && (
-        <div className="flex items-center gap-3 rounded-lg border border-default bg-canvas-subtle px-4 py-3">
-          <div className={clsx(
-            'flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
-            reachedGoals.length > 0
-              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
-              : 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-          )}>
-            {reachedGoals.length > 0 ? <Sparkles className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
-          </div>
-          <div>
-            <div className="text-sm font-semibold fg-primary">
-              {reachedGoals.length} of {list.length} {list.length === 1 ? 'goal' : 'goals'} reached
+        <Card>
+          <CardContent className="flex items-center gap-3">
+            <div className={clsx(
+              'flex size-9 shrink-0 items-center justify-center rounded-full',
+              reachedGoals.length > 0
+                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+                : 'bg-primary/15 text-primary',
+            )}>
+              {reachedGoals.length > 0 ? <Sparkles className="size-4" /> : <TrendingUp className="size-4" />}
             </div>
-            <div className="text-xs fg-muted">
-              {reachedGoals.length === list.length
-                ? 'Every goal is funded. Nice work.'
-                : reachedGoals.length > 0
-                  ? `${list.length - reachedGoals.length} still in progress.`
-                  : 'Every contribution moves you closer.'}
+            <div>
+              <div className="text-sm font-semibold text-foreground">
+                {reachedGoals.length} of {list.length} {list.length === 1 ? 'goal' : 'goals'} reached
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {reachedGoals.length === list.length
+                  ? 'Every goal is funded. Nice work.'
+                  : reachedGoals.length > 0
+                    ? `${list.length - reachedGoals.length} still in progress.`
+                    : 'Every contribution moves you closer.'}
+              </div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       )}
 
       {list.length === 0 ? (
-        <div className="card flex flex-col items-center py-10 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-            <PiggyBank className="h-6 w-6" aria-hidden="true" />
-          </span>
-          <h2 className="mt-4 text-base font-semibold fg-primary">Start with one goal</h2>
-          <p className="mt-1 max-w-sm text-sm fg-secondary">
-            Choose what you're saving for and link the account whose balance should count toward it.
-          </p>
+        <Empty className="border border-dashed">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <PiggyBank />
+            </EmptyMedia>
+            <EmptyTitle>Start with one goal</EmptyTitle>
+            <EmptyDescription>
+              Choose what you're saving for and link the account whose balance should count toward it.
+            </EmptyDescription>
+          </EmptyHeader>
           {accList.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setCreatingNew(true)}
-              className="btn-primary mt-5 flex items-center gap-2"
-            >
-              <Plus className="h-4 w-4" aria-hidden="true" /> Create your first goal
-            </button>
+            <EmptyContent>
+              <Button
+                type="button"
+                onClick={() => setCreatingNew(true)}
+              >
+                <Plus data-icon="inline-start" aria-hidden="true" /> Create your first goal
+              </Button>
+            </EmptyContent>
           )}
-        </div>
+        </Empty>
       ) : (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-6">
           {activeGoals.length > 0 && (
             <GoalGroup
               title={reachedGoals.length > 0 ? 'In progress' : undefined}
@@ -254,7 +272,7 @@ function GoalGroup({
 }) {
   return (
     <section>
-      {title && <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide fg-muted">{title}</h2>}
+      {title && <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h2>}
       <div className="grid gap-3 md:grid-cols-2">
         {goals.map((goal, index) => (
           <GoalCard
@@ -326,52 +344,58 @@ function GoalCard({
         y: { duration: 0.25, delay: index * 0.05 },
         scale: { duration: 0.55, ease: 'easeOut' },
       }}
-      className={clsx(
-        'group card w-full text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900',
-        reached ? 'card-goal-reached' : 'card-goal-active',
-      )}
+      className="w-full rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            {reached ? (
-              <motion.span
-                initial={celebrate ? { scale: 0.5, rotate: -12 } : false}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: 'spring', stiffness: 320, damping: 16, delay: 0.35 }}
-              >
-                <Trophy className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-              </motion.span>
-            ) : (
-              <Target className="h-4 w-4 shrink-0 text-amber-500" />
-            )}
-            <div className="font-semibold fg-primary truncate">{goal.name}</div>
-            {reached && (
-              <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
-                Goal reached
-              </span>
-            )}
+      <Card
+        className={clsx(
+          'card group transition-colors',
+          reached ? 'card-goal-reached' : 'card-goal-active',
+        )}
+      >
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              {reached ? (
+                <motion.span
+                  initial={celebrate ? { scale: 0.5, rotate: -12 } : false}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ type: 'spring', stiffness: 320, damping: 16, delay: 0.35 }}
+                >
+                  <Trophy className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                </motion.span>
+              ) : (
+                <Target className="size-4 shrink-0 text-primary" />
+              )}
+              <CardTitle className="truncate">{goal.name}</CardTitle>
+              {reached && (
+                <Badge className="shrink-0 border-transparent bg-emerald-50 text-[10px] text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                  Goal reached
+                </Badge>
+              )}
+            </div>
           </div>
+          <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground transition-colors group-hover:text-primary">
+            <Pencil className="size-3.5" aria-hidden="true" /> Manage
+          </span>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium fg-secondary transition-colors group-hover:text-amber-700 dark:group-hover:text-amber-300">
-          <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Manage
-        </span>
-      </div>
+      </CardHeader>
 
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs fg-muted">
+      <CardContent>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {goal.accountName ? (
           <span className="inline-flex min-w-0 items-center gap-1">
-            <WalletCards className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <WalletCards className="size-3.5 shrink-0" aria-hidden="true" />
             <span className="truncate">{goal.accountName}</span>
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 font-medium text-rose-600 dark:text-rose-400">
-            <Link2Off className="h-3.5 w-3.5" aria-hidden="true" /> Account removed
+          <span className="inline-flex items-center gap-1 font-medium text-destructive">
+            <Link2Off className="size-3.5" aria-hidden="true" /> Account removed
           </span>
         )}
         {sharedGoalCount > 0 && goal.accountId && (
           <span className="inline-flex items-center gap-1 text-sky-700 dark:text-sky-300">
-            <Link className="h-3.5 w-3.5" aria-hidden="true" />
+            <Link className="size-3.5" aria-hidden="true" />
             Shared with {sharedGoalCount} other {sharedGoalCount === 1 ? 'goal' : 'goals'}
           </span>
         )}
@@ -379,34 +403,34 @@ function GoalCard({
 
       <div className="mt-4 flex items-end justify-between gap-3 tabular-nums">
         <div>
-          <div className={clsx('text-xs font-semibold', reached ? 'text-emerald-600 dark:text-emerald-300' : 'fg-secondary')}>
+          <div className={clsx('text-xs font-semibold', reached ? 'text-emerald-600 dark:text-emerald-300' : 'text-muted-foreground')}>
             {goalStatusLabel(pct, reached)}
           </div>
-          <div className="mt-0.5 text-2xl font-bold fg-primary">
+          <div className="mt-0.5 text-2xl font-bold text-foreground">
             {formatMoney(hasAccount ? (reached ? current : remaining) : goal.target)}
           </div>
-          <div className="text-xs fg-muted">{reached ? 'saved' : hasAccount ? 'remaining' : 'target'}</div>
+          <div className="text-xs text-muted-foreground">{reached ? 'saved' : hasAccount ? 'remaining' : 'target'}</div>
         </div>
         <div className="text-right">
           <AnimatedPercentage value={pct} reached={reached} />
-          <div className="text-xs fg-muted">complete</div>
+          <div className="text-xs text-muted-foreground">complete</div>
         </div>
       </div>
 
       {hasAccount ? (
         <GoalProgressBar className="mt-3" value={pct} celebrate={celebrate} />
       ) : (
-        <div className="mt-3 flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400">
-          <Link2Off className="h-3.5 w-3.5" /> Pick an account to track this goal.
+        <div className="mt-3 flex items-center gap-1.5 text-xs text-destructive">
+          <Link2Off className="size-3.5" /> Pick an account to track this goal.
         </div>
       )}
 
       {hasAccount && (
         <div className="mt-3 flex items-start justify-between gap-3 text-xs tabular-nums">
-          <div className="fg-secondary">
+          <div className="text-muted-foreground">
             {reached ? `Target ${formatMoney(goal.target)}` : `${formatMoney(current)} saved of ${formatMoney(goal.target)}`}
           </div>
-          <div className="text-right fg-muted">
+          <div className="text-right text-muted-foreground">
             {reached
               ? current > goal.target
                 ? `${formatMoney(current - goal.target)} ahead of goal`
@@ -421,6 +445,8 @@ function GoalCard({
           </div>
         </div>
       )}
+      </CardContent>
+      </Card>
     </motion.button>
   );
 }
@@ -458,7 +484,7 @@ function AnimatedPercentage({ value, reached }: { value: number; reached: boolea
 
 function progressTextClass(value: number, reached: boolean): string {
   if (reached || value >= 75) return 'text-emerald-600 dark:text-emerald-300';
-  if (value >= 50) return 'text-amber-700 dark:text-amber-300';
+  if (value >= 50) return 'text-primary';
   if (value >= 25) return 'text-sky-700 dark:text-sky-300';
   return 'text-violet-600';
 }
@@ -518,174 +544,215 @@ function GoalModal({
   const targetNum = Number(target);
   const canSave = name.trim().length > 0 && Number.isFinite(targetNum) && targetNum > 0 && accountId.length > 0;
   const sharedWith = goals.filter((other) => other.id !== goal?.id && other.accountId === accountId);
+  const busy = save.isPending || del.isPending;
+  const targetInvalid = target !== '' && !(Number.isFinite(targetNum) && targetNum > 0);
+  const accountInvalid = accounts.length > 0 && accountId.length === 0;
 
   return (
     <Dialog
-      aria-label={isEdit ? 'Edit goal' : 'New goal'}
-      onClose={onClose}
-      closeDisabled={save.isPending || del.isPending}
-      contentClassName="card w-full max-w-sm"
+      open
+      onOpenChange={(open) => {
+        if (!open && !busy) onClose();
+      }}
     >
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold fg-primary">
-            {isEdit ? 'Edit goal' : 'New goal'}
-          </h3>
-          <button
-            onClick={onClose}
-            disabled={save.isPending || del.isPending}
-            className="close-button rounded-lg p-2"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+      <DialogContent
+        className="sm:max-w-md"
+        onPointerDownOutside={(event) => {
+          if (busy) event.preventDefault();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (busy) event.preventDefault();
+        }}
+      >
         <form
           onSubmit={(e) => {
             e.preventDefault();
             if (!canSave || save.isPending) return;
             save.mutate();
           }}
-          className="space-y-3"
+          className="contents"
         >
-          <label className="block">
-            <span className="text-sm fg-secondary">Goal name</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Emergency fund"
-              className={`mt-1 w-full ${INPUT_CLS}`}
-              required
-              autoFocus
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm fg-secondary">Target amount</span>
-            <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                placeholder="0"
-                className={`w-full ${INPUT_CLS} pl-7 pr-3 tabular-nums`}
+          <DialogHeader>
+            <DialogTitle>
+              {isEdit ? 'Edit goal' : 'New goal'}
+            </DialogTitle>
+            <DialogDescription>
+              {isEdit
+                ? 'Update this savings goal and the account whose balance should count toward it.'
+                : 'Choose what you are saving for and the account whose balance should count toward it.'}
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="goal-name">Goal name</FieldLabel>
+              <Input
+                id="goal-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Emergency fund"
                 required
+                autoFocus
+                disabled={busy}
               />
-            </div>
-          </label>
-          <label className="block">
-            <span className="text-sm fg-secondary">
-              Starting value <span className="fg-muted font-normal">(optional)</span>
-            </span>
-            <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 fg-muted text-sm">{currencySymbol()}</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={startingValue}
-                onChange={(e) => setStartingValue(e.target.value)}
-                placeholder="0"
-                className={`w-full ${INPUT_CLS} pl-7 pr-3 tabular-nums`}
-              />
-            </div>
-            <span className="text-[10px] fg-muted">The account balance when you started, used to show how much you've added since.</span>
-          </label>
-          <label className="block">
-            <span className="text-sm fg-secondary">Watch account</span>
-            <select
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              className={`mt-1 w-full ${INPUT_CLS}`}
-              required
-            >
-              <option value="">— Pick an account —</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.type})
-                </option>
-              ))}
-            </select>
-            <span className="text-[10px] fg-muted">
-              The account whose balance drives the progress bar.
-            </span>
-            {accounts.length === 0 && (
-              <span className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                No eligible accounts are available. Add one from Accounts before saving this goal.
-              </span>
-            )}
-            {sharedWith.length > 0 && (
-              <span className="mt-2 flex items-start gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-700 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                This account also tracks {sharedWith.map((other) => other.name).join(', ')}. Its full balance will count toward every linked goal.
-              </span>
-            )}
-          </label>
+            </Field>
+            <Field data-invalid={targetInvalid || undefined}>
+              <FieldLabel htmlFor="goal-target">Target amount</FieldLabel>
+              <InputGroup>
+                <InputGroupAddon>
+                  <InputGroupText>{currencySymbol()}</InputGroupText>
+                </InputGroupAddon>
+                <InputGroupInput
+                  id="goal-target"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                  placeholder="0"
+                  className="tabular-nums"
+                  required
+                  disabled={busy}
+                  aria-invalid={targetInvalid || undefined}
+                />
+              </InputGroup>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="goal-starting">
+                Starting value <span className="font-normal text-muted-foreground">(optional)</span>
+              </FieldLabel>
+              <InputGroup>
+                <InputGroupAddon>
+                  <InputGroupText>{currencySymbol()}</InputGroupText>
+                </InputGroupAddon>
+                <InputGroupInput
+                  id="goal-starting"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={startingValue}
+                  onChange={(e) => setStartingValue(e.target.value)}
+                  placeholder="0"
+                  className="tabular-nums"
+                  disabled={busy}
+                />
+              </InputGroup>
+              <FieldDescription>The account balance when you started, used to show how much you've added since.</FieldDescription>
+            </Field>
+            <Field data-invalid={accountInvalid || undefined}>
+              <FieldLabel htmlFor="goal-account">Watch account</FieldLabel>
+              <Select
+                value={accountId || undefined}
+                onValueChange={setAccountId}
+                disabled={busy}
+              >
+                <SelectTrigger id="goal-account" className="w-full" aria-invalid={accountInvalid || undefined}>
+                  <SelectValue placeholder="Pick an account" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name} ({a.type})
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <FieldDescription>
+                The account whose balance drives the progress bar.
+              </FieldDescription>
+              {accounts.length === 0 && (
+                <Alert>
+                  <AlertTriangle />
+                  <AlertDescription>
+                    No eligible accounts are available. Add one from Accounts before saving this goal.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {sharedWith.length > 0 && (
+                <Alert>
+                  <AlertTriangle />
+                  <AlertDescription>
+                    This account also tracks {sharedWith.map((other) => other.name).join(', ')}. Its full balance will count toward every linked goal.
+                  </AlertDescription>
+                </Alert>
+              )}
+            </Field>
+          </FieldGroup>
 
           {save.error && (
-            <div className="text-xs text-rose-600 dark:text-rose-400">
-              {(save.error as Error).message}
+            <Alert variant="destructive">
+              <AlertDescription>
+                {(save.error as Error).message}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Delete — only shown when editing an existing goal. Two-step
+              (button → confirm) so a stray click doesn't nuke data. The
+              control lives below the form fields so it's only reached
+              through the destructive intent path. */}
+          {isEdit && (
+            <div className="border-t border-border pt-4">
+              {!confirmingDelete ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full text-destructive hover:text-destructive"
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  <Trash2 data-icon="inline-start" /> Delete goal
+                </Button>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <Alert variant="destructive">
+                    <AlertTitle>Delete this goal?</AlertTitle>
+                    <AlertDescription>This can't be undone.</AlertDescription>
+                  </Alert>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setConfirmingDelete(false)}
+                      disabled={del.isPending}
+                    >
+                      Keep
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      className="flex-1"
+                      onClick={() => del.mutate()}
+                      disabled={del.isPending}
+                    >
+                      {del.isPending ? <Spinner data-icon="inline-start" /> : <Trash2 data-icon="inline-start" />}
+                      Delete
+                    </Button>
+                  </div>
+                  {del.error && (
+                    <Alert variant="destructive">
+                      <AlertDescription>
+                        {(del.error as Error).message}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} disabled={save.isPending || del.isPending} className="px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-50">
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
               Cancel
-            </button>
-            <button type="submit" disabled={!canSave || save.isPending} className="btn-primary flex items-center gap-1">
-              <Check className="h-4 w-4" /> {isEdit ? 'Save' : 'Create'}
-            </button>
-          </div>
+            </Button>
+            <Button type="submit" disabled={!canSave || save.isPending}>
+              {save.isPending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
+              {isEdit ? 'Save' : 'Create'}
+            </Button>
+          </DialogFooter>
         </form>
-
-        {/* Delete — only shown when editing an existing goal. Two-step
-            (button → confirm) so a stray click doesn't nuke data. The
-            button lives at the bottom of the modal so it's only reached
-            through the destructive intent path. */}
-        {isEdit && (
-          <div className="mt-4 pt-4 border-t border-default">
-            {!confirmingDelete ? (
-              <button
-                type="button"
-                onClick={() => setConfirmingDelete(true)}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg"
-              >
-                <Trash2 className="h-4 w-4" /> Delete goal
-              </button>
-            ) : (
-              <div className="space-y-2">
-                <div className="text-xs fg-tertiary text-center">
-                  Delete this goal? This can't be undone.
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setConfirmingDelete(false)}
-                    disabled={del.isPending}
-                    className="flex-1 px-3 py-2 text-sm fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
-                  >
-                    Keep
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => del.mutate()}
-                    disabled={del.isPending}
-                    className="flex-1 px-3 py-2 text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 rounded-lg flex items-center justify-center gap-2"
-                  >
-                    <Trash2 className="h-4 w-4" /> Delete
-                  </button>
-                </div>
-                {del.error && (
-                  <div className="text-xs text-rose-600 dark:text-rose-400 text-center">
-                    {(del.error as Error).message}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+      </DialogContent>
     </Dialog>
   );
 }

@@ -16,7 +16,7 @@
  * Transfers and hidden accounts are filtered out at the server (Hard
  * Rule #14) so every chart agrees with the Dashboard's totals.
  */
-import { useId, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -40,7 +40,20 @@ import {
   XAxis,
   YAxis,
 } from '../components/ui/chart';
-import { Dialog } from '../components/ui/dialog';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '../components/ui/alert';
+import { Button } from '../components/ui/button';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '../components/ui/empty';
+import { Skeleton } from '../components/ui/skeleton';
+import { Spinner } from '../components/ui/spinner';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { MonthPicker } from '../components/MonthPicker';
 import { SummaryCard } from '../components/SummaryCard';
 import { SortableWidgetList } from '../components/SortableWidgetList';
@@ -259,49 +272,61 @@ export function Reports() {
     }
     if (widget === 'cash-flow') {
       return (
-        <section className="card flex-1">
+        <Card className="flex-1">
           <ChartHeader eyebrow="Overview" title="Cash flow over time" subtitle="Income vs. expense, by month" />
-          <CashFlowChart data={cashFlow.data ?? []} loading={cashFlow.isPending} error={cashFlow.isError} onRetry={() => void cashFlow.refetch()} onDrilldown={drilldown} />
-        </section>
+          <CardContent>
+            <CashFlowChart data={cashFlow.data ?? []} loading={cashFlow.isPending} error={cashFlow.isError} onRetry={() => void cashFlow.refetch()} onDrilldown={drilldown} />
+          </CardContent>
+        </Card>
       );
     }
     if (widget === 'net-worth') {
       return (
-        <section className="card flex-1">
+        <Card className="flex-1">
           <ChartHeader eyebrow="Wealth" title="Estimated net worth over time" subtitle="Reconstructed from today’s account balances by reversing monthly income and spending; not historical balance snapshots" />
-          <NetWorthChart data={netWorth.data ?? []} loading={netWorth.isPending} error={netWorth.isError} onRetry={() => void netWorth.refetch()} />
-        </section>
+          <CardContent>
+            <NetWorthChart data={netWorth.data ?? []} loading={netWorth.isPending} error={netWorth.isError} onRetry={() => void netWorth.refetch()} />
+          </CardContent>
+        </Card>
       );
     }
     if (widget === 'spending-by-category') {
       return (
-        <section className="card flex-1">
+        <Card className="flex-1">
           <ChartHeader eyebrow="Spending" title="Spending by category" subtitle={spending.data ? `${monthYear(spendingMonth)} — ${formatMoney(spendingTotal)} total` : monthYear(spendingMonth)} right={<MonthPicker value={spendingMonth} onChange={setSpendingMonth} />} />
-          <SpendingDonut data={spending.data ?? []} loading={spending.isPending} error={spending.isError} onRetry={() => void spending.refetch()} month={spendingMonth} onDrilldown={drilldown} />
-        </section>
+          <CardContent>
+            <SpendingDonut data={spending.data ?? []} loading={spending.isPending} error={spending.isError} onRetry={() => void spending.refetch()} month={spendingMonth} onDrilldown={drilldown} />
+          </CardContent>
+        </Card>
       );
     }
     if (widget === 'top-merchants') {
       return (
-        <section className="card flex-1">
+        <Card className="flex-1">
           <ChartHeader eyebrow="Spending" title="Top merchants" subtitle="Where the most money went" />
-          <TopMerchantsChart data={topMerchants.data ?? []} loading={topMerchants.isPending} error={topMerchants.isError} onRetry={() => void topMerchants.refetch()} bounds={rangeBounds} onDrilldown={drilldown} />
-        </section>
+          <CardContent>
+            <TopMerchantsChart data={topMerchants.data ?? []} loading={topMerchants.isPending} error={topMerchants.isError} onRetry={() => void topMerchants.refetch()} bounds={rangeBounds} onDrilldown={drilldown} />
+          </CardContent>
+        </Card>
       );
     }
     if (widget === 'spending-trends') {
       return (
-        <section className="card flex-1">
+        <Card className="flex-1">
           <ChartHeader eyebrow="Spending" title="Spending trends by category" subtitle="How your largest expense categories change over time" />
-          <SpendingTrendsChart data={spendingTrends.data} loading={spendingTrends.isPending} error={spendingTrends.isError} onRetry={() => void spendingTrends.refetch()} onDrilldown={drilldown} />
-        </section>
+          <CardContent>
+            <SpendingTrendsChart data={spendingTrends.data} loading={spendingTrends.isPending} error={spendingTrends.isError} onRetry={() => void spendingTrends.refetch()} onDrilldown={drilldown} />
+          </CardContent>
+        </Card>
       );
     }
     return (
-      <section className="card flex-1">
+      <Card className="flex-1">
         <ChartHeader eyebrow="Spending" title="Monthly spending pace" subtitle={`${monthYear(spendingMonth)} compared with ${spendingPace.data ? monthYear(spendingPace.data.previousMonth) : 'the prior month'}`} right={<MonthPicker value={spendingMonth} onChange={setSpendingMonth} />} />
-        <SpendingPaceChart data={spendingPace.data} loading={spendingPace.isPending} error={spendingPace.isError} onRetry={() => void spendingPace.refetch()} onDrilldown={drilldown} />
-      </section>
+        <CardContent>
+          <SpendingPaceChart data={spendingPace.data} loading={spendingPace.isPending} error={spendingPace.isError} onRetry={() => void spendingPace.refetch()} onDrilldown={drilldown} />
+        </CardContent>
+      </Card>
     );
   };
 
@@ -318,61 +343,68 @@ export function Reports() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <div data-onboarding-target="reports-header">
         <div>
-          <h1 className="text-2xl font-bold fg-primary">Reports</h1>
-          <p className="text-sm fg-tertiary mt-1">Trends, breakdowns, and comparisons across your money. Transfers are excluded from every chart.</p>
+          <h1 className="text-2xl font-bold">Reports</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Trends, breakdowns, and comparisons across your money. Transfers are excluded from every chart.</p>
         </div>
       </div>
 
-      <section className="rounded-xl border border-default bg-surface p-3">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <Card>
+        <CardContent className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0 flex-1">
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide fg-muted">Report range</p>
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Report range</p>
             <RangeSelector value={range} onChange={setRange} />
           </div>
           <div className="flex flex-wrap items-center gap-2 md:justify-end">
           {!editing && (
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={() => setExportOpen(true)}
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-default bg-surface px-3 text-sm font-medium fg-secondary hover:border-amber-500 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-300"
             >
-              <Download className="h-4 w-4" aria-hidden="true" /> Export data
-            </button>
+              <Download data-icon="inline-start" /> Export data
+            </Button>
           )}
           {!editing && (
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={startEditing}
               disabled={!layout.data}
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-default bg-surface px-3 text-sm font-medium fg-secondary hover:border-amber-500 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:cursor-wait disabled:opacity-50 dark:hover:text-amber-300"
             >
-              <Pencil className="h-4 w-4" aria-hidden="true" /> Customize reports
-            </button>
+              <Pencil data-icon="inline-start" /> Customize reports
+            </Button>
           )}
           {editing && (
             <>
-              <button type="button" onClick={cancelEditing} disabled={saveLayout.isPending} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-default px-3 text-sm font-medium fg-secondary hover:bg-surface disabled:opacity-50">
-                <X className="h-4 w-4" /> Cancel
-              </button>
-              <button type="button" onClick={() => layout.data && saveLayout.mutate({ order: draftOrder, hidden: draftHidden })} disabled={saveLayout.isPending || !layout.data} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-amber-500 px-3 text-sm font-semibold text-slate-900 hover:bg-amber-600 disabled:opacity-50">
-                <Check className="h-4 w-4" /> {saveLayout.isPending ? 'Saving…' : 'Save'}
-              </button>
+              <Button type="button" variant="outline" onClick={cancelEditing} disabled={saveLayout.isPending}>
+                <X data-icon="inline-start" /> Cancel
+              </Button>
+              <Button type="button" onClick={() => layout.data && saveLayout.mutate({ order: draftOrder, hidden: draftHidden })} disabled={saveLayout.isPending || !layout.data}>
+                {saveLayout.isPending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
+                {saveLayout.isPending ? 'Saving…' : 'Save'}
+              </Button>
             </>
           )}
           </div>
-        </div>
-        {range === 'all' && <p className="mt-2 text-xs fg-muted">All-range drilldowns begin at the first displayed report month because reports do not expose the exact first transaction date.</p>}
-      </section>
+        </CardContent>
+        {range === 'all' && <CardContent className="pt-0 text-xs text-muted-foreground">All-range drilldowns begin at the first displayed report month because reports do not expose the exact first transaction date.</CardContent>}
+      </Card>
       {layout.isError && (
-        <p className="text-sm text-rose-600 dark:text-rose-400">
-          Could not load the reports layout.{' '}
-          <button type="button" onClick={() => void layout.refetch()} className="underline">Retry</button>
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription>Could not load the reports layout.</AlertDescription>
+          <AlertAction>
+            <Button type="button" size="sm" variant="outline" onClick={() => void layout.refetch()}>Retry</Button>
+          </AlertAction>
+        </Alert>
       )}
-      {saveLayout.isError && <p className="text-sm text-rose-600 dark:text-rose-400">Could not save the reports layout. Please try again.</p>}
+      {saveLayout.isError && (
+        <Alert variant="destructive">
+          <AlertDescription>Could not save the reports layout. Please try again.</AlertDescription>
+        </Alert>
+      )}
 
       <SortableWidgetList
         order={displayedOrder}
@@ -385,15 +417,14 @@ export function Reports() {
         hidden={displayedHidden}
         onToggleHidden={editing ? toggleHidden : undefined}
       />
-      {exportOpen && (
-        <ExportModal
-          retention={retention.data}
-          retentionLoading={retention.isPending}
-          retentionError={retention.isError}
-          onRetryRetention={() => void retention.refetch()}
-          onClose={() => setExportOpen(false)}
-        />
-      )}
+      <ExportModal
+        open={exportOpen}
+        retention={retention.data}
+        retentionLoading={retention.isPending}
+        retentionError={retention.isError}
+        onRetryRetention={() => void retention.refetch()}
+        onClose={() => setExportOpen(false)}
+      />
     </div>
   );
 }
@@ -401,99 +432,85 @@ export function Reports() {
 // ---- Sub-components -------------------------------------------------------
 
 function ExportModal({
+  open,
   retention,
   retentionLoading,
   retentionError,
   onRetryRetention,
   onClose,
 }: {
+  open: boolean;
   retention: RetentionPolicy | undefined;
   retentionLoading: boolean;
   retentionError: boolean;
   onRetryRetention: () => void;
   onClose: () => void;
 }) {
-  const titleId = useId();
-  const firstLinkRef = useRef<HTMLAnchorElement>(null);
-
   const download = () => window.setTimeout(onClose, 0);
 
   return (
-    <Dialog
-      aria-labelledby={titleId}
-      onClose={onClose}
-      initialFocusRef={firstLinkRef}
-      overlayClassName="dialog-overlay--dim"
-      contentClassName="card w-full max-w-lg"
-    >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 id={titleId} className="text-lg font-semibold fg-primary">Export your data</h2>
-            <p className="mt-1 text-sm fg-muted">Choose what you want to download.</p>
-          </div>
-          <button type="button" onClick={onClose} className="close-button flex h-11 w-11 shrink-0 items-center justify-center rounded-lg" aria-label="Close export dialog">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Export your data</DialogTitle>
+          <DialogDescription>Choose what you want to download.</DialogDescription>
+        </DialogHeader>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <a
-            ref={firstLinkRef}
             href="/api/data/transactions.csv"
             download
             onClick={download}
-            className="group rounded-xl border border-default bg-canvas-subtle p-4 transition-colors hover:border-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+            className="group rounded-xl border border-border bg-muted/50 p-4 transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <FileSpreadsheet className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-            <span className="mt-3 block text-sm font-semibold fg-primary group-hover:text-amber-700 dark:group-hover:text-amber-300">Transactions CSV</span>
-            <span className="mt-1 block text-xs fg-muted">A spreadsheet-ready ledger of all transactions.</span>
+            <FileSpreadsheet className="size-6 text-emerald-600 dark:text-emerald-400" />
+            <span className="mt-3 block text-sm font-semibold group-hover:text-primary">Transactions CSV</span>
+            <span className="mt-1 block text-xs text-muted-foreground">A spreadsheet-ready ledger of all transactions.</span>
           </a>
           <a
             href="/api/data/export.json"
             download
             onClick={download}
-            className="group rounded-xl border border-default bg-canvas-subtle p-4 transition-colors hover:border-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+            className="group rounded-xl border border-border bg-muted/50 p-4 transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <Archive className="h-6 w-6 text-sky-700 dark:text-sky-300" />
-            <span className="mt-3 block text-sm font-semibold fg-primary group-hover:text-amber-700 dark:group-hover:text-amber-300">Full JSON archive</span>
-            <span className="mt-1 block text-xs fg-muted">Accounts, transactions, budgets, goals, rules, and settings.</span>
+            <Archive className="size-6 text-sky-700 dark:text-sky-300" />
+            <span className="mt-3 block text-sm font-semibold group-hover:text-primary">Full JSON archive</span>
+            <span className="mt-1 block text-xs text-muted-foreground">Accounts, transactions, budgets, goals, rules, and settings.</span>
           </a>
         </div>
 
-        <div className="mt-4 rounded-lg border border-default bg-canvas-subtle px-3 py-2 text-xs fg-muted" aria-live="polite">
-          {retentionLoading && <p>Checking data retention policy…</p>}
+        <Alert aria-live="polite">
+          {retentionLoading && <AlertDescription>Checking data retention policy…</AlertDescription>}
           {retentionError && (
-            <p className="text-rose-600 dark:text-rose-400">
-              Retention policy unavailable.{' '}
-              <button type="button" onClick={onRetryRetention} className="underline">Retry</button>
-            </p>
+            <>
+              <AlertDescription>Retention policy unavailable.</AlertDescription>
+              <AlertAction>
+                <Button type="button" size="sm" variant="outline" onClick={onRetryRetention}>Retry</Button>
+              </AlertAction>
+            </>
           )}
-          {retention && <p>{retention.description}</p>}
-        </div>
+          {retention && <AlertDescription>{retention.description}</AlertDescription>}
+        </Alert>
+      </DialogContent>
     </Dialog>
   );
 }
 
 function RangeSelector({ value, onChange }: { value: Range; onChange: (r: Range) => void }) {
-  // Mobile: a full-width segmented control with comfortable touch
-  // targets. Desktop (md+) keeps the original compact inline pills.
   return (
-    <div className="flex w-full rounded-lg border border-default bg-surface p-1 gap-1 md:inline-flex md:w-auto">
+    <ToggleGroup
+      type="single"
+      value={value}
+      onValueChange={(next) => { if (next) onChange(next as Range); }}
+      variant="outline"
+      className="w-full md:w-auto"
+    >
       {RANGE_OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onChange(opt.value)}
-          className={clsx(
-            'flex-1 min-h-10 px-3 py-1.5 text-xs font-medium rounded-md transition-colors md:flex-none md:min-h-0',
-            value === opt.value
-              ? 'bg-amber-500 text-slate-900'
-              : 'fg-tertiary hover:bg-slate-100 dark:hover:bg-slate-700',
-          )}
-        >
+        <ToggleGroupItem key={opt.value} value={opt.value} className="flex-1 md:flex-none">
           {opt.label}
-        </button>
+        </ToggleGroupItem>
       ))}
-    </div>
+    </ToggleGroup>
   );
 }
 
@@ -509,33 +526,37 @@ function ChartHeader({
   right?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 mb-4">
-      <div>
-        {eyebrow && <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">{eyebrow}</p>}
-        <h2 className="text-lg font-semibold fg-primary">{title}</h2>
-        {subtitle && <p className="text-xs fg-muted mt-0.5">{subtitle}</p>}
-      </div>
-      {right}
-    </div>
+    <CardHeader>
+      {eyebrow && <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">{eyebrow}</p>}
+      <CardTitle>{title}</CardTitle>
+      {subtitle && <CardDescription>{subtitle}</CardDescription>}
+      {right ? <CardAction>{right}</CardAction> : null}
+    </CardHeader>
   );
 }
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-10 text-center">
-      <AlertCircle className="h-8 w-8 text-amber-500 mb-2" />
-      <p className="text-sm fg-muted">{message}</p>
-    </div>
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <AlertCircle />
+        </EmptyMedia>
+        <EmptyTitle>{message}</EmptyTitle>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
 function WidgetError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-rose-500/30 py-10 text-center">
-      <AlertCircle className="mb-2 h-8 w-8 text-rose-500" />
-      <p className="text-sm fg-secondary">{message}</p>
-      <button type="button" onClick={onRetry} className="mt-3 min-h-11 rounded-lg border border-default px-4 text-sm font-medium fg-primary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500">Retry</button>
-    </div>
+    <Alert variant="destructive">
+      <AlertCircle />
+      <AlertTitle>{message}</AlertTitle>
+      <AlertAction>
+        <Button type="button" size="sm" variant="outline" onClick={onRetry}>Retry</Button>
+      </AlertAction>
+    </Alert>
   );
 }
 
@@ -606,11 +627,15 @@ function ChartDataDetails({
 }
 
 function DrilldownButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return <button type="button" onClick={onClick} className="min-h-11 rounded-md border border-default px-2.5 py-1.5 text-xs fg-secondary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500">{label}</button>;
+  return (
+    <Button type="button" variant="outline" size="sm" onClick={onClick}>
+      {label}
+    </Button>
+  );
 }
 
 function ChartSkeleton({ height = 280 }: { height?: number }) {
-  return <div className="w-full rounded-lg bg-slate-100 dark:bg-slate-700/50 animate-pulse" style={{ height }} />;
+  return <Skeleton className="w-full rounded-lg" style={{ height }} />;
 }
 
 // ---- 1. Cash Flow Chart --------------------------------------------------
@@ -768,7 +793,7 @@ function SpendingTrendsChart({ data, loading, error, onRetry, onDrilldown }: { d
     config[category.key] = { label: category.name, color: SLICE_PALETTE[index % SLICE_PALETTE.length]! };
   });
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
        <ChartContainer config={config} className="h-[300px]" aria-hidden={true}>
         <BarChart data={data.series} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
           <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -892,7 +917,7 @@ function SpendingDonut({ data, loading, error, onRetry, month, onDrilldown }: { 
           </Pie>
         </PieChart>
       </ChartContainer>
-      <ul className="space-y-1.5 w-full lg:w-[180px] shrink-0">
+      <ul className="flex w-full shrink-0 flex-col gap-1.5 lg:w-[180px]">
         {data.slice(0, 6).map((c, i) => (
           <li key={c.category} className="flex items-center gap-2 text-xs">
             <span

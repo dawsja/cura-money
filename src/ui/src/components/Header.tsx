@@ -55,7 +55,7 @@ export function Header() {
     // content overflowed.
     <header
       className={clsx(
-        'app-header-safe relative z-40 shrink-0 flex min-h-[var(--app-header-height)] items-center justify-between bg-page/95 px-4 backdrop-blur-xl transition-[border-color,box-shadow] duration-200 md:min-h-0 md:bg-page md:px-8 md:py-3',
+        'app-header-safe relative z-40 flex min-h-[var(--app-header-height)] shrink-0 items-center justify-between overflow-visible bg-page/95 px-4 py-3 backdrop-blur-xl transition-[border-color,box-shadow] duration-200 md:bg-page md:px-8 md:py-4',
         // Mobile-only scrolled hairline + soft drop; md+ stays borderless.
         'border-b md:border-b-0 md:shadow-none',
         scrolled ? 'border-default shadow-[0_10px_18px_-16px_rgb(0_0_0/0.55)]' : 'border-transparent',
@@ -67,7 +67,7 @@ export function Header() {
       {/* On md+ screens the sidebar carries the brand; the right cluster
           holds the bell + profile menu in a single flex row. The bell
           sits to the left of the avatar per spec. */}
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex items-center gap-2 md:gap-3">
         <NotificationBell />
         <ProfileMenu />
       </div>

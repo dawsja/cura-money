@@ -8,15 +8,28 @@
  */
 import { useDeferredValue, useEffect, useState } from 'react';
 import { useQuery, useQueryClient, useMutation, type QueryClient } from '@tanstack/react-query';
-import { ArrowRight, Plus, Play, Trash2, Pencil, AlertTriangle, Check, X, Search, ListFilter, EllipsisVertical } from 'lucide-react';
+import { ArrowRight, Plus, Play, Trash2, Pencil, AlertTriangle, Search, ListFilter, EllipsisVertical } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '../lib/api';
 import {
   RuleFormModal,
   type RuleFormAccount,
   type RuleFormCategory,
 } from '../components/RuleFormModal';
-import { InputGroup, InputGroupAddon, InputGroupInput } from '../components/ui/input-group';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '../components/ui/alert';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../components/ui/empty';
+import { Field, FieldGroup, FieldLabel } from '../components/ui/field';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '../components/ui/input-group';
 import {
   Pagination,
   PaginationContent,
@@ -27,7 +40,16 @@ import {
   PaginationPrevious,
   pageWindow,
 } from '../components/ui/pagination';
-import clsx from 'clsx';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { Spinner } from '../components/ui/spinner';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 
 type RuleTxType = 'income' | 'expense' | 'transfer';
 
@@ -213,7 +235,7 @@ export function Rules() {
     mutationFn: (id: string) => api.post<{ ok: boolean; updated: number }>(`/api/rules/${id}/run`, {}),
     onSuccess: (result) => {
       invalidateRuleRunDependents(qc);
-      setToast(`Updated ${result.updated} transaction${result.updated === 1 ? '' : 's'}.`);
+      toast.success(`Updated ${result.updated} transaction${result.updated === 1 ? '' : 's'}.`);
     },
   });
 
@@ -221,7 +243,7 @@ export function Rules() {
     mutationFn: () => api.post<{ ok: boolean; updated: number }>('/api/rules/run-all', {}),
     onSuccess: (result) => {
       invalidateRuleRunDependents(qc);
-      setToast(`Updated ${result.updated} transaction${result.updated === 1 ? '' : 's'}.`);
+      toast.success(`Updated ${result.updated} transaction${result.updated === 1 ? '' : 's'}.`);
     },
   });
 
@@ -247,20 +269,8 @@ export function Rules() {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
-  // ---- Toast (matches Paydown's style) --------------------------------
-
-  const [toast, setToast] = useState<string | null>(null);
-  // Auto-dismiss the toast after 4s — same cadence as Paydown's
-  // Save-to-Budget toast. The toast here is informational (no decision
-  // to make), so the shorter timer is fine.
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(t);
-  }, [toast]);
-
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div data-onboarding-target="rules-intro">
           <h1 className="text-2xl font-bold fg-primary">Rules</h1>
@@ -271,68 +281,86 @@ export function Rules() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={() => setConfirmation({ kind: 'run-all' })}
             disabled={!hasRules || anyRunPending}
             title="Re-apply every rule to matching transactions in your history"
-            className={clsx(
-              'inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold',
-              'border border-default bg-surface fg-primary',
-              'hover:bg-slate-50 dark:hover:bg-slate-700',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-              'transition-colors min-h-[44px]',
-            )}
           >
-            <Play className="h-4 w-4" />
+            {runAllRules.isPending ? <Spinner data-icon="inline-start" /> : <Play data-icon="inline-start" />}
             {runAllRules.isPending ? 'Running…' : 'Run all rules'}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             onClick={() => setModal({ mode: 'create' })}
             disabled={cats.isLoading || accounts.isLoading || cats.isError || accounts.isError}
-            className="btn-primary inline-flex items-center gap-2 min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Plus className="h-4 w-4" />
+            <Plus data-icon="inline-start" />
             Add rule
-          </button>
+          </Button>
         </div>
       </div>
 
       {(cats.isError || accounts.isError) && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300" role="alert">
-          <span>Categories or accounts could not be loaded. Rule editing is unavailable.</span>
-          <button
-            type="button"
-            onClick={() => { void cats.refetch(); void accounts.refetch(); }}
-            className="font-semibold hover:underline"
-          >
-            Retry
-          </button>
-        </div>
+        <Alert variant="destructive">
+          <AlertTriangle />
+          <AlertTitle>Rule editing is unavailable</AlertTitle>
+          <AlertDescription>Categories or accounts could not be loaded.</AlertDescription>
+          <AlertAction>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => { void cats.refetch(); void accounts.refetch(); }}
+            >
+              Retry
+            </Button>
+          </AlertAction>
+        </Alert>
       )}
 
-      {/* List */}
-      <section className="card">
+      <Card>
         {rules.isLoading ? (
-          <div className="py-10 text-center text-sm fg-muted">Loading…</div>
+          <CardContent className="py-10">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><Spinner /></EmptyMedia>
+                <EmptyTitle>Loading rules…</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
+          </CardContent>
         ) : rules.isError ? (
-          <div className="py-8 text-center" role="alert">
-            <p className="text-sm text-rose-600 dark:text-rose-400">Could not load rules.</p>
-            <button type="button" className="btn-primary mt-3 px-3 py-1.5 text-sm" onClick={() => void rules.refetch()} disabled={rules.isFetching}>Retry</button>
-          </div>
+          <CardContent className="py-8">
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>Could not load rules.</AlertTitle>
+              <AlertAction>
+                <Button type="button" size="sm" onClick={() => void rules.refetch()} disabled={rules.isFetching}>
+                  {rules.isFetching ? <Spinner data-icon="inline-start" /> : null}
+                  Retry
+                </Button>
+              </AlertAction>
+            </Alert>
+          </CardContent>
         ) : rules.data?.length === 0 ? (
-          <div className="py-10 text-center text-sm fg-muted">
-            <AlertTriangle className="h-5 w-5 inline mr-1 fg-muted" />
-            No rules yet. Correct a transaction and choose Create scoped rule, or click{' '}
-            <span className="font-semibold fg-secondary">Add rule</span> to create one by hand.
-           </div>
-         ) : (
+          <CardContent className="py-10">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><AlertTriangle /></EmptyMedia>
+                <EmptyTitle>No rules yet</EmptyTitle>
+                <EmptyDescription>
+                  Correct a transaction and choose Create scoped rule, or click Add rule to create one by hand.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </CardContent>
+        ) : (
           <>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <CardHeader className="gap-3 sm:grid-cols-[1fr_auto]">
               <div className="flex items-baseline gap-2">
-                <h2 className="text-lg font-semibold fg-primary">All rules</h2>
-                <span className="text-xs fg-muted tabular-nums">
+                <CardTitle>All rules</CardTitle>
+                <span className="text-xs text-muted-foreground tabular-nums">
                   {filteredRules.length.toLocaleString()} of {(rules.data?.length ?? 0).toLocaleString()}
                 </span>
               </div>
@@ -351,89 +379,116 @@ export function Rules() {
                     aria-label="Search rules"
                   />
                 </InputGroup>
-                <button
+                <Button
                   type="button"
+                  variant={filtersOpen || activeFilterCount > 0 ? 'secondary' : 'outline'}
                   onClick={() => setFiltersOpen((value) => !value)}
                   aria-expanded={filtersOpen}
                   aria-controls="rule-filters"
-                  className={clsx(
-                    'inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm font-medium md:min-h-9',
-                    filtersOpen || activeFilterCount > 0
-                      ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                      : 'border-default bg-surface fg-secondary hover:bg-canvas-subtle',
-                  )}
                 >
-                  <ListFilter className="h-4 w-4" aria-hidden="true" />
+                  <ListFilter data-icon="inline-start" />
                   Filters{activeFilterCount > 0 ? ` · ${activeFilterCount}` : ''}
-                </button>
+                </Button>
               </div>
-            </div>
-
+            </CardHeader>
+            <CardContent>
             {filtersOpen && (
-              <div id="rule-filters" className="mb-4 grid gap-3 rounded-xl border border-default bg-canvas-subtle p-3 sm:grid-cols-3">
-                <label className="text-xs font-medium fg-secondary">
-                  Account scope
-                  <select
-                    value={accountFilter}
-                    onChange={(event) => { setAccountFilter(event.target.value); setPage(1); }}
-                    className="mt-1 min-h-11 w-full rounded-lg border border-control bg-surface px-3 text-sm fg-primary"
-                  >
-                    <option value="all">All account scopes</option>
-                    <option value="any">Any account only</option>
-                    {ruleFormAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-                  </select>
-                </label>
-                <label className="text-xs font-medium fg-secondary">
-                  Original type
-                  <select
-                    value={sourceTypeFilter}
-                    onChange={(event) => { setSourceTypeFilter(event.target.value as 'all' | RuleTxType); setPage(1); }}
-                    className="mt-1 min-h-11 w-full rounded-lg border border-control bg-surface px-3 text-sm fg-primary"
-                  >
-                    <option value="all">All original types</option>
-                    {(Object.keys(RULE_TYPE_LABEL) as RuleTxType[]).map((type) => <option key={type} value={type}>{RULE_TYPE_LABEL[type]}</option>)}
-                  </select>
-                </label>
-                <label className="text-xs font-medium fg-secondary">
-                  Result category
-                  <select
-                    value={categoryFilter}
-                    onChange={(event) => { setCategoryFilter(event.target.value); setPage(1); }}
-                    className="mt-1 min-h-11 w-full rounded-lg border border-control bg-surface px-3 text-sm fg-primary"
-                  >
-                    <option value="all">All result categories</option>
-                    {ruleFormCategories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}
-                  </select>
-                </label>
+              <div id="rule-filters" className="mb-4 rounded-xl border border-default bg-canvas-subtle p-3">
+                <FieldGroup className="gap-3 sm:grid sm:grid-cols-3">
+                  <Field>
+                    <FieldLabel>Account scope</FieldLabel>
+                    <Select
+                      value={accountFilter}
+                      onValueChange={(value) => { setAccountFilter(value); setPage(1); }}
+                    >
+                      <SelectTrigger className="w-full min-h-11 md:min-h-8">
+                        <SelectValue placeholder="All account scopes" />
+                      </SelectTrigger>
+                      <SelectContent position="popper">
+                        <SelectGroup>
+                          <SelectItem value="all">All account scopes</SelectItem>
+                          <SelectItem value="any">Any account only</SelectItem>
+                          {ruleFormAccounts.map((account) => (
+                            <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field>
+                    <FieldLabel>Original type</FieldLabel>
+                    <ToggleGroup
+                      type="single"
+                      variant="outline"
+                      value={sourceTypeFilter}
+                      onValueChange={(value) => {
+                        if (!value) return;
+                        setSourceTypeFilter(value as 'all' | RuleTxType);
+                        setPage(1);
+                      }}
+                      className="w-full flex-wrap"
+                    >
+                      <ToggleGroupItem value="all" className="flex-1">All</ToggleGroupItem>
+                      {(Object.keys(RULE_TYPE_LABEL) as RuleTxType[]).map((type) => (
+                        <ToggleGroupItem key={type} value={type} className="flex-1">
+                          {RULE_TYPE_LABEL[type]}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </Field>
+                  <Field>
+                    <FieldLabel>Result category</FieldLabel>
+                    <Select
+                      value={categoryFilter}
+                      onValueChange={(value) => { setCategoryFilter(value); setPage(1); }}
+                    >
+                      <SelectTrigger className="w-full min-h-11 md:min-h-8">
+                        <SelectValue placeholder="All result categories" />
+                      </SelectTrigger>
+                      <SelectContent position="popper">
+                        <SelectGroup>
+                          <SelectItem value="all">All result categories</SelectItem>
+                          {ruleFormCategories.map((category) => (
+                            <SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </FieldGroup>
                 {activeFilterCount > 0 && (
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    className="mt-2 h-auto px-0"
                     onClick={() => {
                       setAccountFilter('all');
                       setSourceTypeFilter('all');
                       setCategoryFilter('all');
                       setPage(1);
                     }}
-                    className="justify-self-start text-xs font-semibold text-amber-700 hover:underline dark:text-amber-300 sm:col-span-3"
                   >
                     Clear filters
-                  </button>
+                  </Button>
                 )}
               </div>
             )}
 
             {filteredRules.length === 0 ? (
-              <div className="py-10 text-center text-sm fg-muted">
-                No rules match your search or filters.
-              </div>
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>No matching rules</EmptyTitle>
+                  <EmptyDescription>No rules match your search or filters.</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
             ) : (
-              <ul className="divide-y divide-slate-100 dark:divide-slate-700">
+              <ul className="divide-y divide-border">
                 {pagedRules.map((r) => (
                   <li key={r.id} className="py-3">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                       <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
                         <div className="min-w-0">
-                          <p className="text-[10px] font-semibold uppercase tracking-wide fg-muted">When</p>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">When</p>
                           <p className="mt-0.5 truncate text-sm font-semibold fg-primary">{r.matchValue}</p>
                           <div className="mt-1.5 flex flex-wrap gap-1">
                             <span className="rounded-md border border-default bg-canvas-subtle px-1.5 py-0.5 text-[11px] fg-secondary">
@@ -451,58 +506,51 @@ export function Rules() {
                         </div>
                         <ArrowRight className="h-4 w-4 rotate-90 justify-self-center fg-muted sm:rotate-0" aria-hidden="true" />
                         <div className="min-w-0 rounded-lg bg-canvas-subtle px-3 py-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-wide fg-muted">Then set</p>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Then set</p>
                           <p className="mt-0.5 truncate text-sm font-semibold fg-primary">
                             {r.category}{r.subCategory ? ` › ${r.subCategory}` : ''}
                           </p>
-                          <p className="mt-1 text-xs fg-muted">{r.type ? RULE_TYPE_LABEL[r.type] : 'Keep transaction type'}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{r.type ? RULE_TYPE_LABEL[r.type] : 'Keep transaction type'}</p>
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center justify-end gap-1">
-                        <button
+                        <Button
                           type="button"
+                          variant="outline"
+                          size="sm"
                           onClick={() => setConfirmation({ kind: 'run', rule: r })}
                           disabled={anyRunPending}
                           title="Re-apply this rule to every existing matching transaction"
-                          className={clsx(
-                            'inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-xs font-medium',
-                            'bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
-                            'dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50',
-                            'disabled:cursor-not-allowed disabled:opacity-50',
-                          )}
                         >
-                          <Play className="h-3.5 w-3.5" aria-hidden="true" />
+                          {runRule.isPending && runRule.variables === r.id
+                            ? <Spinner data-icon="inline-start" />
+                            : <Play data-icon="inline-start" />}
                           {runRule.isPending && runRule.variables === r.id ? 'Running…' : 'Run'}
-                        </button>
-                        <details name="rule-actions" className="relative">
-                          <summary className="close-button flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg [&::-webkit-details-marker]:hidden" aria-label={`Actions for ${r.matchValue}`}>
-                            <EllipsisVertical className="h-5 w-5" aria-hidden="true" />
-                          </summary>
-                          <div className="absolute right-0 z-30 mt-1 min-w-44 rounded-lg border border-default bg-surface p-1 shadow-xl">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.currentTarget.closest('details')?.removeAttribute('open');
-                                setModal({ mode: 'edit', rule: r });
-                              }}
-                              disabled={cats.isLoading || accounts.isLoading || cats.isError || accounts.isError}
-                              className="close-button flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm disabled:opacity-50"
-                            >
-                              <Pencil className="h-4 w-4" aria-hidden="true" /> Edit rule
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.currentTarget.closest('details')?.removeAttribute('open');
-                                setConfirmation({ kind: 'delete', rule: r });
-                              }}
-                              disabled={deleteRule.isPending}
-                              className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-400 dark:hover:bg-rose-900/30"
-                            >
-                              <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete rule
-                            </button>
-                          </div>
-                        </details>
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button type="button" variant="ghost" size="icon" aria-label={`Actions for ${r.matchValue}`}>
+                              <EllipsisVertical />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="min-w-44">
+                            <DropdownMenuGroup>
+                              <DropdownMenuItem
+                                disabled={cats.isLoading || accounts.isLoading || cats.isError || accounts.isError}
+                                onClick={() => setModal({ mode: 'edit', rule: r })}
+                              >
+                                <Pencil /> Edit rule
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                variant="destructive"
+                                disabled={deleteRule.isPending}
+                                onClick={() => setConfirmation({ kind: 'delete', rule: r })}
+                              >
+                                <Trash2 /> Delete rule
+                              </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                   </li>
@@ -512,7 +560,7 @@ export function Rules() {
 
             {totalPages > 1 && (
               <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-                <div className="text-xs fg-muted tabular-nums">
+                <div className="text-xs text-muted-foreground tabular-nums">
                   Page {currentPage} of {totalPages.toLocaleString()}
                 </div>
                 <Pagination>
@@ -549,11 +597,11 @@ export function Rules() {
                 </Pagination>
               </div>
             )}
+            </CardContent>
           </>
         )}
-      </section>
+      </Card>
 
-      {/* Modal */}
       {modal && modal.mode === 'create' && (
         <RuleFormModal
           key="create-rule"
@@ -650,22 +698,6 @@ export function Rules() {
           <p>Every rule will be applied to all matching existing transactions.</p>
           <p>This can overwrite categories and transaction types you set previously.</p>
         </ConfirmDialog>
-      )}
-
-      {/* Toast — matches Paydown's Save-to-Budget style */}
-      {toast && (
-        <div className="app-toast fixed z-50 max-w-sm rounded-lg border border-default bg-surface shadow-lg px-4 py-3 text-sm flex items-start gap-3">
-          <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0 fg-primary">{toast}</div>
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className="close-button rounded-md p-1"
-            aria-label="Dismiss"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
       )}
     </div>
   );
