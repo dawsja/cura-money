@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState, type ComponentType } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ArrowLeftRight,
   Check,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
   Inbox,
-  MoreHorizontal,
+  ListChecks,
+  TrendingDown,
+  TrendingUp,
 } from 'lucide-react';
 import { api } from '../lib/api';
-import { formatDate, formatMoney } from '../lib/format';
+import { formatDateLong, formatMoney } from '../lib/format';
 import {
   confirmReviewedTransactionRule,
   createReviewedTransactionRule,
@@ -21,7 +24,7 @@ import { cn } from '@/lib/utils';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Dialog,
@@ -31,13 +34,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   Empty,
   EmptyContent,
@@ -52,6 +48,7 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
+  FieldTitle,
 } from '@/components/ui/field';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -63,9 +60,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 type TxType = 'income' | 'expense' | 'transfer';
@@ -83,22 +80,36 @@ interface EditState {
   type: TxType;
 }
 
-const TYPE_LABEL: Record<TxType, string> = {
-  income: 'Income',
-  expense: 'Expense',
-  transfer: 'Transfer',
-};
+const TYPES: TxType[] = ['expense', 'income', 'transfer'];
 
-const TYPE_SIGN: Record<TxType, string> = {
-  income: '+',
-  expense: '−',
-  transfer: '⇄',
-};
-
-const TYPE_AMOUNT_CLASS: Record<TxType, string> = {
-  income: 'text-emerald-600 dark:text-emerald-400',
-  expense: 'text-rose-600 dark:text-rose-400',
-  transfer: 'text-muted-foreground',
+const TYPE_META: Record<TxType, {
+  label: string;
+  sign: string;
+  icon: ComponentType<{ className?: string }>;
+  amountClass: string;
+  mediaClass: string;
+}> = {
+  income: {
+    label: 'Income',
+    sign: '+',
+    icon: TrendingUp,
+    amountClass: 'text-emerald-700 dark:text-emerald-400',
+    mediaClass: 'bg-emerald-600/10 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-400',
+  },
+  expense: {
+    label: 'Expense',
+    sign: '−',
+    icon: TrendingDown,
+    amountClass: 'text-rose-700 dark:text-rose-400',
+    mediaClass: 'bg-rose-600/10 text-rose-700 dark:bg-rose-400/10 dark:text-rose-400',
+  },
+  transfer: {
+    label: 'Transfer',
+    sign: '',
+    icon: ArrowLeftRight,
+    amountClass: 'text-foreground',
+    mediaClass: 'bg-muted text-muted-foreground',
+  },
 };
 
 function defaultEdit(tx: ReviewTransaction): EditState {
@@ -107,6 +118,10 @@ function defaultEdit(tx: ReviewTransaction): EditState {
     subCategory: tx.subCategory ?? '',
     type: tx.type,
   };
+}
+
+function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
 export interface ReviewCarouselModalProps {
@@ -183,7 +198,7 @@ export function ReviewCarouselModal({
     if (blocking) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement) return;
-      if (event.target instanceof HTMLElement && event.target.closest('[data-slot="select-trigger"], [data-slot="select-content"]')) return;
+      if (event.target instanceof HTMLElement && event.target.closest('[data-slot="select-trigger"], [data-slot="select-content"], [data-slot="toggle-group"]')) return;
       if (event.key === 'ArrowLeft') setIdx((prev) => Math.max(0, prev - 1));
       if (event.key === 'ArrowRight' && idx < queue.length - 1) setIdx((prev) => prev + 1);
     };
@@ -279,28 +294,16 @@ export function ReviewCarouselModal({
   const isFinished = !isLoading && pendingCount === 0 && completedCount > 0 && !isMutating && !ruleOperation;
   const isEmpty = !isLoading && queue.length === 0 && pendingCount === 0 && completedCount === 0 && !isMutating;
   const waitingForRows = !isFinished && !isEmpty && !queueError && queue.length === 0 && !ruleOperation && (pendingCount > 0 || isMutating);
+  const queueFailed = Boolean(queueError && queue.length === 0 && !isLoadingFirst);
   const reviewing = Boolean(slide && edit && !ruleOperation && !isLoadingFirst && !isFinished && !isEmpty);
+  const remember = slide ? rememberRules[slide.id] === true : false;
   const categoryValue = slide && edit?.category && edit.subCategory
     ? JSON.stringify({ category: edit.category, subCategory: edit.subCategory })
     : undefined;
 
-  const title = isFinished || isEmpty
-    ? 'All caught up'
-    : ruleOperation?.status === 'pending'
-      ? 'Creating rule'
-      : ruleOperation?.status === 'error'
-        ? 'Rule was not created'
-        : 'Review transactions';
-
-  const description = isFinished
-    ? `You reviewed ${completedCount} transaction${completedCount === 1 ? '' : 's'}.`
-    : isEmpty
-      ? 'New SimpleFIN imports will wait here before they appear on Home.'
-      : ruleOperation?.status === 'pending'
-        ? 'The transaction is saved. Checking existing rules…'
-        : reviewing
-          ? `${pendingCount} remaining`
-          : 'Imported transactions that still need a category.';
+  const description = ruleOperation
+      ? 'The transaction is saved.'
+      : 'Confirm how imported transactions are categorized.';
 
   return (
     <>
@@ -311,7 +314,7 @@ export function ReviewCarouselModal({
         }}
       >
         <DialogContent
-          className="sm:max-w-lg"
+          className="gap-5 sm:max-w-md"
           showCloseButton={!closeLocked}
           onEscapeKeyDown={(event) => {
             if (closeLocked || blocking) event.preventDefault();
@@ -320,106 +323,45 @@ export function ReviewCarouselModal({
             if (closeLocked || blocking) event.preventDefault();
           }}
         >
-          <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
+          <DialogHeader className="gap-1 pr-8">
+            <DialogTitle>Review transactions</DialogTitle>
             <DialogDescription>{description}</DialogDescription>
           </DialogHeader>
 
-          {reviewing && total > 0 ? (
-            <div className="flex flex-col gap-2">
-              <Progress value={progress} className="h-1" />
-              <p className="text-xs text-muted-foreground tabular-nums">
-                {completedCount} of {total} reviewed
-              </p>
-            </div>
-          ) : null}
-
-          {ruleOperation?.status === 'pending' ? (
-            <div className="flex items-center gap-3 rounded-lg border bg-muted/40 px-3 py-4 text-sm">
-              <Spinner />
-              <p className="text-muted-foreground">Saving a scoped merchant rule…</p>
-            </div>
-          ) : null}
-
-          {ruleOperation?.status === 'error' ? (
-            <Alert variant="destructive">
-              <AlertTitle>The transaction was saved</AlertTitle>
-              <AlertDescription>
-                Its rule failed: {ruleOperation.error}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
-          {isLoadingFirst || waitingForRows ? <ReviewLoadingState /> : null}
-
-          {queueError && queue.length === 0 && !isLoadingFirst ? (
-            <Alert variant="destructive">
-              <AlertTitle>Could not load reviews</AlertTitle>
-              <AlertDescription>{queueError}</AlertDescription>
-              <AlertAction>
-                <Button type="button" size="sm" variant="outline" onClick={() => void onRetryQueue()}>
-                  Retry
-                </Button>
-              </AlertAction>
-            </Alert>
-          ) : null}
-
-          {isEmpty ? (
-            <Empty className="border-0 py-2">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <Inbox />
-                </EmptyMedia>
-                <EmptyTitle>Nothing to review</EmptyTitle>
-                <EmptyDescription>
-                  New SimpleFIN imports will land here for confirmation before they show up on Home.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : null}
-
-          {isFinished ? (
-            <Empty className="border-0 py-2">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <CircleCheck />
-                </EmptyMedia>
-                <EmptyTitle>You&apos;re all caught up</EmptyTitle>
-                <EmptyDescription>
-                  You reviewed {completedCount} transaction{completedCount === 1 ? '' : 's'}.
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button type="button" onClick={onClose}>
-                  <Check data-icon="inline-start" />
-                  Done
-                </Button>
-              </EmptyContent>
-            </Empty>
-          ) : null}
-
           {reviewing && slide && edit ? (
-            <div className="flex flex-col gap-4">
+            <>
               <div className="flex flex-col gap-2">
-                <p className="text-sm text-muted-foreground">
-                  {formatDate(slide.date)}
-                  <span className="px-1.5 text-border">·</span>
-                  {slide.account}
-                </p>
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-lg font-semibold leading-tight">{slide.merchant}</h3>
-                  <Badge variant="outline">{TYPE_LABEL[edit.type]}</Badge>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-muted-foreground tabular-nums" aria-live="polite">
+                    Transaction <span className="font-medium text-foreground">{currentIdx + 1}</span> of {pendingCount}
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      onClick={() => setIdx((prev) => Math.max(0, prev - 1))}
+                      disabled={currentIdx === 0 || isMutating}
+                      aria-label="Previous transaction"
+                    >
+                      <ChevronLeft />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      onClick={() => setIdx((prev) => Math.min(queue.length - 1, prev + 1))}
+                      disabled={currentIdx >= queue.length - 1 || isMutating}
+                      aria-label="Next transaction"
+                    >
+                      <ChevronRight />
+                    </Button>
+                  </div>
                 </div>
-                <p className={cn('text-2xl font-semibold tabular-nums', TYPE_AMOUNT_CLASS[edit.type])}>
-                  {TYPE_SIGN[edit.type]}
-                  {formatMoney(slide.amount)}
-                </p>
-                {slide.notes ? (
-                  <p className="text-sm text-muted-foreground">{slide.notes}</p>
-                ) : null}
+                <Progress value={progress} className="h-1" aria-label={`${completedCount} of ${total} reviewed`} />
               </div>
 
-              <Separator />
+              <TransactionSummary transaction={slide} type={edit.type} />
 
               <FieldGroup className="gap-4">
                 <Field>
@@ -431,14 +373,23 @@ export function ReviewCarouselModal({
                       if (value) updateEdit(slide.id, { type: value as TxType });
                     }}
                     variant="outline"
-                    className="w-full"
+                    spacing={1}
+                    className="grid w-full grid-cols-3"
                     disabled={isMutating}
                   >
-                    {(['income', 'expense', 'transfer'] as const).map((type) => (
-                      <ToggleGroupItem key={type} value={type} className="flex-1">
-                        {TYPE_LABEL[type]}
-                      </ToggleGroupItem>
-                    ))}
+                    {TYPES.map((type) => {
+                      const Icon = TYPE_META[type].icon;
+                      return (
+                        <ToggleGroupItem
+                          key={type}
+                          value={type}
+                          className="w-full data-[state=on]:border-primary/50 data-[state=on]:bg-primary/10 data-[state=on]:text-foreground"
+                        >
+                          <Icon data-icon="inline-start" />
+                          {TYPE_META[type].label}
+                        </ToggleGroupItem>
+                      );
+                    })}
                   </ToggleGroup>
                 </Field>
 
@@ -457,9 +408,15 @@ export function ReviewCarouselModal({
                     disabled={isMutating || (!cats.data && (cats.isLoading || cats.isError))}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder={cats.isLoading ? 'Loading categories…' : 'Pick a category…'} />
+                      <SelectValue placeholder={cats.isLoading ? 'Loading categories…' : 'Choose a category'}>
+                        {categoryValue ? (
+                          <span className="truncate">
+                            <span className="text-muted-foreground">{edit.category} ›</span> {edit.subCategory}
+                          </span>
+                        ) : null}
+                      </SelectValue>
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent position="popper">
                       {visibleCats.map((category) => (
                         <SelectGroup key={category.id}>
                           <SelectLabel>{category.name}</SelectLabel>
@@ -487,119 +444,158 @@ export function ReviewCarouselModal({
                   ) : null}
                 </Field>
 
-                <Field orientation="horizontal">
-                  <Checkbox
-                    id={rememberId}
-                    checked={rememberRules[slide.id] === true}
-                    onCheckedChange={(checked) => setRememberRules((current) => ({
-                      ...current,
-                      [slide.id]: checked === true,
-                    }))}
-                    disabled={isMutating}
-                  />
-                  <FieldContent>
-                    <FieldLabel htmlFor={rememberId}>Create a rule</FieldLabel>
-                    <FieldDescription>
-                      {slide.sourceClassificationTrusted
-                        ? 'Apply this category to the same merchant, account, and original type next time.'
-                        : 'Apply this category to the same merchant and account. Original type and category were not kept for this older transaction.'}
-                    </FieldDescription>
-                  </FieldContent>
-                </Field>
-
-                {err ? (
-                  <Alert variant="destructive">
-                    <AlertDescription>{err}</AlertDescription>
-                  </Alert>
-                ) : null}
-                {queueError ? (
-                  <Alert variant="destructive">
-                    <AlertDescription>{queueError}</AlertDescription>
-                    <AlertAction>
-                      <Button type="button" size="sm" variant="outline" onClick={() => void onRetryQueue()}>
-                        Retry queue
-                      </Button>
-                    </AlertAction>
-                  </Alert>
-                ) : null}
+                <FieldLabel htmlFor={rememberId}>
+                  <Field orientation="horizontal" data-disabled={isMutating || undefined}>
+                    <FieldContent>
+                      <FieldTitle>Remember for this merchant</FieldTitle>
+                      <FieldDescription>
+                        {slide.sourceClassificationTrusted
+                          ? 'Create a rule for this merchant, account, and original type.'
+                          : 'Create a rule for this merchant and account. The original type was not kept for this older transaction.'}
+                      </FieldDescription>
+                    </FieldContent>
+                    <Switch
+                      id={rememberId}
+                      checked={remember}
+                      onCheckedChange={(checked) => setRememberRules((current) => ({
+                        ...current,
+                        [slide.id]: checked,
+                      }))}
+                      disabled={isMutating}
+                    />
+                  </Field>
+                </FieldLabel>
               </FieldGroup>
-            </div>
+
+              {err ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{err}</AlertDescription>
+                </Alert>
+              ) : null}
+              {queueError ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{queueError}</AlertDescription>
+                  <AlertAction>
+                    <Button type="button" size="sm" variant="outline" onClick={() => void onRetryQueue()}>
+                      Retry
+                    </Button>
+                  </AlertAction>
+                </Alert>
+              ) : null}
+
+              <DialogFooter className="sm:justify-between">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setConfirmAcceptAll(true)}
+                  disabled={isMutating || pendingCount === 0}
+                >
+                  <ListChecks data-icon="inline-start" />
+                  Accept all
+                </Button>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void handleSkip()}
+                    disabled={isMutating}
+                  >
+                    Keep suggestion
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => void handleCategorize()}
+                    disabled={isMutating || !edit.category || !edit.subCategory}
+                  >
+                    {isMutating ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
+                    {isMutating ? 'Saving…' : remember ? 'Save & create rule' : 'Save'}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </>
+          ) : null}
+
+          {isLoadingFirst || waitingForRows ? <ReviewLoadingState /> : null}
+
+          {ruleOperation?.status === 'pending' ? (
+            <Empty className="border py-8">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Spinner />
+                </EmptyMedia>
+                <EmptyTitle>Creating rule</EmptyTitle>
+                <EmptyDescription>Checking existing rules for this merchant…</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : null}
 
           {ruleOperation?.status === 'error' ? (
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setRuleOperation(null)}>
-                Continue without rule
-              </Button>
-              <Button type="button" onClick={() => void createScopedRule(ruleOperation.transactionId)}>
-                Retry rule
-              </Button>
-            </DialogFooter>
+            <>
+              <Alert variant="destructive">
+                <AlertTitle>The rule was not created</AlertTitle>
+                <AlertDescription>{ruleOperation.error}</AlertDescription>
+              </Alert>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setRuleOperation(null)}>
+                  Continue without rule
+                </Button>
+                <Button type="button" onClick={() => void createScopedRule(ruleOperation.transactionId)}>
+                  Retry rule
+                </Button>
+              </DialogFooter>
+            </>
           ) : null}
 
-          {reviewing && slide && edit ? (
-            <DialogFooter className="sm:justify-between">
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setIdx((prev) => Math.max(0, prev - 1))}
-                  disabled={currentIdx === 0 || isMutating}
-                  aria-label="Previous transaction"
-                >
-                  <ChevronLeft />
+          {queueFailed ? (
+            <>
+              <Alert variant="destructive">
+                <AlertTitle>Could not load reviews</AlertTitle>
+                <AlertDescription>{queueError}</AlertDescription>
+                <AlertAction>
+                  <Button type="button" size="sm" variant="outline" onClick={() => void onRetryQueue()}>
+                    Retry
+                  </Button>
+                </AlertAction>
+              </Alert>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={onClose}>
+                  Close
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setIdx((prev) => Math.min(queue.length - 1, prev + 1))}
-                  disabled={currentIdx >= queue.length - 1 || isMutating}
-                  aria-label="Next transaction"
-                >
-                  <ChevronRight />
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="ghost" size="icon" aria-label="More review actions" disabled={isMutating}>
-                      <MoreHorizontal />
+              </DialogFooter>
+            </>
+          ) : null}
+
+          {isEmpty || isFinished ? (
+            <>
+              <Empty className="border py-8">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    {isFinished ? <CircleCheck /> : <Inbox />}
+                  </EmptyMedia>
+                  <EmptyTitle>{isFinished ? 'You’re all caught up' : 'Nothing to review'}</EmptyTitle>
+                  <EmptyDescription>
+                    {isFinished
+                      ? `You reviewed ${plural(completedCount, 'transaction')}.`
+                      : 'New SimpleFIN imports wait here for confirmation before they show up on Home.'}
+                  </EmptyDescription>
+                </EmptyHeader>
+                {isFinished ? (
+                  <EmptyContent>
+                    <Button type="button" onClick={onClose}>
+                      <Check data-icon="inline-start" />
+                      Done
                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuGroup>
-                      <DropdownMenuItem
-                        disabled={pendingCount === 0}
-                        onClick={() => setConfirmAcceptAll(true)}
-                      >
-                        Accept all suggestions
-                      </DropdownMenuItem>
-                    </DropdownMenuGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row">
-                <Button type="button" variant="outline" onClick={() => void handleSkip()} disabled={isMutating}>
-                  Keep suggestion
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => void handleCategorize()}
-                  disabled={isMutating || !edit.category || !edit.subCategory}
-                >
-                  {isMutating ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
-                  {isMutating ? 'Saving…' : rememberRules[slide.id] ? 'Save with rule' : 'Save & next'}
-                </Button>
-              </div>
-            </DialogFooter>
-          ) : null}
-
-          {(isEmpty || (queueError && queue.length === 0 && !isLoadingFirst)) ? (
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={onClose}>
-                Close
-              </Button>
-            </DialogFooter>
+                  </EmptyContent>
+                ) : null}
+              </Empty>
+              {isEmpty ? (
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={onClose}>
+                    Close
+                  </Button>
+                </DialogFooter>
+              ) : null}
+            </>
           ) : null}
         </DialogContent>
       </Dialog>
@@ -607,7 +603,7 @@ export function ReviewCarouselModal({
       {confirmAcceptAll ? (
         <ConfirmDialog
           title="Accept all suggestions?"
-          confirmLabel={`Accept all ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'}`}
+          confirmLabel={`Accept ${plural(pendingCount, 'transaction')}`}
           onConfirm={async () => {
             await handleSkipAll();
             setConfirmAcceptAll(false);
@@ -615,8 +611,8 @@ export function ReviewCarouselModal({
           onClose={() => setConfirmAcceptAll(false)}
         >
           <p>
-            This keeps the imported category and type for {pendingCount} pending
-            transaction{pendingCount === 1 ? '' : 's'} without creating rules.
+            This keeps the suggested category and type for {plural(pendingCount, 'pending transaction')} without
+            creating rules.
           </p>
         </ConfirmDialog>
       ) : null}
@@ -647,18 +643,73 @@ export function ReviewCarouselModal({
   );
 }
 
+function TransactionSummary({ transaction, type }: { transaction: ReviewTransaction; type: TxType }) {
+  const meta = TYPE_META[type];
+  const Icon = meta.icon;
+  const importedCategory = [transaction.category, transaction.subCategory].filter(Boolean).join(' › ');
+
+  return (
+    <Card size="sm" className="gap-0 bg-muted/40 py-0 shadow-none">
+      <CardContent className="flex items-center gap-3 pt-3 pb-3">
+        <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg', meta.mediaClass)}>
+          <Icon className="size-5" />
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p className="line-clamp-2 font-medium break-words text-foreground">
+            {transaction.merchant}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">
+            {formatDateLong(transaction.date)} · {transaction.account}
+          </p>
+        </div>
+        <p className={cn('shrink-0 text-lg font-semibold tabular-nums', meta.amountClass)}>
+          {meta.sign}
+          {formatMoney(transaction.amount)}
+        </p>
+      </CardContent>
+      {transaction.notes ? (
+        <CardContent className="pb-3">
+          <p className="truncate font-mono text-xs text-muted-foreground" title={transaction.notes}>
+            {transaction.notes}
+          </p>
+        </CardContent>
+      ) : null}
+      <CardFooter className="flex-wrap gap-x-2 gap-y-1 py-2 text-xs text-muted-foreground">
+        <span>Suggested</span>
+        <Badge variant="outline">{TYPE_META[transaction.type].label}</Badge>
+        <Badge variant="secondary">{importedCategory || 'Uncategorized'}</Badge>
+      </CardFooter>
+    </Card>
+  );
+}
+
 function ReviewLoadingState() {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5" aria-busy="true">
       <div className="flex flex-col gap-2">
-        <Skeleton className="h-4 w-40" />
-        <Skeleton className="h-6 w-3/4" />
-        <Skeleton className="h-8 w-28" />
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-7 w-15" />
+        </div>
+        <Skeleton className="h-1 w-full" />
       </div>
-      <Separator />
-      <Skeleton className="h-9 w-full" />
-      <Skeleton className="h-9 w-full" />
-      <Skeleton className="h-14 w-full" />
+      <div className="flex items-center gap-3 rounded-xl border p-3">
+        <Skeleton className="size-10 rounded-lg" />
+        <div className="flex flex-1 flex-col gap-1.5">
+          <Skeleton className="h-4 w-3/5" />
+          <Skeleton className="h-3 w-2/5" />
+        </div>
+        <Skeleton className="h-6 w-20" />
+      </div>
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-4 w-12" />
+        <Skeleton className="h-8 w-full" />
+      </div>
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-4 w-16" />
+        <Skeleton className="h-8 w-full" />
+      </div>
+      <Skeleton className="h-16 w-full" />
     </div>
   );
 }
